@@ -1,0 +1,204 @@
+<?php
+class User {
+    private $conn;
+    private $table = "users";
+    
+    public $id;
+    public $account_number;
+    public $full_name;
+    public $phone_number;
+    public $email;
+    public $id_number;
+    public $tax_pin;
+    public $address;
+    public $meter_number;
+    public $connection_type;
+    public $password;
+    public $password_hash;
+    public $role;
+    public $status;
+    public $created_at;
+    
+    public function __construct($db) {
+        $this->conn = $db;
+        $this->ensureTaxPinColumn();
+    }
+    
+    // Create new user
+    public function create() {
+        $query = "INSERT INTO " . $this->table . "
+                SET account_number = :account_number,
+                    full_name = :full_name,
+                    phone_number = :phone_number,
+                    email = :email,
+                    id_number = :id_number,
+                    tax_pin = :tax_pin,
+                    address = :address,
+                    meter_number = :meter_number,
+                    connection_type = :connection_type,
+                    password_hash = :password_hash,
+                    role = :role,
+                    status = :status";
+        
+        $stmt = $this->conn->prepare($query);
+        
+        // Hash password
+        $this->password_hash = password_hash($this->password, PASSWORD_BCRYPT);
+        
+        // Bind parameters
+        $stmt->bindParam(":account_number", $this->account_number);
+        $stmt->bindParam(":full_name", $this->full_name);
+        $stmt->bindParam(":phone_number", $this->phone_number);
+        $stmt->bindParam(":email", $this->email);
+        $stmt->bindParam(":id_number", $this->id_number);
+        $stmt->bindParam(":tax_pin", $this->tax_pin);
+        $stmt->bindParam(":address", $this->address);
+        $stmt->bindParam(":meter_number", $this->meter_number);
+        $stmt->bindParam(":connection_type", $this->connection_type);
+        $stmt->bindParam(":password_hash", $this->password_hash);
+        $stmt->bindParam(":role", $this->role);
+        $stmt->bindParam(":status", $this->status);
+        
+        if($stmt->execute()) {
+            $this->id = $this->conn->lastInsertId();
+            return true;
+        }
+        
+        return false;
+    }
+    
+    // Check if phone exists
+    public function phoneExists($phone) {
+        $query = "SELECT id FROM " . $this->table . " 
+                 WHERE phone_number = :phone_number 
+                 LIMIT 1";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":phone_number", $phone);
+        $stmt->execute();
+        
+        return $stmt->rowCount() > 0;
+    }
+    
+    // Login user with account number, phone number, or email
+    public function login($identifier, $password) {
+        $query = "SELECT id, account_number, full_name, phone_number, 
+                         email, id_number, tax_pin, address, meter_number,
+                         connection_type, password_hash, role, status 
+                  FROM " . $this->table . " 
+                  WHERE status = 'active'
+                    AND (phone_number = :identifier 
+                         OR account_number = :identifier
+                         OR email = :identifier)
+                  LIMIT 1";
+        
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":identifier", $identifier);
+        $stmt->execute();
+        
+        if($stmt->rowCount() > 0) {
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if(password_verify($password, $row['password_hash'])) {
+                // Return user data without password
+                unset($row['password_hash']);
+                return $row;
+            }
+        }
+        
+        return false;
+    }
+
+    // Fetch full auth row (including password_hash) by identifier, regardless of status
+    public function getAuthRowByIdentifier($identifier) {
+        $query = "SELECT id, account_number, full_name, phone_number,
+                     email, id_number, tax_pin, address, meter_number,
+                     connection_type, password_hash, role, status
+             FROM " . $this->table . "
+             WHERE phone_number = :identifier
+                OR account_number = :identifier
+                OR email = :identifier
+             LIMIT 1";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":identifier", $identifier);
+        $stmt->execute();
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
+    // Find user by identifier (account number, phone, or email), ignoring status
+    public function findByIdentifier($identifier) {
+        $query = "SELECT id, status FROM " . $this->table . " 
+                  WHERE phone_number = :identifier 
+                     OR account_number = :identifier
+                     OR email = :identifier
+                  LIMIT 1";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":identifier", $identifier);
+        $stmt->execute();
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+    
+    // Get user by ID
+    public function getById($id) {
+        $query = "SELECT * FROM " . $this->table . " WHERE id = :id LIMIT 1";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":id", $id);
+        $stmt->execute();
+        
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    // Get user by account number
+    public function getByAccountNumber($account_number) {
+        $query = "SELECT * FROM " . $this->table . " WHERE account_number = :account_number LIMIT 1";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":account_number", $account_number);
+        $stmt->execute();
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    // Get user by meter number
+    public function getByMeterNumber($meter_number) {
+        $query = "SELECT * FROM " . $this->table . " WHERE meter_number = :meter_number LIMIT 1";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":meter_number", $meter_number);
+        $stmt->execute();
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    // Search by name or account/meter (supports partial matches for typeahead)
+    public function searchByNameOrAccount($term, $limit = 10) {
+        $like = '%' . $term . '%';
+        $query = "SELECT * FROM " . $this->table . "
+                  WHERE account_number LIKE :like
+                     OR meter_number LIKE :like
+                     OR full_name LIKE :like
+                  ORDER BY full_name ASC
+                  LIMIT :limit";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":like", $like);
+        $stmt->bindValue(":limit", (int)$limit, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function listAll() {
+        $query = "SELECT id, account_number, full_name, phone_number, meter_number, status FROM " . $this->table . " ORDER BY full_name ASC";
+        $stmt = $this->conn->prepare($query);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    private function ensureTaxPinColumn() {
+        try {
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'tax_pin'");
+            $exists = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$exists) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN tax_pin VARCHAR(60) NULL AFTER id_number");
+            }
+        } catch (\PDOException $e) {
+            // Ignore schema errors here; login/registration will continue using existing columns.
+        }
+    }
+}
+?>

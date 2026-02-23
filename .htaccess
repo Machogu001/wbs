@@ -1,0 +1,101 @@
+# Enable rewrite engine
+RewriteEngine On
+
+# Set base directory
+RewriteBase /
+
+# Remove trailing slash
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)/$ /$1 [L,R=301]
+
+# Redirect /index.php to root
+RewriteCond %{THE_REQUEST} \s/+index\.php[\s?] [NC]
+RewriteRule ^index\.php$ / [R=301,L]
+
+# Redirect /pages/*.php to clean routes
+RewriteCond %{THE_REQUEST} \s/+pages/([a-zA-Z0-9_/-]+)\.php[\s?] [NC]
+RewriteRule ^pages/([a-zA-Z0-9_/-]+)\.php$ /$1 [R=301,L]
+
+# Route API requests through front controller
+RewriteRule ^api/(.*)$ index.php?url=api/$1 [QSA,L]
+
+# Front controller pattern
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?url=$1 [QSA,L]
+
+# Protect sensitive files
+<FilesMatch "\.(htaccess|htpasswd|ini|log|sh|sql|config)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Deny access to install directory when installed
+RewriteCond %{DOCUMENT_ROOT}/config/installed.lock -f
+RewriteRule ^install/ - [F,L]
+
+# Deny access to config directory
+RewriteRule ^config/ - [F,L]
+
+# Deny access to includes directory
+RewriteRule ^includes/ - [F,L]
+
+# Deny access to api directory (except through index.php)
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^api/.*\.php$ - [F,L]
+
+# Security headers
+Header set X-Content-Type-Options "nosniff"
+Header set X-Frame-Options "SAMEORIGIN"
+Header set X-XSS-Protection "1; mode=block"
+Header set Referrer-Policy "strict-origin-when-cross-origin"
+
+# Enable CORS for API
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+</IfModule>
+
+# Handle OPTIONS method for CORS
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^(.*)$ $1 [R=200,L]
+
+# Compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
+</IfModule>
+
+# Cache control
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/jpg "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType text/javascript "access plus 1 month"
+</IfModule>
+
+# Error documents
+ErrorDocument 400 /error/400.html
+ErrorDocument 401 /error/401.html
+ErrorDocument 403 /error/403.html
+ErrorDocument 404 /error/404.html
+ErrorDocument 500 /error/500.html
+
+# Prevent directory listing
+Options -Indexes
+
+# Set default charset
+AddDefaultCharset UTF-8
+
+# PHP settings (if allowed)
+<IfModule mod_php.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+    php_value max_execution_time 300
+    php_value max_input_time 300
+    php_value memory_limit 256M
+</IfModule>

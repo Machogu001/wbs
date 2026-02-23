@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="waterGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4FC3F7"/>
+      <stop offset="100%" stop-color="#0288D1"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="12" ry="12" fill="#0D47A1"/>
+  <!-- Main water drop -->
+  <path d="M32 10 C27 20 22 26 22 34 C22 41 26.5 46 32 46 C37.5 46 42 41 42 34 C42 26 37 20 32 10 Z" fill="url(#waterGradient)"/>
+  <!-- Small highlight drop -->
+  <circle cx="25" cy="25" r="4" fill="rgba(255,255,255,0.7)"/>
+  <!-- Shine at bottom -->
+  <ellipse cx="32" cy="42" rx="9" ry="3" fill="rgba(255,255,255,0.35)"/>
+</svg>
