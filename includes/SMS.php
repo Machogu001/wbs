@@ -10,8 +10,9 @@ class SMS {
 	public function __construct() {
 		$this->baseUrl = rtrim(SmsConfig::BASE_URL, '/');
 		$this->sendEndpoint = SmsConfig::SEND_ENDPOINT;
-		$this->apiToken = SmsConfig::API_TOKEN;
-		$this->senderId = SmsConfig::SENDER_ID;
+		// Load credentials from environment-aware config helpers
+		$this->apiToken = SmsConfig::getApiToken();
+		$this->senderId = SmsConfig::getSenderId();
 	}
 
 	public function send($phone, $message) {
