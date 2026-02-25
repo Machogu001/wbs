@@ -23,7 +23,7 @@ try {
     }
     
     // Validate required fields (meter_number will be auto-generated)
-    $required = ['full_name', 'phone_number', 'password', 'id_number', 'address'];
+    $required = ['full_name', 'phone_number', 'email', 'password', 'id_number', 'address'];
     foreach($required as $field) {
         if(empty($data->$field)) {
             throw new Exception("Missing required field: $field");

@@ -61,11 +61,12 @@ require_once __DIR__ . '/../templates/header.php';
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label for="email" class="form-label">Email Address</label>
+                                    <label for="email" class="form-label">Email Address *</label>
                                     <div class="input-group">
                                         <span class="input-group-text"><i class="bi bi-envelope"></i></span>
-                                        <input type="email" class="form-control" id="email" name="email">
+                                        <input type="email" class="form-control" id="email" name="email" required>
                                     </div>
+                                    <div class="invalid-feedback">Please enter a valid email address.</div>
                                 </div>
                             </div>
                             <div class="col-md-6">

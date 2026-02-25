@@ -43,6 +43,25 @@ if (!$installed && strpos($_SERVER['REQUEST_URI'], '/install') !== 0) {
         </div>
     </div>
 
+    <!-- Global confirmation modal for sweet confirmations instead of browser popups -->
+    <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title" id="confirmModalLabel">Please Confirm</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="confirmModalMessage">
+                    Are you sure?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmModalConfirm">Yes, Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <?php if(!isset($hide_nav) || !$hide_nav): ?>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
@@ -82,6 +101,7 @@ if (!$installed && strpos($_SERVER['REQUEST_URI'], '/install') !== 0) {
                             </a>
                             <ul class="dropdown-menu" aria-labelledby="navbarServices">
                                 <?php if(isset($_SESSION['user_data']['role']) && $_SESSION['user_data']['role'] === 'admin'): ?>
+                                    <li><a class="dropdown-item" href="/admin/users"><i class="bi bi-people"></i> Users</a></li>
                                     <li><a class="dropdown-item" href="/admin/reports"><i class="bi bi-graph-up"></i> Reports</a></li>
                                     <li><hr class="dropdown-divider"></li>
                                 <?php endif; ?>

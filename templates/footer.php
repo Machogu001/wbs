@@ -90,6 +90,68 @@
         var toast = new bootstrap.Toast(toastEl, { delay: 4000 });
         toast.show();
     };
+
+    // Sweet confirmation helper using Bootstrap modal instead of browser confirm()
+    window.confirmToast = function(message, options) {
+        return new Promise(function(resolve) {
+            var modalEl = document.getElementById('confirmModal');
+            var msgEl = document.getElementById('confirmModalMessage');
+            var confirmBtn = document.getElementById('confirmModalConfirm');
+            if (!modalEl || !msgEl || !confirmBtn || typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+                var ok = window.confirm(message || 'Are you sure?');
+                resolve(!!ok);
+                return;
+            }
+
+            msgEl.textContent = message || 'Are you sure?';
+            var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+            var handled = false;
+            var onHide = function() {
+                if (!handled) {
+                    resolve(false);
+                    handled = true;
+                }
+                modalEl.removeEventListener('hidden.bs.modal', onHide);
+                confirmBtn.removeEventListener('click', onConfirm);
+            };
+
+            var onConfirm = function() {
+                handled = true;
+                resolve(true);
+                modal.hide();
+            };
+
+            modalEl.addEventListener('hidden.bs.modal', onHide);
+            confirmBtn.addEventListener('click', onConfirm);
+
+            modal.show();
+        });
+    };
+
+    // Attach confirmToast to any form with data-confirm-message attribute
+    document.addEventListener('DOMContentLoaded', function() {
+        var forms = document.querySelectorAll('form[data-confirm-message]');
+        forms.forEach(function(form) {
+            form.addEventListener('submit', function(e) {
+                var msg = form.getAttribute('data-confirm-message') || 'Are you sure?';
+                if (!window.confirmToast) {
+                    // Fallback to native confirm
+                    if (!window.confirm(msg)) {
+                        e.preventDefault();
+                    }
+                    return;
+                }
+
+                e.preventDefault();
+                window.confirmToast(msg, { type: 'warning' }).then(function(confirmed) {
+                    if (confirmed) {
+                        form.submit();
+                    }
+                });
+            });
+        });
+    });
     </script>
 
     <?php if(isset($custom_scripts)): ?>

@@ -145,7 +145,12 @@ document.addEventListener('DOMContentLoaded', function () {
 			var re = /^(?:254|\+254|0)?((?:7|1)\d{8})$/;
 			var m = phone.match(re);
 			if (!m) {
-				alert('Please enter a valid Kenyan phone number (e.g. 07XXXXXXXX, 01XXXXXXXX, or 2547XXXXXXXX)');
+				var invalidMsg = 'Please enter a valid Kenyan phone number (e.g. 07XXXXXXXX, 01XXXXXXXX, or 2547XXXXXXXX)';
+				if (window.showToast) {
+					showToast(invalidMsg, 'danger');
+				} else {
+					alert(invalidMsg);
+				}
 				return;
 			}
 

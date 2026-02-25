@@ -809,7 +809,12 @@ require_once __DIR__ . '/../../templates/header.php';
 				.then(res => res.json())
 				.then(data => {
 					if (!data || data.status !== 'success') {
-						alert((data && data.message) ? data.message : 'Failed to submit to ETIMS');
+						var failMsg = (data && data.message) ? data.message : 'Failed to submit to ETIMS';
+						if (window.showToast) {
+							showToast(failMsg, 'danger');
+						} else {
+							alert(failMsg);
+						}
 						return;
 					}
 					const info = data.data || {};
@@ -831,7 +836,12 @@ require_once __DIR__ . '/../../templates/header.php';
 					}
 				})
 				.catch(() => {
-					alert('Error calling ETIMS resubmit API');
+					var errMsg = 'Error calling ETIMS resubmit API';
+					if (window.showToast) {
+						showToast(errMsg, 'danger');
+					} else {
+						alert(errMsg);
+					}
 				})
 				.finally(() => {
 					this.disabled = false;
