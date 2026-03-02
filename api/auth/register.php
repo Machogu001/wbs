@@ -151,11 +151,12 @@ try {
         $settings = $settingsService->getSettings();
         $companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
         $sms = new SMS();
+        $loginUrl = 'https://wbs.bremac.co.ke/';
         $messageText = "Dear " . $user->full_name . ",\n" .
             "Your water account has been created successfully.\n" .
             "Account No: " . $user->account_number . "\n" .
             "Meter No: " . $user->meter_number . "\n" .
-            "You can now log in using your account number, phone or email to view your bills and make payments.\n" .
+            "You can now log in at " . $loginUrl . " using your account number, phone or email to view your bills and make payments.\n" .
             $companyName;
         // Ignore SMS failures silently
         $sms->send($user->phone_number, $messageText);

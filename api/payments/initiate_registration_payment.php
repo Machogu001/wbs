@@ -29,6 +29,12 @@ try {
         throw new Exception('User not found');
     }
 
+    // Admin accounts should not be charged a registration fee.
+    // They can still pay normal water bills via the regular Pay Bill flow.
+    if (isset($user['role']) && $user['role'] === 'admin') {
+        throw new Exception('Registration fee does not apply to admin accounts. Use the normal Pay Bill section to pay water bills as an administrative expense.');
+    }
+
     $settingsService = new BillingSettings($db);
     $settings = $settingsService->getSettings();
     $registrationFee = isset($settings['registration_fee']) ? (float)$settings['registration_fee'] : 0.00;

@@ -14,6 +14,7 @@ require_once __DIR__ . '/../templates/header.php';
 $total_paid = 0.0;
 $total_unpaid = 0.0;
 $pending_count = 0;
+$isAdmin = isset($_SESSION['user_data']['role']) && $_SESSION['user_data']['role'] === 'admin';
 $recentBills = [];
 $recentPayments = [];
 
@@ -23,7 +24,7 @@ if ($db) {
     $billService = new Bill($db);
     $paymentService = new Payment($db);
 
-    if (isset($_SESSION['user_data']['role']) && $_SESSION['user_data']['role'] === 'admin') {
+    if ($isAdmin) {
         $summary = $billService->getSystemSummary();
 
         // For admins, show latest system-wide payments and bills
@@ -77,7 +78,7 @@ if ($db) {
     
     <div class="row mt-4">
         <div class="col-md-3">
-            <a href="/bills?filter=unpaid" class="text-decoration-none">
+            <a href="<?php echo $isAdmin ? '/admin/reports?report_scope=billing&bill_status=pending_overdue' : '/bills?filter=unpaid'; ?>" class="text-decoration-none">
                 <div class="card text-white bg-primary">
                     <div class="card-body">
                         <h5 class="card-title">Account Balance</h5>
@@ -87,7 +88,7 @@ if ($db) {
             </a>
         </div>
         <div class="col-md-3">
-            <a href="/bills?filter=paid" class="text-decoration-none">
+            <a href="<?php echo $isAdmin ? '/admin/reports?report_scope=payments&payment_status=completed' : '/bills?filter=paid'; ?>" class="text-decoration-none">
                 <div class="card text-white bg-success">
                     <div class="card-body">
                         <h5 class="card-title">Total Paid</h5>
@@ -97,7 +98,7 @@ if ($db) {
             </a>
         </div>
         <div class="col-md-3">
-            <a href="/bills?filter=unpaid" class="text-decoration-none">
+            <a href="<?php echo $isAdmin ? '/admin/reports?report_scope=billing&bill_status=pending_overdue' : '/bills?filter=unpaid'; ?>" class="text-decoration-none">
                 <div class="card text-white bg-warning">
                     <div class="card-body">
                         <h5 class="card-title">Pending Bills</h5>
@@ -135,6 +136,9 @@ if ($db) {
                                 <i class="bi bi-camera"></i> Submit Meter Reading
                             </a>
                         <?php endif; ?>
+                        <a href="/change-password" class="btn btn-outline-secondary btn-lg">
+                            <i class="bi bi-key"></i> Change Password
+                        </a>
                         <a href="/profile" class="btn btn-info btn-lg">
                             <i class="bi bi-person"></i> My Profile
                         </a>

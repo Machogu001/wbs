@@ -10,6 +10,7 @@ class Payment {
 	public $amount;
 	public $merchant_request_id;
 	public $checkout_request_id;
+	public $mpesa_receipt;
 	public $status;
 	public $registration_id;
 
@@ -57,8 +58,8 @@ class Payment {
 
 	public function create() {
 		$query = "INSERT INTO " . $this->table . "
-			(bill_id, user_id, phone_number, amount, merchant_request_id, checkout_request_id, status, registration_id, created_at)
-			VALUES (:bill_id, :user_id, :phone_number, :amount, :merchant_request_id, :checkout_request_id, :status, :registration_id, NOW())";
+			(bill_id, user_id, phone_number, amount, merchant_request_id, checkout_request_id, mpesa_receipt, status, registration_id, created_at)
+			VALUES (:bill_id, :user_id, :phone_number, :amount, :merchant_request_id, :checkout_request_id, :mpesa_receipt, :status, :registration_id, NOW())";
 		$stmt = $this->conn->prepare($query);
 		$stmt->bindParam(':bill_id', $this->bill_id);
 		$stmt->bindParam(':user_id', $this->user_id);
@@ -66,6 +67,7 @@ class Payment {
 		$stmt->bindParam(':amount', $this->amount);
 		$stmt->bindParam(':merchant_request_id', $this->merchant_request_id);
 		$stmt->bindParam(':checkout_request_id', $this->checkout_request_id);
+		$stmt->bindParam(':mpesa_receipt', $this->mpesa_receipt);
 		$stmt->bindParam(':status', $this->status);
 		$stmt->bindParam(':registration_id', $this->registration_id);
 		if ($stmt->execute()) {

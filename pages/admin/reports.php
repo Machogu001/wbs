@@ -24,6 +24,8 @@ $period = isset($_GET['period']) ? $_GET['period'] : 'this_month';
 $from_date = isset($_GET['from_date']) ? trim($_GET['from_date']) : '';
 $to_date = isset($_GET['to_date']) ? trim($_GET['to_date']) : '';
 $report_scope = isset($_GET['report_scope']) ? $_GET['report_scope'] : 'all'; // all, payments, billing
+$payment_status_filter = isset($_GET['payment_status']) ? trim($_GET['payment_status']) : 'all'; // all, completed, pending, failed
+$bill_status_filter = isset($_GET['bill_status']) ? trim($_GET['bill_status']) : 'all'; // all, pending_overdue, paid, cancelled
 $search_term = isset($_GET['search_term']) ? trim($_GET['search_term']) : '';
 $page_size = 5;
 $payments_page = isset($_GET['payments_page']) ? max(1, (int)$_GET['payments_page']) : 1;
@@ -272,6 +274,13 @@ $payments_grand_total = 0.0;
 if ($report_scope === 'all' || $report_scope === 'payments') {
 	// Count
 	$sqlPaymentsWhere = "WHERE DATE(COALESCE(p.transaction_date, p.created_at)) BETWEEN :from AND :to";
+	if ($payment_status_filter === 'completed') {
+		$sqlPaymentsWhere .= " AND p.status = 'completed'";
+	} elseif ($payment_status_filter === 'pending') {
+		$sqlPaymentsWhere .= " AND p.status = 'pending'";
+	} elseif ($payment_status_filter === 'failed') {
+		$sqlPaymentsWhere .= " AND p.status = 'failed'";
+	}
 	if ($search_term !== '') {
 		$sqlPaymentsWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search OR p.mpesa_receipt LIKE :search)";
 	}
@@ -342,6 +351,13 @@ $bills_total_pages = 1;
 $bills_grand_total = 0.0;
 if ($report_scope === 'all' || $report_scope === 'billing') {
 	$sqlBillsWhere = "WHERE DATE(b.billing_month) BETWEEN :from AND :to";
+	if ($bill_status_filter === 'pending_overdue') {
+		$sqlBillsWhere .= " AND b.status IN ('pending','overdue')";
+	} elseif ($bill_status_filter === 'paid') {
+		$sqlBillsWhere .= " AND b.status = 'paid'";
+	} elseif ($bill_status_filter === 'cancelled') {
+		$sqlBillsWhere .= " AND b.status = 'cancelled'";
+	}
 	if ($search_term !== '') {
 		$sqlBillsWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search)";
 	}

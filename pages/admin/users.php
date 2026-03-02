@@ -159,6 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$password = (string)($_POST['password'] ?? '');
 			$registration_already_paid = isset($_POST['registration_already_paid']);
 			$send_stk = isset($_POST['send_stk']);
+			$registration_mpesa_code = trim($_POST['registration_mpesa_code'] ?? '');
 
 			// Basic validation
 			if ($full_name === '' || $phone_number === '' || $email === '' || $id_number === '' || $address === '' || $password === '') {
@@ -214,6 +215,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 						$payment->amount = $registrationFee;
 						$payment->merchant_request_id = null;
 						$payment->checkout_request_id = null;
+						$payment->mpesa_receipt = $registration_mpesa_code !== '' ? $registration_mpesa_code : null;
 						$payment->status = 'completed';
 						$payment->registration_id = $user->id;
 						$payment->create();
@@ -223,11 +225,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				// Send SMS with account details on successful creation
 				$sms = new SMS();
 				$companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
+				$loginUrl = 'https://wbs.bremac.co.ke/';
 				$messageText = "Dear " . $user->full_name . ",\n" .
 					"Your water account has been created successfully.\n" .
 					"Account No: " . $user->account_number . "\n" .
 					"Meter No: " . $user->meter_number . "\n" .
-					"You can now log in using your account number, phone or email to view your bills and make payments.\n" .
+					"You can now log in at " . $loginUrl . " using your account number, phone or email to view your bills and make payments.\n" .
 					$companyName;
 				$sms->send($user->phone_number, $messageText);
 
@@ -561,7 +564,7 @@ require_once __DIR__ . '/../../templates/header.php';
 								<div class="form-check">
 									<input class="form-check-input" type="checkbox" value="1" id="registration_already_paid" name="registration_already_paid" <?php echo isset($_POST['registration_already_paid']) ? 'checked' : ''; ?>>
 									<label class="form-check-label" for="registration_already_paid">
-										Registration fee already paid (cash/other).
+										Registration fee already paid (cash/M-Pesa/other).
 									</label>
 								</div>
 								<div class="form-check mt-1">
@@ -570,7 +573,12 @@ require_once __DIR__ . '/../../templates/header.php';
 										Send M-Pesa STK push for registration fee now.
 									</label>
 								</div>
-								<div class="form-text">If neither option is selected, you will be asked to choose one.</div>
+								<div class="mt-2">
+									<label for="registration_mpesa_code" class="form-label">M-Pesa Transaction Code (if paid via M-Pesa)</label>
+									<input type="text" class="form-control" id="registration_mpesa_code" name="registration_mpesa_code" value="<?php echo htmlspecialchars($_POST['registration_mpesa_code'] ?? ''); ?>" placeholder="e.g. QEU1XYZ123">
+									<div class="form-text">Optional. Enter the M-Pesa transaction code for reconciliation when the registration fee was paid via M-Pesa.</div>
+								</div>
+								<div class="form-text mt-1">If neither option is selected, you will be asked to choose one.</div>
 							</div>
 						<?php endif; ?>
 

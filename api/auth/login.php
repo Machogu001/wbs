@@ -33,6 +33,8 @@ try {
     if($user_data) {
         // Start session and login
         $auth->login($user_data['id'], $user_data);
+
+        $requiresPasswordChange = !empty($user_data['must_change_password']);
         
         http_response_code(200);
         echo json_encode(array(
@@ -41,7 +43,8 @@ try {
             "data" => array(
                 "user" => $user_data,
                 "session_id" => session_id(),
-                "requires_registration_payment" => false
+                "requires_registration_payment" => false,
+                "requires_password_change" => $requiresPasswordChange
             )
         ));
     } else {

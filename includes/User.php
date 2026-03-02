@@ -22,6 +22,7 @@ class User {
     public function __construct($db) {
         $this->conn = $db;
         $this->ensureTaxPinColumn();
+        $this->ensureMustChangePasswordColumn();
     }
     
     // Create new user
@@ -84,7 +85,7 @@ class User {
     public function login($identifier, $password) {
         $query = "SELECT id, account_number, full_name, phone_number, 
                          email, id_number, tax_pin, address, meter_number,
-                         connection_type, password_hash, role, status 
+                         connection_type, password_hash, role, status, must_change_password 
                   FROM " . $this->table . " 
                   WHERE status = 'active'
                     AND (phone_number = :identifier 
@@ -113,7 +114,7 @@ class User {
     public function getAuthRowByIdentifier($identifier) {
         $query = "SELECT id, account_number, full_name, phone_number,
                      email, id_number, tax_pin, address, meter_number,
-                     connection_type, password_hash, role, status
+                     connection_type, password_hash, role, status, must_change_password
              FROM " . $this->table . "
              WHERE phone_number = :identifier
                 OR account_number = :identifier
@@ -198,6 +199,18 @@ class User {
             }
         } catch (\PDOException $e) {
             // Ignore schema errors here; login/registration will continue using existing columns.
+        }
+    }
+
+    private function ensureMustChangePasswordColumn() {
+        try {
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'must_change_password'");
+            $exists = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$exists) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0 AFTER password_hash");
+            }
+        } catch (\PDOException $e) {
+            // Ignore schema errors here as well.
         }
     }
 }

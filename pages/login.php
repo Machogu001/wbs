@@ -62,7 +62,10 @@ $logged_out = isset($_GET['logged_out']) && $_GET['logged_out'] == 'true';
                                     <i class="bi bi-eye"></i>
                                 </button>
                             </div>
-                            <div class="invalid-feedback">Please enter your password.</div>
+                            <div class="d-flex justify-content-between mt-1">
+                                <small class="text-muted">Please enter your password.</small>
+                                <a href="/forgot-password" class="small">Forgot password?</a>
+                            </div>
                         </div>
                         
                         <div class="d-grid gap-2">
@@ -112,6 +115,7 @@ $(document).ready(function() {
             success: function(response) {
                 if(response.status === 'success') {
                     var requiresRegPayment = response.data && response.data.requires_registration_payment;
+                    var requiresPasswordChange = response.data && response.data.requires_password_change;
 
                     if (requiresRegPayment) {
                         if (window.showToast) {
@@ -127,6 +131,20 @@ $(document).ready(function() {
                         setTimeout(function() {
                             window.location.href = '/registration-payment';
                         }, 1000);
+                    } else if (requiresPasswordChange) {
+                        if (window.showToast) {
+                            showToast('Login successful! Please change your password.','success');
+                        } else {
+                            $('#loginMessage')
+                                .removeClass('d-none alert-danger')
+                                .addClass('alert-success')
+                                .html('<i class="bi bi-check-circle"></i> Login successful! Redirecting to change password...');
+                        }
+
+						// Redirect to change-password page first
+						setTimeout(function() {
+							window.location.href = '/change-password';
+						}, 1000);
                     } else {
                         if (window.showToast) {
                             showToast('Login successful! Redirecting...','success');
@@ -137,10 +155,10 @@ $(document).ready(function() {
                                 .html('<i class="bi bi-check-circle"></i> Login successful! Redirecting...');
                         }
 
-						// Redirect to dashboard
-						setTimeout(function() {
-							window.location.href = '/dashboard';
-						}, 1000);
+                        // Redirect to dashboard for normal logins
+                        setTimeout(function() {
+                            window.location.href = '/dashboard';
+                        }, 1000);
                     }
                 } else {
                     if (window.showToast) {
