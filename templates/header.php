@@ -132,12 +132,12 @@ if (!$installed && strpos($_SERVER['REQUEST_URI'], '/install') !== 0) {
                         </li>
                     <?php else: ?>
                         <li class="nav-item">
-                            <a class="nav-link" href="/register">
+                            <a class="nav-link" href="/register" data-bs-toggle="modal" data-bs-target="#registerModal">
                                 <i class="bi bi-person-plus"></i> Register
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="/login">
+                            <a class="nav-link" href="/login" data-bs-toggle="modal" data-bs-target="#loginModal">
                                 <i class="bi bi-box-arrow-in-right"></i> Login
                             </a>
                         </li>

@@ -11,7 +11,14 @@ require_once __DIR__ . '/../templates/header.php';
 
 // Check if user just registered or logged out
 $registered = isset($_GET['registered']) && $_GET['registered'] == 'true';
-$logged_out = isset($_GET['logged_out']) && $_GET['logged_out'] == 'true';
+
+// One-time logout flash message via cookie
+$logged_out = isset($_COOKIE['flash_logged_out']) && $_COOKIE['flash_logged_out'] === '1';
+if ($logged_out) {
+    $isSecure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    // Clear the flash cookie immediately so it only shows once
+    setcookie('flash_logged_out', '', time() - 3600, '/', '', $isSecure, true);
+}
 ?>
 
 <div class="container mt-5">

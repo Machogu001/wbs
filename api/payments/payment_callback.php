@@ -102,7 +102,7 @@ try {
             $companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
 
             if ($wasInactive) {
-                // Registration fee success: send SMS with account details
+                // Registration fee success: send SMS/Email with account details
                 $messageText = "Dear " . ($user['full_name'] ?? 'Customer') . ",\n" .
                     "Your registration payment of KES " . number_format($amount, 2) .
                     " (Ref: " . $receipt . ") has been received successfully.\n" .
@@ -112,7 +112,7 @@ try {
                     "You can now log in to view your bills and make payments.\n" .
                     $companyName;
             } else {
-                // Normal bill payment SMS
+                // Normal bill payment SMS/Email
                 $messageText = "Dear Customer,\n" .
                     "Your M-Pesa payment of KES " . number_format($amount, 2) .
                     " (Ref: " . $receipt . ") for Account No. " . $accountNumber . " has been received successfully.\n" .
@@ -121,6 +121,17 @@ try {
             }
 
             $sms->send($user['phone_number'], $messageText);
+
+            // Also send an email if the user has an email address
+            if (!empty($user['email'])) {
+                require_once __DIR__ . '/../../includes/Email.php';
+                $email = new Email();
+                $email->send(
+                    $user['email'],
+                    'Payment received',
+                    $messageText
+                );
+            }
         }
 
         // Submit sale to ETIMS gateway if configured
@@ -188,6 +199,17 @@ try {
             }
 
             $sms->send($user['phone_number'], $messageText);
+
+            // Also send an email if the user has an email address
+            if (!empty($user['email'])) {
+                require_once __DIR__ . '/../../includes/Email.php';
+                $email = new Email();
+                $email->send(
+                    $user['email'],
+                    'Payment failed',
+                    $messageText
+                );
+            }
         }
 
         error_log("Payment failed: " . $callback['ResultDesc']);

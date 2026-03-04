@@ -234,6 +234,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 					$companyName;
 				$sms->send($user->phone_number, $messageText);
 
+				// Also send an email if available
+				if (!empty($user->email)) {
+					require_once __DIR__ . '/../../includes/Email.php';
+					$email = new Email();
+					$email->send(
+						$user->email,
+						'Your new water account details',
+						$messageText
+					);
+				}
+
 				$_SESSION['flash_message'] = 'User created successfully.';
 				$_SESSION['flash_type'] = 'success';
 				header('Location: /admin/users');

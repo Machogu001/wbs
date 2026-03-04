@@ -16,6 +16,10 @@ try {
     session_destroy();
 }
 
-// Redirect to login with a flag so we can show a sweet toast
-header('Location: /login?logged_out=true');
+// Set a short-lived flash cookie so we can show a toast once
+$isSecure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+setcookie('flash_logged_out', '1', time() + 60, '/', '', $isSecure, true);
+
+// Redirect to home (landing page)
+header('Location: /');
 exit;

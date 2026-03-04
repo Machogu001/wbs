@@ -161,6 +161,17 @@ try {
         // Ignore SMS failures silently
         $sms->send($user->phone_number, $messageText);
 
+        // Also send an email with the same content if email is provided
+        if (!empty($user->email)) {
+            require_once __DIR__ . '/../../includes/Email.php';
+            $email = new Email();
+            $email->send(
+                $user->email,
+                'Your new water account details',
+                $messageText
+            );
+        }
+
         http_response_code(201);
         echo json_encode(array(
             "status" => "success",

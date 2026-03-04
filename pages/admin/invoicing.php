@@ -130,6 +130,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 							"Pay online: {$payUrl}";
 
 						$sms->send($user['phone_number'], $messageText);
+
+						// Also send an email bill notice if user has email
+						if (!empty($user['email'])) {
+							require_once __DIR__ . '/../../includes/Email.php';
+							$email = new Email();
+							$email->send(
+								$user['email'],
+								'New water bill generated',
+								$messageText
+							);
+						}
 						$reading_id = $readingService->createReading(
 							$user['id'],
 							$user['account_number'],

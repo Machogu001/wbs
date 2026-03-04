@@ -8,6 +8,7 @@ if(!isset($_SESSION['user_id'])) {
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/User.php';
 require_once __DIR__ . '/../includes/SMS.php';
+require_once __DIR__ . '/../includes/Email.php';
 
 $message = null;
 $message_type = 'success';
@@ -99,6 +100,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 						throw new Exception('Failed to send OTP SMS. Please try again.');
 					}
 
+					// Also send OTP via email to the current email address if available
+					if (!empty($user['email'])) {
+						$email = new Email();
+						$email->send(
+							$user['email'],
+							'OTP to change your phone number',
+							$messageText
+						);
+					}
+
 						$_SESSION['phone_change_otp'] = [
 						'code' => $otp,
 						'expires_at' => time() + 300,
@@ -118,7 +129,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 						throw new Exception('Please enter the OTP sent to your current phone number.');
 					}
 					if (empty($_SESSION['phone_change_otp'])) {
-						throw new Exception('No phone change request found or OTP has expired. Please request a new OTP.');
+						// No active phone change request (already used, expired, or refreshed)
+						$_SESSION['profile_message'] = 'No active phone change request. If you already updated your phone number, you can ignore this message. Otherwise, please request a new OTP.';
+						$_SESSION['profile_message_type'] = 'info';
+						$_SESSION['profile_active_section'] = $activeSection;
+						header('Location: /profile');
+						exit;
 					}
 					$otpData = $_SESSION['phone_change_otp'];
 					if (time() > ($otpData['expires_at'] ?? 0)) {
@@ -190,6 +206,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 						throw new Exception('Failed to send OTP SMS. Please try again.');
 					}
 
+					// Also send OTP via email to the current email address if available
+					if (!empty($currentEmail)) {
+						$email = new Email();
+						$email->send(
+							$currentEmail,
+							'OTP to change your email address',
+							$messageText
+						);
+					}
+
 						$_SESSION['email_change_otp'] = [
 						'code' => $otp,
 						'expires_at' => time() + 300,
@@ -209,7 +235,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 						throw new Exception('Please enter the OTP sent via SMS.');
 					}
 					if (empty($_SESSION['email_change_otp'])) {
-						throw new Exception('No email change request found or OTP has expired. Please request a new OTP.');
+						// No active email change request (already used, expired, or refreshed)
+						$_SESSION['profile_message'] = 'No active email change request. If you already updated your email address, you can ignore this message. Otherwise, please request a new OTP.';
+						$_SESSION['profile_message_type'] = 'info';
+						$_SESSION['profile_active_section'] = $activeSection;
+						header('Location: /profile');
+						exit;
 					}
 					$otpData = $_SESSION['email_change_otp'];
 					if (time() > ($otpData['expires_at'] ?? 0)) {
@@ -364,7 +395,7 @@ require_once __DIR__ . '/../templates/header.php';
 					</div>
 					<div id="change_phone_section" class="profile-change-section <?php echo $activeSection === 'change_phone' ? '' : 'd-none'; ?>">
 						<h5 class="card-title">Change Phone Number</h5>
-						<p class="text-muted small mb-2">An OTP SMS will be sent to your current phone number before the change is applied.</p>
+						<p class="text-muted small mb-2">An OTP will be sent via SMS (and email if available) to your current contact details before the change is applied.</p>
 						<form method="POST">
 							<input type="hidden" name="action" value="request_or_confirm_phone">
 							<input type="hidden" name="form_action" value="">
@@ -387,7 +418,7 @@ require_once __DIR__ . '/../templates/header.php';
 					</div>
 					<div id="change_email_section" class="profile-change-section <?php echo $activeSection === 'change_email' ? '' : 'd-none'; ?>">
 						<h5 class="card-title">Change Email Address</h5>
-						<p class="text-muted small mb-2">An OTP SMS will be sent to your registered phone number before the change is applied.</p>
+						<p class="text-muted small mb-2">An OTP will be sent via SMS (and email if available) to your registered contacts before the change is applied.</p>
 						<form method="POST">
 							<input type="hidden" name="action" value="request_or_confirm_email">
 							<input type="hidden" name="form_action" value="">

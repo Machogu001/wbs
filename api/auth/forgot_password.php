@@ -40,7 +40,18 @@ try {
         $message = "Your new WBS portal password is: {$newPassword}. Please login and change it immediately.";
         $smsResult = $sms->send($userRow['phone_number'], $message);
 
-        // We intentionally ignore detailed SMS errors in the public message
+        // Also send an email if the user has an email address
+        if (!empty($userRow['email'])) {
+            require_once __DIR__ . '/../../includes/Email.php';
+            $email = new Email();
+            $email->send(
+                $userRow['email'],
+                'Your new WBS portal password',
+                $message
+            );
+        }
+
+        // We intentionally ignore detailed SMS/Email errors in the public message
     }
 
     http_response_code(200);
