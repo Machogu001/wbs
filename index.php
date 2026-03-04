@@ -67,7 +67,8 @@ $routes = [
     'admin/users' => 'pages/admin/users.php',
     'admin/invoicing' => 'pages/admin/invoicing.php',
     'admin/reports' => 'pages/admin/reports.php',
-    'admin/complaints' => 'pages/admin/complaints.php'
+    'admin/complaints' => 'pages/admin/complaints.php',
+    'admin/activity_log' => 'pages/admin/activity_log.php'
 ];
 
 // Check if route exists

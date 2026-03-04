@@ -230,6 +230,37 @@ main.container-fluid {
   padding: var(--space-6);
 }
 
+/* Dashboard statistic cards */
+.dashboard-stat-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-stat-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -40%;
+  bottom: -40%;
+  height: 80%;
+  background: radial-gradient(circle at top, rgba(255, 255, 255, 0.45), transparent 60%);
+  opacity: 0.9;
+}
+
+.dashboard-stat-card .card-body {
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 575.98px) {
+  .dashboard-stat-card .card-text.display-6 {
+    font-size: 1.6rem;
+  }
+
+  .dashboard-stat-card .card-body {
+    padding: var(--space-4);
+  }
+}
+
 /* ===== BUTTONS ===== */
 .btn {
   border-radius: var(--border-radius-sm);
@@ -604,6 +635,10 @@ footer.bg-dark a:hover {
     padding: var(--space-2) 0.6rem;
     font-size: 0.85rem;
   }
+
+  .bills-filter-nav {
+    margin-bottom: var(--space-2);
+  }
 }
 
 @media (max-width: 575.98px) {
@@ -614,5 +649,20 @@ footer.bg-dark a:hover {
   .quick-links-list .btn-quick-link {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .bills-filter-nav {
+    width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .bills-filter-nav .nav-link {
+    font-size: 0.9rem;
+    padding-inline: 0.75rem;
+  }
+
+  .bills-search-input {
+    width: 100%;
   }
 }

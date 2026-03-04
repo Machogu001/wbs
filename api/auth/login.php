@@ -4,6 +4,99 @@ require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/User.php';
 require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/Payment.php';
+require_once __DIR__ . '/../../includes/ActivityLog.php';
+
+// Simple login rate limiting to protect against brute-force attacks
+const LOGIN_MAX_ATTEMPTS = 5;          // maximum failed attempts
+const LOGIN_WINDOW_SECONDS = 600;      // window size in seconds (10 minutes)
+
+function getClientIp(): string {
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $parts = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+        return trim($parts[0]);
+    }
+    return $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+}
+
+function ensureLoginAttemptsTable(PDO $db): void {
+    $sql = "CREATE TABLE IF NOT EXISTS login_attempts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                identifier VARCHAR(255) NOT NULL,
+                ip_address VARCHAR(45) NOT NULL,
+                attempts INT NOT NULL DEFAULT 0,
+                last_attempt_at DATETIME NOT NULL,
+                INDEX idx_identifier_ip (identifier, ip_address),
+                INDEX idx_last_attempt_at (last_attempt_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+    $db->exec($sql);
+}
+
+function isRateLimited(PDO $db, string $identifier, string $ip): bool {
+    $stmt = $db->prepare("SELECT attempts, last_attempt_at FROM login_attempts WHERE identifier = :identifier AND ip_address = :ip LIMIT 1");
+    $stmt->bindParam(':identifier', $identifier);
+    $stmt->bindParam(':ip', $ip);
+    $stmt->execute();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        return false;
+    }
+
+    $lastAttemptTs = strtotime($row['last_attempt_at']);
+    if ($lastAttemptTs === false) {
+        return false;
+    }
+
+    if ((time() - $lastAttemptTs) > LOGIN_WINDOW_SECONDS) {
+        // Window has passed; not rate limited
+        return false;
+    }
+
+    return ((int)$row['attempts'] >= LOGIN_MAX_ATTEMPTS);
+}
+
+function recordFailedAttempt(PDO $db, string $identifier, string $ip): void {
+    $now = date('Y-m-d H:i:s');
+
+    $stmt = $db->prepare("SELECT id, attempts, last_attempt_at FROM login_attempts WHERE identifier = :identifier AND ip_address = :ip LIMIT 1");
+    $stmt->bindParam(':identifier', $identifier);
+    $stmt->bindParam(':ip', $ip);
+    $stmt->execute();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($row) {
+        $lastAttemptTs = strtotime($row['last_attempt_at']);
+        $attempts = (int)$row['attempts'];
+
+        if ($lastAttemptTs === false || (time() - $lastAttemptTs) > LOGIN_WINDOW_SECONDS) {
+            // Reset window
+            $attempts = 1;
+        } else {
+            $attempts++;
+        }
+
+        $update = $db->prepare("UPDATE login_attempts SET attempts = :attempts, last_attempt_at = :last_attempt_at WHERE id = :id");
+        $update->bindParam(':attempts', $attempts, PDO::PARAM_INT);
+        $update->bindParam(':last_attempt_at', $now);
+        $update->bindParam(':id', $row['id'], PDO::PARAM_INT);
+        $update->execute();
+    } else {
+        $attempts = 1;
+        $insert = $db->prepare("INSERT INTO login_attempts (identifier, ip_address, attempts, last_attempt_at) VALUES (:identifier, :ip, :attempts, :last_attempt_at)");
+        $insert->bindParam(':identifier', $identifier);
+        $insert->bindParam(':ip', $ip);
+        $insert->bindParam(':attempts', $attempts, PDO::PARAM_INT);
+        $insert->bindParam(':last_attempt_at', $now);
+        $insert->execute();
+    }
+}
+
+function clearLoginAttempts(PDO $db, string $identifier, string $ip): void {
+    $stmt = $db->prepare("DELETE FROM login_attempts WHERE identifier = :identifier AND ip_address = :ip");
+    $stmt->bindParam(':identifier', $identifier);
+    $stmt->bindParam(':ip', $ip);
+    $stmt->execute();
+}
 
 try {
     $database = new Database();
@@ -18,21 +111,49 @@ try {
     if(!$data) {
         throw new Exception("Invalid JSON input");
     }
-    
+
     // Validate required fields
     if(empty($data->identifier) || empty($data->password)) {
         throw new Exception("Account number, phone or email and password are required");
     }
-    
+
+    $identifier = (string)$data->identifier;
+    $clientIp = getClientIp();
+
+    // Ensure login attempts table exists and enforce rate limit before checking credentials
+    ensureLoginAttemptsTable($db);
+    if (isRateLimited($db, $identifier, $clientIp)) {
+        http_response_code(429);
+        echo json_encode(array(
+            "status" => "error",
+            "message" => "Too many login attempts. Please try again after a few minutes."
+        ));
+        return;
+    }
+
     $user = new User($db);
     $auth = new Auth($db);
-    
+    $logger = new ActivityLog($db);
+
     // Attempt login with account number, phone number, or email (active users only)
-    $user_data = $user->login($data->identifier, $data->password);
+    $user_data = $user->login($identifier, $data->password);
     
     if($user_data) {
         // Start session and login
         $auth->login($user_data['id'], $user_data);
+
+        // Log successful login
+        $logger->log(
+            $user_data['id'],
+            'login',
+            'user',
+            $user_data['id'],
+            'User logged in successfully',
+            array('identifier' => $identifier)
+        );
+
+        // Successful login: clear failed attempts for this identifier + IP
+        clearLoginAttempts($db, $identifier, $clientIp);
 
         $requiresPasswordChange = !empty($user_data['must_change_password']);
         
@@ -49,7 +170,7 @@ try {
         ));
     } else {
         // If normal login fails, check if credentials match a non-active account
-        $authRow = $user->getAuthRowByIdentifier($data->identifier);
+        $authRow = $user->getAuthRowByIdentifier($identifier);
 
         if ($authRow && password_verify($data->password, $authRow['password_hash'])) {
             // Credentials are correct but account is not active
@@ -61,6 +182,16 @@ try {
                 $userPayload = $authRow;
                 unset($userPayload['password_hash']);
                 $auth->login($userPayload['id'], $userPayload);
+
+                // Log login for non-active account (registration payment flow)
+                $logger->log(
+                    $userPayload['id'],
+                    'login',
+                    'user',
+                    $userPayload['id'],
+                    'User logged in (registration payment required)',
+                    array('identifier' => $identifier, 'status' => $authRow['status'])
+                );
 
                 $registrationPaymentData = null;
                 if ($pendingPayment) {
@@ -81,16 +212,23 @@ try {
                         "registration_payment" => $registrationPaymentData
                     )
                 ));
+                // Treat this as a successful login from a rate-limiting perspective
+                clearLoginAttempts($db, $identifier, $clientIp);
                 return;
             }
         }
 
         // Fallback: invalid credentials or non-activation with wrong password
+        recordFailedAttempt($db, $identifier, $clientIp);
         throw new Exception("Invalid account, phone/email or password");
     }
     
 } catch(Exception $e) {
-    http_response_code(401);
+    // Preserve any specific status code that may have been set (e.g. 429)
+    $currentCode = http_response_code();
+    if ($currentCode < 400 || $currentCode === 200) {
+        http_response_code(401);
+    }
     echo json_encode(array(
         "status" => "error",
         "message" => $e->getMessage()

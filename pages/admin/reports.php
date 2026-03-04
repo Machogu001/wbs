@@ -74,7 +74,7 @@ $settingsService = new BillingSettings($db);
 $settings = $settingsService->getSettings();
 $currency = isset($settings['currency_code']) && $settings['currency_code'] ? $settings['currency_code'] : 'KES';
 
-// Handle CSV exports for payments or bills before rendering HTML
+// Handle CSV/PDF exports for payments, bills, or usage before rendering HTML
 if (isset($_GET['export'])) {
 	$exportType = $_GET['export'];
 	// Build common WHERE fragments for reuse
@@ -211,6 +211,70 @@ if (isset($_GET['export'])) {
 			$dompdf->setPaper('A4', 'portrait');
 			$dompdf->render();
 			$dompdf->stream('bills_report_' . $from_str . '_to_' . $to_str . '.pdf', ['Attachment' => true]);
+		}
+		exit;
+	} elseif (in_array($exportType, ['usage', 'usage_pdf'], true)) {
+		$sqlWhere = "WHERE DATE(mr.billing_month) BETWEEN :from AND :to";
+		if ($search_term !== '') {
+			$sqlWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search)";
+		}
+		$sql = "SELECT DATE_FORMAT(mr.billing_month, '%Y-%m') AS ym, u.account_number, u.full_name,
+				MAX(mr.current_reading) - MIN(mr.current_reading) AS usage_units
+			FROM meter_readings mr
+			LEFT JOIN users u ON mr.user_id = u.id
+			" . $sqlWhere . "
+			GROUP BY ym, u.id
+			ORDER BY ym DESC, u.account_number";
+		$stmt = $db->prepare($sql);
+		$stmt->bindParam(':from', $from_str);
+		$stmt->bindParam(':to', $to_str);
+		if ($search_term !== '') {
+			$likeUsage = '%' . $search_term . '%';
+			$stmt->bindParam(':search', $likeUsage, PDO::PARAM_STR);
+		}
+		$stmt->execute();
+		if ($exportType === 'usage') {
+			header('Content-Type: text/csv; charset=utf-8');
+			$filename = 'usage_report_' . $from_str . '_to_' . $to_str . '.csv';
+			header('Content-Disposition: attachment; filename="' . $filename . '"');
+			$out = fopen('php://output', 'w');
+			fputcsv($out, ['Month', 'Account', 'Customer', 'Usage (units)']);
+			while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+				$usageUnits = isset($row['usage_units']) ? (float)$row['usage_units'] : 0.0;
+				fputcsv($out, [
+					$row['ym'],
+					$row['account_number'],
+					$row['full_name'],
+					$usageUnits,
+				]);
+			}
+			fclose($out);
+		} else {
+			// usage_pdf
+			require_once __DIR__ . '/../../vendor/autoload.php';
+			$dompdf = new Dompdf();
+			$rowsHtml = '';
+			while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+				$usageUnits = isset($row['usage_units']) ? (float)$row['usage_units'] : 0.0;
+				$rowsHtml .= '<tr>'
+					. '<td>' . htmlspecialchars($row['ym']) . '</td>'
+					. '<td>' . htmlspecialchars($row['account_number']) . '</td>'
+					. '<td>' . htmlspecialchars($row['full_name']) . '</td>'
+					. '<td style="text-align:right;">' . number_format($usageUnits, 2) . '</td>'
+				. '</tr>';
+			}
+			$html = '<html><head><meta charset="UTF-8"><title>Usage Report</title>
+				<style>body{font-family:DejaVu Sans,Arial,sans-serif;font-size:11px;color:#111827;}h1{font-size:18px;margin-bottom:4px;}table{width:100%;border-collapse:collapse;margin-top:10px;}th,td{border:1px solid #e5e7eb;padding:4px 6px;}th{background:#f9fafb;text-align:left;font-size:10px;}td{text-align:left;font-size:10px;}</style>
+				</head><body>' .
+				'<h1>Water Usage Report</h1>' .
+				'<p>Period: ' . htmlspecialchars($from_str) . ' to ' . htmlspecialchars($to_str) . '</p>' .
+				'<table><thead><tr>' .
+				'<th>Month</th><th>Account</th><th>Customer</th><th>Usage (units)</th>' .
+				'</tr></thead><tbody>' . $rowsHtml . '</tbody></table></body></html>';
+			$dompdf->loadHtml($html);
+			$dompdf->setPaper('A4', 'portrait');
+			$dompdf->render();
+			$dompdf->stream('usage_report_' . $from_str . '_to_' . $to_str . '.pdf', ['Attachment' => true]);
 		}
 		exit;
 	}
@@ -560,6 +624,21 @@ require_once __DIR__ . '/../../templates/header.php';
 							<span>Invoicing</span>
 						</a>
 						</div>
+					</div>
+				</div>
+				<div class="card shadow-sm">
+					<div class="card-header d-flex justify-content-between align-items-center">
+						<h6 class="card-title mb-0"><i class="bi bi-droplet-half me-1"></i> Usage Exports</h6>
+					</div>
+					<div class="card-body py-3 d-flex flex-wrap gap-2">
+						<?php $usageExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage']))); ?>
+						<?php $usageExportPdfUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage_pdf']))); ?>
+						<a href="<?php echo $usageExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm">
+							<i class="bi bi-download"></i> Usage CSV
+						</a>
+						<a href="<?php echo $usageExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm">
+							<i class="bi bi-file-earmark-pdf"></i> Usage PDF
+						</a>
 					</div>
 				</div>
 			</div>

@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/Complaint.php';
+require_once __DIR__ . '/../../includes/ActivityLog.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -26,6 +27,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
     if ($id > 0 && in_array($status, ['open','in_progress','resolved','closed'], true)) {
         $complaintService = new Complaint($db);
         if ($complaintService->updateStatus($id, $status)) {
+            try {
+                $logger = new ActivityLog($db);
+                $logger->log(
+                    $_SESSION['user_id'] ?? null,
+                    'update_complaint_status',
+                    'complaint',
+                    $id,
+                    'Updated complaint status to ' . $status,
+                    array('status' => $status)
+                );
+            } catch (Exception $e) {
+                // Ignore logging errors
+            }
             $_SESSION['flash_message'] = "Complaint updated.";
             $_SESSION['flash_type'] = "success";
             header("Location: /admin/complaints");

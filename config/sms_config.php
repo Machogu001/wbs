@@ -15,10 +15,14 @@ if (!function_exists('wbs_load_env')) {
         }
         foreach ($lines as $line) {
             $line = trim($line);
-            if ($line === '' || str_starts_with($line, '#')) {
+            if ($line === '') {
                 continue;
             }
-            if (!str_contains($line, '=')) {
+            // Skip comments
+            if ($line[0] === '#' || $line[0] === ';') {
+                continue;
+            }
+            if (strpos($line, '=') === false) {
                 continue;
             }
             list($name, $value) = explode('=', $line, 2);
@@ -27,10 +31,15 @@ if (!function_exists('wbs_load_env')) {
             if ($name === '') {
                 continue;
             }
-            // Strip surrounding quotes
-            if ((str_starts_with($value, '"') && str_ends_with($value, '"')) ||
-                (str_starts_with($value, "'") && str_ends_with($value, "'"))) {
-                $value = substr($value, 1, -1);
+            // Strip surrounding single or double quotes if present
+            $len = strlen($value);
+            if ($len >= 2) {
+                $firstChar = $value[0];
+                $lastChar = $value[$len - 1];
+                if (($firstChar === '"' && $lastChar === '"') ||
+                    ($firstChar === "'" && $lastChar === "'")) {
+                    $value = substr($value, 1, -1);
+                }
             }
             if (getenv($name) === false) {
                 putenv($name . '=' . $value);

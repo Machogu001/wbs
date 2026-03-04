@@ -31,11 +31,16 @@ try {
     if(empty($data->bill_id) || empty($data->phone)) {
         throw new Exception("Bill ID and phone number are required");
     }
+
+    $billId = (int)$data->bill_id;
+    if ($billId <= 0) {
+        throw new Exception("Invalid Bill ID");
+    }
     
     $bill = new Bill($db);
     
-    // Get bill details
-    $billData = $bill->getById($data->bill_id, $_SESSION['user_id']);
+    // Get bill details (enforce integer bill ID and ownership)
+    $billData = $bill->getById($billId, $_SESSION['user_id']);
     
     if(!$billData) {
         throw new Exception("Bill not found or access denied");

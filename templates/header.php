@@ -63,7 +63,7 @@ if (!$installed && strpos($_SERVER['REQUEST_URI'], '/install') !== 0) {
     </div>
 
     <?php if(!isset($hide_nav) || !$hide_nav): ?>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
         <div class="container">
             <a class="navbar-brand" href="../index.php">
                 <i class="bi bi-droplet"></i> Water Billing System
@@ -103,6 +103,7 @@ if (!$installed && strpos($_SERVER['REQUEST_URI'], '/install') !== 0) {
                                 <?php if(isset($_SESSION['user_data']['role']) && $_SESSION['user_data']['role'] === 'admin'): ?>
                                     <li><a class="dropdown-item" href="/admin/users"><i class="bi bi-people"></i> Users</a></li>
                                     <li><a class="dropdown-item" href="/admin/reports"><i class="bi bi-graph-up"></i> Reports</a></li>
+                                    <li><a class="dropdown-item" href="/admin/activity_log"><i class="bi bi-clipboard-check"></i> Activity Log</a></li>
                                     <li><hr class="dropdown-divider"></li>
                                 <?php endif; ?>
                                 <li><a class="dropdown-item" href="/bills"><i class="bi bi-receipt"></i> My Bills</a></li>

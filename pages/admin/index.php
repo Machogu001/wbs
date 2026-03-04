@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/User.php';
 require_once __DIR__ . '/../../includes/Bill.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
+require_once __DIR__ . '/../../includes/ActivityLog.php';
 require_once __DIR__ . '/../../includes/MeterReading.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/PaymentLink.php';
@@ -49,6 +50,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 			$message_type = "danger";
 		} else {
 			if ($settingsService->updateSettings($rate, $service, $company_pin, $etims_integration_url, $etims_api_key, $company_name, $support_phone, $support_email, $currency_code, $financial_year_start_month, $vat_rate, $etims_taxation_type_code, $registration_fee)) {
+				// Log activity
+				try {
+					$logger = new ActivityLog($db);
+					$logger->log(
+						$_SESSION['user_id'] ?? null,
+						'update_settings',
+						'billing_settings',
+						1,
+						'Updated billing and company settings',
+						array(
+							'rate_per_unit' => $rate,
+							'service_charge' => $service,
+							'company_name' => $company_name,
+							'support_phone' => $support_phone,
+							'support_email' => $support_email,
+							'currency_code' => $currency_code
+						)
+					);
+				} catch (Exception $e) {
+					// Ignore logging errors
+				}
 				$_SESSION['flash_message'] = "Billing settings updated successfully.";
 				$_SESSION['flash_type'] = "success";
 				header("Location: /admin");

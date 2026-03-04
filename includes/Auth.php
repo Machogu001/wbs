@@ -10,6 +10,11 @@ class Auth {
     
     // Login user
     public function login($user_id, $user_data) {
+        // Prevent session fixation by regenerating the session ID on login
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
+
         $_SESSION['user_id'] = $user_id;
         $_SESSION['user_data'] = $user_data;
         $_SESSION['last_activity'] = time();

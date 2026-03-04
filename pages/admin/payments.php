@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/User.php';
 require_once __DIR__ . '/../../includes/Bill.php';
+require_once __DIR__ . '/../../includes/ActivityLog.php';
 require_once __DIR__ . '/../../includes/CreditNote.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
 require_once __DIR__ . '/../../includes/Etims.php';
@@ -100,6 +101,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 					// If full amount paid, mark bill as paid; otherwise leave as pending/overdue (partial payment / balance remains)
 					if (abs($billAmount - $amount) <= 0.01) {
 						$billService->updateStatus($billId, 'paid');
+					}
+
+					// Log manual payment entry
+					try {
+						$logger = new ActivityLog($db);
+						$logger->log(
+							$_SESSION['user_id'] ?? null,
+							'record_manual_payment',
+							'payment',
+							$paymentId,
+							'Recorded manual payment for bill #' . $billId,
+							array(
+								'bill_id' => $billId,
+								'amount' => $amount,
+								'tx_code' => $txnCode,
+								'paid_date' => $paidDateTime
+							)
+						);
+					} catch (Exception $e) {
+						// Ignore logging errors
 					}
 
 					// Submit to ETIMS if configured

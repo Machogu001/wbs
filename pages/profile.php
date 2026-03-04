@@ -9,6 +9,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/User.php';
 require_once __DIR__ . '/../includes/SMS.php';
 require_once __DIR__ . '/../includes/Email.php';
+require_once __DIR__ . '/../includes/ActivityLog.php';
 
 $message = null;
 $message_type = 'success';
@@ -17,6 +18,29 @@ $database = new Database();
 $db = $database->getConnection();
 $user = $_SESSION['user_data'] ?? [];
 $activeSection = '';
+
+// Fetch last login and logout from activity log
+$lastLogin = null;
+$lastLogout = null;
+if ($db && !empty($_SESSION['user_id'])) {
+	try {
+		$userId = (int)$_SESSION['user_id'];
+		$sqlLogin = "SELECT created_at FROM activity_log WHERE user_id = :uid AND action = 'login' ORDER BY created_at DESC LIMIT 1";
+		$stmtLogin = $db->prepare($sqlLogin);
+		$stmtLogin->bindParam(':uid', $userId, PDO::PARAM_INT);
+		$stmtLogin->execute();
+		$lastLogin = $stmtLogin->fetchColumn() ?: null;
+
+		$sqlLogout = "SELECT created_at FROM activity_log WHERE user_id = :uid AND action = 'logout' ORDER BY created_at DESC LIMIT 1";
+		$stmtLogout = $db->prepare($sqlLogout);
+		$stmtLogout->bindParam(':uid', $userId, PDO::PARAM_INT);
+		$stmtLogout->execute();
+		$lastLogout = $stmtLogout->fetchColumn() ?: null;
+	} catch (Exception $e) {
+		$lastLogin = null;
+		$lastLogout = null;
+	}
+}
 
 
 // Load any flash message/section from previous redirect
@@ -371,6 +395,18 @@ require_once __DIR__ . '/../templates/header.php';
 							<label class="form-label">Meter Number</label>
 							<div class="form-control bg-light"><?php echo htmlspecialchars($user['meter_number'] ?? ''); ?></div>
 						</div>
+						<?php if ($lastLogin): ?>
+						<div class="mb-3">
+							<label class="form-label">Last Login</label>
+							<div class="form-control bg-light"><?php echo htmlspecialchars(date('d M Y, H:i', strtotime($lastLogin))); ?></div>
+						</div>
+						<?php endif; ?>
+						<?php if ($lastLogout): ?>
+						<div class="mb-3">
+							<label class="form-label">Last Logout</label>
+							<div class="form-control bg-light"><?php echo htmlspecialchars(date('d M Y, H:i', strtotime($lastLogout))); ?></div>
+						</div>
+						<?php endif; ?>
 						<div class="mb-3">
 							<label class="form-label">PIN / Tax ID (optional)</label>
 							<input type="text" name="tax_pin" class="form-control" value="<?php echo htmlspecialchars($user['tax_pin'] ?? ''); ?>" placeholder="e.g. P012345678Z">
