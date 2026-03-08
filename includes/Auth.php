@@ -7,6 +7,27 @@ class Auth {
         session_start();
         $this->conn = $db;
     }
+
+    // Return current authenticated user data (or null if not logged in)
+    // This is a lightweight helper primarily for API endpoints.
+    public function check() {
+        if (!$this->isLoggedIn()) {
+            return null;
+        }
+
+        // Prefer the richer user_data payload if available
+        if (isset($_SESSION['user_data']) && is_array($_SESSION['user_data'])) {
+            return $_SESSION['user_data'];
+        }
+
+        // Fallback: build a minimal user array from the ID
+        $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+        if (!$userId) {
+            return null;
+        }
+
+        return ['id' => $userId];
+    }
     
     // Login user
     public function login($user_id, $user_data) {
@@ -66,8 +87,81 @@ class Auth {
             return false;
         }
         
-        return isset($_SESSION['user_data']['role']) && 
-               $_SESSION['user_data']['role'] == 'admin';
+        return $this->hasRole('admin');
+    }
+
+    // Get current user's primary role (defaults to 'customer' if not set)
+    public function getRole() {
+        if (!$this->isLoggedIn()) {
+            return null;
+        }
+
+        $role = $_SESSION['user_data']['role'] ?? null;
+        if (!is_string($role) || $role === '') {
+            return 'customer';
+        }
+        return strtolower($role);
+    }
+
+    // Check if the current user has one of the given roles
+    // $role can be a string role name or an array of names
+    public function hasRole($role) {
+        if (!$this->isLoggedIn()) {
+            return false;
+        }
+
+        $current = strtolower((string)$this->getRole());
+        if (is_array($role)) {
+            foreach ($role as $r) {
+                if ($current === strtolower((string)$r)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        return $current === strtolower((string)$role);
+    }
+
+    // Check if the current user has a named permission.
+    // Admin users implicitly have all permissions.
+    public function hasPermission($permission) {
+        if (!$this->isLoggedIn()) {
+            return false;
+        }
+
+        // Admin (superuser) can do everything
+        if ($this->hasRole('admin')) {
+            return true;
+        }
+
+        $permission = (string)$permission;
+
+        // Default role-to-permissions mapping.
+        // This can be expanded as more granular checks are needed.
+        $map = [
+            'customer' => [
+                'view_own_bills',
+                'submit_own_reading',
+            ],
+            'reader' => [
+                'submit_reading',
+            ],
+            'finance' => [
+                'view_payments',
+                'view_reports',
+            ],
+            'support' => [
+                'handle_complaints',
+            ],
+        ];
+
+        $role = strtolower((string)$this->getRole());
+        if (!isset($map[$role])) {
+            return false;
+        }
+
+        return in_array($permission, $map[$role], true);
     }
     
     // Get current user ID

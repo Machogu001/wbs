@@ -158,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 						if ($reading_id) {
 							$_SESSION['flash_message'] = "Meter reading submitted and approved. Bill created and pending payment.";
 							$_SESSION['flash_type'] = "success";
-							header("Location: /admin/invoicing");
+							header("Location: /invoicing");
 							exit;
 						} else {
 							$message = "Failed to submit meter reading.";

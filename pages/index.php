@@ -13,6 +13,7 @@ if ($loggedOut) {
 
 // Load settings for registration fee display inside landing registration modal
 $registrationFee = 0.00;
+$currencyCode = 'KES';
 try {
     if (file_exists(__DIR__ . '/../config/database.php')) {
         require_once __DIR__ . '/../config/database.php';
@@ -50,9 +51,15 @@ if ($loggedOut): ?>
         <div class="row align-items-center gy-4">
             <div class="col-lg-6">
                 <span class="badge bg-light text-primary mb-3">
-                    <i class="bi bi-droplet me-1"></i> Water Billing System
+                    <i class="bi bi-droplet me-1"></i>
+                    <span style="color:#ff4b5c; font-weight:600;">Smart utility billing portal</span>
                 </span>
-                <h1 class="display-5 fw-bold mb-3">Water Billing Made Easy</h1>
+                <h1 class="display-5 fw-bold mb-3">
+                    <span style="color:#22c55e;">Water</span>
+                    <span style="color:#ef4444;">Billing</span>
+                    <span style="color:#ffffff;">Made</span>
+                    <span style="color:#facc15;">Easy</span>
+                </h1>
                 <p class="lead mb-4">
                     Manage your water bills, pay securely via M-Pesa, and track
                     your consumption and payments from a single, modern portal.
@@ -70,6 +77,16 @@ if ($loggedOut): ?>
                         Designed for utility teams, system administrators and customers who
                         need clear, timely billing – on desktop or mobile.
                     </p>
+                    <?php if (!empty($registrationFee) && $registrationFee > 0): ?>
+                    <p class="small mt-2 mb-0 opacity-75">
+                        A one-time non-refundable installation/registration fee of
+                        <strong><?php echo htmlspecialchars($currencyCode); ?>
+                        <?php echo number_format($registrationFee, 2); ?></strong>
+                        applies when opening a new water connection account.
+                        See the
+                        <a href="#" class="text-decoration-underline text-light" data-bs-toggle="modal" data-bs-target="#termsModal">Terms and Conditions</a>.
+                    </p>
+                    <?php endif; ?>
                 <?php else: ?>
                     <div class="d-flex flex-wrap gap-3 align-items-center mb-3">
                         <a href="/dashboard" class="btn btn-light btn-lg">
@@ -155,8 +172,10 @@ if ($loggedOut): ?>
 <section class="py-5 bg-light">
     <div class="container">
         <div class="text-center mb-5">
-            <h2 class="fw-bold mb-2">Why Choose Our System</h2>
-            <p class="text-muted mb-0">Built for utilities who need reliable billing, transparent collections and clear customer communication.</p>
+            <h2 class="fw-bold mb-2 landing-section-title color-cycle" style="color:#0ea5e9;">
+                Why Choose Our System
+            </h2>
+            <p class="mb-0 landing-section-subtitle" style="color:#000;">Built for utilities who need reliable billing, transparent collections and clear customer communication.</p>
         </div>
 
         <div class="row g-4">
@@ -164,8 +183,8 @@ if ($loggedOut): ?>
                 <div class="card h-100 border-0 shadow-sm">
                     <div class="card-body">
                         <div class="mb-3 text-primary"><i class="bi bi-credit-card-2-front fs-3"></i></div>
-                        <h5 class="card-title fw-semibold">Integrated Payments</h5>
-                        <p class="card-text small text-muted mb-0">
+                        <h5 class="card-title fw-semibold landing-feature-title color-cycle" style="color:#0ea5e9;">Integrated Payments</h5>
+                        <p class="card-text small mb-0" style="color:#000;">
                             Customers pay directly via M-Pesa with automatic confirmation, receipting
                             and posting to their accounts.
                         </p>
@@ -176,8 +195,8 @@ if ($loggedOut): ?>
                 <div class="card h-100 border-0 shadow-sm">
                     <div class="card-body">
                         <div class="mb-3 text-primary"><i class="bi bi-chat-dots fs-3"></i></div>
-                        <h5 class="card-title fw-semibold">Smart Notifications</h5>
-                        <p class="card-text small text-muted mb-0">
+                        <h5 class="card-title fw-semibold landing-feature-title color-cycle" style="color:#0ea5e9;">Smart Notifications</h5>
+                        <p class="card-text small mb-0" style="color:#000;">
                             Bills, payment alerts and OTPs go out instantly over SMS and Email to keep
                             customers informed.
                         </p>
@@ -188,8 +207,8 @@ if ($loggedOut): ?>
                 <div class="card h-100 border-0 shadow-sm">
                     <div class="card-body">
                         <div class="mb-3 text-primary"><i class="bi bi-bar-chart-line fs-3"></i></div>
-                        <h5 class="card-title fw-semibold">Usage & History</h5>
-                        <p class="card-text small text-muted mb-0">
+                        <h5 class="card-title fw-semibold landing-feature-title color-cycle" style="color:#0ea5e9;">Usage & History</h5>
+                        <p class="card-text small mb-0" style="color:#000;">
                             Customers and admins can track consumption, previous bills and payments from
                             a single dashboard.
                         </p>

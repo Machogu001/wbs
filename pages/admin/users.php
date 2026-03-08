@@ -97,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$address = trim($_POST['address'] ?? '');
 			$tax_pin = trim($_POST['tax_pin'] ?? '');
 			$connection_type = trim($_POST['connection_type'] ?? 'domestic');
+			$role = isset($_POST['role']) ? strtolower(trim((string)$_POST['role'])) : 'customer';
 			$password = (string)($_POST['password'] ?? '');
 
 			if ($full_name === '' || $phone_number === '' || $id_number === '' || $address === '') {
@@ -113,7 +114,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			}
 
 			// Build update query
-			$sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, connection_type = :connection_type';
+			// Validate role
+			$allowedRoles = ['admin','reader','finance','support','customer'];
+			if (!in_array($role, $allowedRoles, true)) {
+				$role = 'customer';
+			}
+
+			$sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, connection_type = :connection_type, role = :role';
 			$updatePassword = ($password !== '');
 			if ($updatePassword) {
 				$sql .= ', password_hash = :password_hash';
@@ -129,6 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$taxPinValue = $tax_pin !== '' ? $tax_pin : null;
 			$stmt->bindParam(':tax_pin', $taxPinValue);
 			$stmt->bindParam(':connection_type', $connection_type);
+			$stmt->bindParam(':role', $role);
 			if ($updatePassword) {
 				$password_hash = password_hash($password, PASSWORD_BCRYPT);
 				$stmt->bindParam(':password_hash', $password_hash);
@@ -157,6 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$tax_pin = trim($_POST['tax_pin'] ?? '');
 			$connection_type = trim($_POST['connection_type'] ?? 'domestic');
 			$password = (string)($_POST['password'] ?? '');
+			$role = isset($_POST['role']) ? strtolower(trim((string)$_POST['role'])) : 'customer';
 			$registration_already_paid = isset($_POST['registration_already_paid']);
 			$send_stk = isset($_POST['send_stk']);
 			$registration_mpesa_code = trim($_POST['registration_mpesa_code'] ?? '');
@@ -191,7 +200,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$user->meter_number = $account_number;
 			$user->connection_type = $connection_type !== '' ? $connection_type : 'domestic';
 			$user->password = $password;
-			$user->role = 'customer';
+			$allowedRoles = ['admin','reader','finance','support','customer'];
+			if (!in_array($role, $allowedRoles, true)) {
+				$role = 'customer';
+			}
+			$user->role = $role;
 
 			$billService = new Bill($db);
 			$paymentModel = new Payment($db);
@@ -337,7 +350,7 @@ if ($db) {
 		}
 		$offset = ($currentPage - 1) * $perPage;
 
-		$stmtUsers = $db->prepare('SELECT id, account_number, full_name, phone_number, meter_number, status FROM users ORDER BY full_name ASC LIMIT :limit OFFSET :offset');
+		$stmtUsers = $db->prepare('SELECT id, account_number, full_name, phone_number, meter_number, status, role FROM users ORDER BY full_name ASC LIMIT :limit OFFSET :offset');
 		$stmtUsers->bindValue(':limit', $perPage, PDO::PARAM_INT);
 		$stmtUsers->bindValue(':offset', $offset, PDO::PARAM_INT);
 		$stmtUsers->execute();
@@ -403,6 +416,7 @@ require_once __DIR__ . '/../../templates/header.php';
 										<th scope="col">Phone</th>
 										<th scope="col">Meter</th>
 										<th scope="col">Status</th>
+										<th scope="col">Role</th>
 										<th scope="col">Actions</th>
 									</tr>
 								</thead>
@@ -417,6 +431,33 @@ require_once __DIR__ . '/../../templates/header.php';
 												<span class="badge bg-<?php echo ($u['status'] === 'active') ? 'success' : (($u['status'] === 'inactive') ? 'secondary' : 'warning'); ?>">
 													<?php echo htmlspecialchars(ucfirst($u['status'] ?? '')); ?>
 												</span>
+											</td>
+											<td>
+												<?php
+													$roleLabel = $u['role'] ?? 'customer';
+													switch (strtolower((string)$roleLabel)) {
+														case 'admin':
+															$badgeClass = 'danger';
+															$roleText = 'Admin';
+															break;
+														case 'reader':
+															$badgeClass = 'info';
+															$roleText = 'Reader';
+															break;
+														case 'finance':
+															$badgeClass = 'primary';
+															$roleText = 'Finance';
+															break;
+														case 'support':
+															$badgeClass = 'secondary';
+															$roleText = 'Support';
+															break;
+														default:
+															$badgeClass = 'light text-dark';
+															$roleText = 'Customer';
+													}
+												?>
+												<span class="badge bg-<?php echo $badgeClass; ?>"><?php echo htmlspecialchars($roleText); ?></span>
 											</td>
 											<td>
 												<div class="d-flex flex-wrap gap-1">
@@ -566,6 +607,22 @@ require_once __DIR__ . '/../../templates/header.php';
 								<label for="password" class="form-label"><?php echo $isEditMode ? 'Password (leave blank to keep current)' : 'Password *'; ?></label>
 								<input type="password" class="form-control" id="password" name="password" <?php echo $isEditMode ? '' : 'required'; ?>>
 								<div class="form-text"><?php echo $isEditMode ? 'Only set a value if you want to change the password.' : 'The customer can change this password after logging in.'; ?></div>
+							</div>
+						</div>
+						<div class="row">
+							<div class="col-md-6 mb-3">
+								<label for="role" class="form-label">Role</label>
+								<?php
+									$roleValue = isset($_POST['role']) ? strtolower((string)$_POST['role']) : strtolower((string)($editUser['role'] ?? 'customer'));
+								?>
+								<select class="form-select" id="role" name="role">
+									<option value="customer" <?php echo $roleValue === 'customer' ? 'selected' : ''; ?>>Customer</option>
+									<option value="admin" <?php echo $roleValue === 'admin' ? 'selected' : ''; ?>>Admin (full access)</option>
+									<option value="reader" <?php echo $roleValue === 'reader' ? 'selected' : ''; ?>>Reader (meter readings)</option>
+									<option value="finance" <?php echo $roleValue === 'finance' ? 'selected' : ''; ?>>Finance (payments & reports)</option>
+									<option value="support" <?php echo $roleValue === 'support' ? 'selected' : ''; ?>>Support (complaints & helpdesk)</option>
+								</select>
+								<div class="form-text">Determines what this user can access in the system.</div>
 							</div>
 						</div>
 

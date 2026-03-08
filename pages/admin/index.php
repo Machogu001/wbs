@@ -73,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 				}
 				$_SESSION['flash_message'] = "Billing settings updated successfully.";
 				$_SESSION['flash_type'] = "success";
-				header("Location: /admin");
+				header("Location: /settings");
 				exit;
 			} else {
 				$message = "Failed to update billing settings.";
@@ -229,7 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 						if ($reading_id) {
 							$_SESSION['flash_message'] = "Meter reading submitted and approved. Bill created and pending payment.";
 							$_SESSION['flash_type'] = "success";
-							header("Location: /admin");
+							header("Location: /settings");
 							exit;
 						} else {
 							$message = "Failed to submit meter reading.";
@@ -257,7 +257,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 				$readingService->markApproved($reading_id, $_SESSION['user_id']);
 				$_SESSION['flash_message'] = "Reading approved. Pending bill remains for payment.";
 				$_SESSION['flash_type'] = "success";
-				header("Location: /admin");
+				header("Location: /settings");
 				exit;
 			} else {
 				$result = $billService->createBillForUser(
@@ -276,7 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 					$readingService->markApproved($reading_id, $_SESSION['user_id']);
 					$_SESSION['flash_message'] = "Reading approved and bill created. Amount: KES " . number_format($result['amount'], 2) . ".";
 					$_SESSION['flash_type'] = "success";
-					header("Location: /admin");
+					header("Location: /settings");
 					exit;
 				} else {
 					$message = "Failed to create bill from reading.";
@@ -297,7 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 			}
 			$_SESSION['flash_message'] = "Reading rejected. Pending bill cancelled.";
 			$_SESSION['flash_type'] = "success";
-			header("Location: /admin");
+			header("Location: /settings");
 			exit;
 		} else {
 			$message = "Failed to reject reading.";
@@ -321,7 +321,7 @@ if ($db && $settingsService) {
 }
 
 $is_admin_page = true;
-$page_title = "Admin Dashboard";
+$page_title = "System Setting";
 require_once __DIR__ . '/../../templates/header.php';
 ?>
 
@@ -330,7 +330,7 @@ require_once __DIR__ . '/../../templates/header.php';
 		<div class="col-md-12">
 			<div class="admin-page-header d-flex justify-content-between align-items-center">
 				<div>
-					<h2 class="mb-1">Admin Dashboard</h2>
+					<h2 class="mb-1">System Setting</h2>
 					<p class="text-muted mb-0">Manage billing settings and record meter readings.</p>
 				</div>
 				<button type="button" class="btn btn-sm btn-outline-light border" onclick="if(window.showToast){showToast('Sample admin toast working','info');}">

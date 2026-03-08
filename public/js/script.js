@@ -49,6 +49,290 @@ $(document).ready(function() {
             new bootstrap.Tooltip(tooltipTriggerEl);
         });
     }
+
+    // Contact form submission (modal)
+    $('#contactForm').on('submit', function(e) {
+        e.preventDefault();
+
+        var form = this;
+        if (!form.checkValidity()) {
+            e.stopPropagation();
+            $(form).addClass('was-validated');
+            return;
+        }
+
+        var $btn = $('#contactSubmitBtn');
+        showLoading($btn);
+
+        $.ajax({
+    	    url: '/api/contact/send_message',
+            method: 'POST',
+            data: $(form).serialize(),
+            dataType: 'json'
+        }).done(function(resp) {
+            if (resp && resp.success) {
+                if (window.showToast) {
+                    showToast(resp.message || 'Message sent successfully.', 'success');
+                }
+                form.reset();
+                $(form).removeClass('was-validated');
+                var modalEl = document.getElementById('contactModal');
+                if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                    var modal = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+                    modal.hide();
+                }
+            } else {
+                if (window.showToast) {
+                    showToast((resp && resp.message) || 'Failed to send your message.', 'danger');
+                }
+            }
+        }).fail(function() {
+            if (window.showToast) {
+                showToast('Failed to send your message. Please try again later.', 'danger');
+            }
+        }).always(function() {
+            hideLoading($btn);
+        });
+    });
+
+    // --- Live Support Chat (logged-in users) ---
+    var $chatToggle = $('#supportChatToggle');
+    var $chatWindow = $('#supportChatWindow');
+    var $chatMessages = $('#supportChatMessages');
+    var $chatForm = $('#supportChatForm');
+    var $chatInput = $('#supportChatMessageInput');
+    var $chatSendBtn = $('#supportChatSendBtn');
+    var $chatTypingIndicator = $('#supportChatTypingIndicator');
+    var chatThreadId = null;
+    var chatLastMessageId = null;
+    var chatPollTimer = null;
+    var chatTypingTimeout = null;
+    var chatTypingState = false;
+
+    var chatLastDateKey = null;
+
+    function formatTimeFromString(str) {
+        if (!str) return '';
+        // Expecting format like "YYYY-MM-DD HH:MM:SS" from MySQL
+        var parts = String(str).split(' ');
+        if (parts.length < 2) return str;
+        var timePart = parts[1];
+        var t = timePart.split(':');
+        if (t.length < 2) return str;
+        var h = t[0];
+        var m = t[1];
+        if (h.length === 1) h = '0' + h;
+        if (m.length === 1) m = '0' + m;
+        return h + ':' + m;
+    }
+
+    function getDateKey(str) {
+        if (!str) return null;
+        var parts = String(str).split(' ');
+        if (!parts[0]) return null;
+        return parts[0];
+    }
+
+    function getDateLabel(key) {
+        if (!key) return '';
+        var today = new Date();
+        var todayKey = today.toISOString().slice(0, 10);
+        var y = new Date();
+        y.setDate(y.getDate() - 1);
+        var yKey = y.toISOString().slice(0, 10);
+        if (key === todayKey) return 'Today';
+        if (key === yKey) return 'Yesterday';
+        return key;
+    }
+
+    function appendChatMessages(msgs) {
+        if (!Array.isArray(msgs) || !msgs.length) return;
+
+        msgs.forEach(function(m) {
+            chatLastMessageId = m.id;
+            var isFromCurrentUser = false;
+            if (typeof window.CURRENT_USER_ID === 'number' && m.sender_id) {
+                isFromCurrentUser = Number(m.sender_id) === window.CURRENT_USER_ID;
+            } else {
+                // Fallback to sender_type when sender_id is missing
+                isFromCurrentUser = (m.sender_type !== 'admin');
+            }
+            var cls = isFromCurrentUser ? 'support-chat-message-user' : 'support-chat-message-admin';
+            var createdRaw = m.created_at ? m.created_at : '';
+            var dateKey = getDateKey(createdRaw);
+            if (dateKey && dateKey !== chatLastDateKey) {
+                chatLastDateKey = dateKey;
+                var label = getDateLabel(dateKey);
+                if (label) {
+                    var $div = $('<div/>', { 'class': 'support-chat-day-divider', text: label });
+                    $chatMessages.append($div);
+                }
+            }
+            var created = formatTimeFromString(createdRaw);
+            var safeText = (m.message || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+            var $row = $('<div/>', { 'class': 'support-chat-message ' + cls });
+            var $bubble = $('<div/>', { 'class': 'support-chat-bubble' });
+            var $time = $('<span/>', { 'class': 'support-chat-timestamp', text: created });
+            $bubble.text(safeText);
+            if (created) {
+                $row.append($bubble).append($time);
+            } else {
+                $row.append($bubble);
+            }
+            $chatMessages.append($row);
+        });
+
+        $chatMessages.scrollTop($chatMessages[0].scrollHeight);
+    }
+
+    function startChatPolling() {
+        if (chatPollTimer) return;
+        chatPollTimer = setInterval(function() {
+            if (!chatThreadId) return;
+            $.ajax({
+                url: '/api/chat/poll',
+                method: 'GET',
+                dataType: 'json',
+                data: {
+                    thread_id: chatThreadId,
+                    since_id: chatLastMessageId || ''
+                }
+            }).done(function(resp) {
+                if (resp && resp.success) {
+                    if (Array.isArray(resp.messages)) {
+                        appendChatMessages(resp.messages);
+                    }
+                    if (resp.typing && typeof resp.typing === 'object' && $chatTypingIndicator.length) {
+                        if (resp.typing.admin) {
+                            $chatTypingIndicator.show();
+                        } else {
+                            $chatTypingIndicator.hide();
+                        }
+                    }
+                }
+            });
+        }, 5000);
+    }
+
+    function stopChatPolling() {
+        if (chatPollTimer) {
+            clearInterval(chatPollTimer);
+            chatPollTimer = null;
+        }
+    }
+
+    function openSupportChat() {
+        if (!$chatWindow.length) return;
+        $chatWindow.show();
+
+        if (!chatThreadId) {
+            $.ajax({
+                url: '/api/chat/start',
+                method: 'GET',
+                dataType: 'json'
+            }).done(function(resp) {
+                if (resp && resp.success && resp.thread) {
+                    chatThreadId = resp.thread.id;
+                    chatLastMessageId = null;
+                    $chatMessages.empty();
+                    if (Array.isArray(resp.messages)) {
+                        appendChatMessages(resp.messages);
+                    }
+                    startChatPolling();
+                } else {
+                    if (window.showToast) {
+                        showToast((resp && resp.message) || 'Unable to start chat.', 'danger');
+                    }
+                }
+            }).fail(function() {
+                if (window.showToast) {
+                    showToast('Unable to start chat right now.', 'danger');
+                }
+            });
+        } else {
+            startChatPolling();
+        }
+    }
+
+    function closeSupportChat() {
+        $chatWindow.hide();
+        stopChatPolling();
+    }
+
+    function sendTyping(isTyping) {
+        if (!chatThreadId) return;
+        if (chatTypingState === isTyping) return;
+        chatTypingState = isTyping;
+        $.ajax({
+            url: '/api/chat/typing',
+            method: 'POST',
+            dataType: 'json',
+            data: {
+                thread_id: chatThreadId,
+                is_typing: isTyping ? 1 : 0
+            }
+        });
+    }
+
+    $chatToggle.on('click', function() {
+        if ($chatWindow.is(':visible')) {
+            closeSupportChat();
+        } else {
+            openSupportChat();
+        }
+    });
+
+    $('#supportChatClose').on('click', function() {
+        closeSupportChat();
+    });
+
+    $chatInput.on('input keydown', function() {
+        if (!chatThreadId) return;
+        sendTyping(true);
+        if (chatTypingTimeout) {
+            clearTimeout(chatTypingTimeout);
+        }
+        chatTypingTimeout = setTimeout(function() {
+            sendTyping(false);
+        }, 3000);
+    });
+
+    $chatForm.on('submit', function(e) {
+        e.preventDefault();
+        if (!chatThreadId) {
+            openSupportChat();
+            return;
+        }
+        var text = $chatInput.val().trim();
+        if (!text) return;
+
+        $chatSendBtn.prop('disabled', true);
+
+        $.ajax({
+            url: '/api/chat/send_message',
+            method: 'POST',
+            dataType: 'json',
+            data: {
+                thread_id: chatThreadId,
+                message: text
+            }
+        }).done(function(resp) {
+            if (resp && resp.success) {
+                $chatInput.val('');
+                if (resp.message_data) {
+                    appendChatMessages([resp.message_data]);
+                }
+            } else if (window.showToast) {
+                showToast((resp && resp.message) || 'Could not send message.', 'danger');
+            }
+        }).fail(function() {
+            if (window.showToast) {
+                showToast('Could not send message. Please try again.', 'danger');
+            }
+        }).always(function() {
+            $chatSendBtn.prop('disabled', false);
+        });
+    });
 });
 
 // Format currency

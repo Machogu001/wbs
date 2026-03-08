@@ -210,12 +210,17 @@ if ($db) {
         <div class="col-md-12">
             <h2>Dashboard</h2>
             <p>Welcome, <?php echo htmlspecialchars($_SESSION['user_data']['full_name'] ?? 'User'); ?>!</p>
+            <p class="small mb-0">
+                <a href="#" data-bs-toggle="modal" data-bs-target="#termsModal">
+                    <i class="bi bi-info-circle"></i> View Community Water Supply Rules &amp; Terms
+                </a>
+            </p>
         </div>
     </div>
     
     <div class="row mt-4">
         <div class="col-md-3">
-            <a href="<?php echo $isAdmin ? '/admin/reports?report_scope=billing&bill_status=pending_overdue' : '/bills?filter=unpaid'; ?>" class="text-decoration-none">
+            <a href="<?php echo $isAdmin ? '/reports?report_scope=billing&bill_status=pending_overdue' : '/bills?filter=unpaid'; ?>" class="text-decoration-none">
                 <div class="card text-white bg-primary dashboard-stat-card" data-bs-toggle="tooltip" data-bs-placement="top" title="Total amount currently outstanding on your account.">
                     <div class="card-body">
                         <h5 class="card-title mb-1">Account Balance</h5>
@@ -225,7 +230,7 @@ if ($db) {
             </a>
         </div>
         <div class="col-md-3">
-            <a href="<?php echo $isAdmin ? '/admin/reports?report_scope=payments&payment_status=completed' : '/bills?filter=paid'; ?>" class="text-decoration-none">
+            <a href="<?php echo $isAdmin ? '/reports?report_scope=payments&payment_status=completed' : '/bills?filter=paid'; ?>" class="text-decoration-none">
                 <div class="card text-white bg-success dashboard-stat-card" data-bs-toggle="tooltip" data-bs-placement="top" title="All payments successfully recorded in the system.">
                     <div class="card-body">
                         <h5 class="card-title mb-1">Total Paid</h5>
@@ -235,7 +240,7 @@ if ($db) {
             </a>
         </div>
         <div class="col-md-3">
-            <a href="<?php echo $isAdmin ? '/admin/reports?report_scope=billing&bill_status=pending_overdue' : '/bills?filter=unpaid'; ?>" class="text-decoration-none">
+            <a href="<?php echo $isAdmin ? '/reports?report_scope=billing&bill_status=pending_overdue' : '/bills?filter=unpaid'; ?>" class="text-decoration-none">
                 <div class="card text-white bg-warning dashboard-stat-card" data-bs-toggle="tooltip" data-bs-placement="top" title="Number of bills that are not yet fully paid.">
                     <div class="card-body">
                         <h5 class="card-title mb-1">Pending Bills</h5>
@@ -315,7 +320,7 @@ if ($db) {
     </div>
 
     <div class="row mt-4">
-        <div class="col-lg-8 mb-4">
+        <div class="col-lg-9 mb-4">
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <div>
@@ -340,14 +345,16 @@ if ($db) {
                 </div>
                 <div class="card-body">
                     <?php if (!empty($chartLabels)): ?>
-                        <canvas id="billingTrendsChart" height="220"></canvas>
+                        <div class="dashboard-chart-container">
+                            <canvas id="billingTrendsChart"></canvas>
+                        </div>
                     <?php else: ?>
                         <p class="mb-0 text-muted small">Once billing and payment history is available, a monthly trend chart will be shown here.</p>
                     <?php endif; ?>
                 </div>
             </div>
         </div>
-        <div class="col-lg-4 mb-4">
+        <div class="col-lg-3 mb-4">
             <div class="card h-100">
                 <div class="card-header">
                     <h5 class="mb-0">Status Breakdown <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip" title="Shows how much is already paid compared to what is still outstanding."></i></h5>
@@ -360,6 +367,7 @@ if ($db) {
                         <ul class="list-unstyled small mb-0">
                             <li><span class="badge bg-success me-1">&nbsp;</span> Paid: Ksh <?php echo number_format($total_paid, 2); ?></li>
                             <li><span class="badge bg-primary me-1">&nbsp;</span> Unpaid: Ksh <?php echo number_format($total_unpaid, 2); ?></li>
+                            <li class="mt-1"><span class="badge bg-warning text-dark me-1">&nbsp;</span> Pending bills: <?php echo (int)$pending_count; ?></li>
                         </ul>
                     <?php else: ?>
                         <p class="mb-0 text-muted small">Status breakdown will appear here once there are bills and payments.</p>
@@ -382,7 +390,9 @@ if ($db) {
                 </div>
                 <div class="card-body">
                     <?php if (!empty($chartLabels) && array_sum($chartUsage) > 0): ?>
-                        <canvas id="usageChart" height="200"></canvas>
+                        <div class="dashboard-chart-container">
+                            <canvas id="usageChart"></canvas>
+                        </div>
                     <?php else: ?>
                         <p class="mb-0 text-muted small">Once meter readings are submitted and approved, a water usage chart will appear here.</p>
                     <?php endif; ?>
@@ -463,7 +473,9 @@ if ($db) {
                 </div>
                 <div class="card-body">
                     <?php if (!empty($chartLabels) && array_sum($chartBills) > 0): ?>
-                        <canvas id="collectionRateChart" height="200"></canvas>
+                        <div class="dashboard-chart-container">
+                            <canvas id="collectionRateChart"></canvas>
+                        </div>
                     <?php else: ?>
                         <p class="mb-0 text-muted small">Once there is enough billing and payment history, a collection rate chart will appear here.</p>
                     <?php endif; ?>

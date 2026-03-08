@@ -102,15 +102,30 @@ require_once __DIR__ . '/../templates/header.php';
                     <form method="POST">
                         <div class="mb-3">
                             <label for="old_password" class="form-label">Current Password</label>
-                            <input type="password" class="form-control" id="old_password" name="old_password" required>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="old_password" name="old_password" autocomplete="current-password" required>
+                                <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide current password">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label for="new_password" class="form-label">New Password</label>
-                            <input type="password" class="form-control" id="new_password" name="new_password" required>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="new_password" name="new_password" autocomplete="new-password" required>
+                                <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide new password">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label for="confirm_new_password" class="form-label">Confirm New Password</label>
-                            <input type="password" class="form-control" id="confirm_new_password" name="confirm_new_password" required>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="confirm_new_password" name="confirm_new_password" autocomplete="new-password" required>
+                                <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide confirm password">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
                         </div>
                         <button type="submit" class="btn btn-primary w-100">
                             <i class="bi bi-check2-circle"></i> Update Password

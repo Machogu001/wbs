@@ -64,13 +64,16 @@ if ($logged_out) {
                         <div class="mb-3">
                             <label for="password" class="form-label">Password *</label>
                             <div class="input-group">
-                                <input type="password" class="form-control" id="password" name="password" required>
-                                <button class="btn btn-outline-secondary toggle-password" type="button">
+                                <input type="password" class="form-control" id="password" name="password" autocomplete="current-password" required>
+                                <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
                                     <i class="bi bi-eye"></i>
                                 </button>
                             </div>
-                            <div class="d-flex justify-content-between mt-1">
-                                <small class="text-muted">Please enter your password.</small>
+                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                <div class="form-check mb-0">
+                                    <input class="form-check-input" type="checkbox" id="showPasswordToggle">
+                                    <label class="form-check-label small" for="showPasswordToggle">Show password</label>
+                                </div>
                                 <a href="/forgot-password" class="small">Forgot password?</a>
                             </div>
                         </div>
@@ -92,6 +95,16 @@ if ($logged_out) {
 $custom_scripts = <<<'JS'
 <script>
 $(document).ready(function() {
+    // Show/hide password using the checkbox
+    $('#showPasswordToggle').on('change', function() {
+        var input = $('#password');
+        if (this.checked) {
+            input.attr('type', 'text');
+        } else {
+            input.attr('type', 'password');
+        }
+    });
+
     $('#loginForm').on('submit', function(e) {
         e.preventDefault();
         

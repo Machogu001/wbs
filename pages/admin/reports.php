@@ -514,7 +514,7 @@ require_once __DIR__ . '/../../templates/header.php';
 			</div>
 		</div>
 		<div class="card-body">
-			<form class="row gy-2 gx-3 align-items-end" method="get" action="/admin/reports">
+			<form class="row gy-2 gx-3 align-items-end" method="get" action="/reports">
 				<div class="col-sm-3 col-md-2">
 					<label for="period" class="form-label">Period</label>
 					<select name="period" id="period" class="form-select form-select-sm">
@@ -548,7 +548,7 @@ require_once __DIR__ . '/../../templates/header.php';
 					<button type="submit" class="btn btn-primary btn-sm">
 						<i class="bi bi-funnel me-1"></i> Apply
 					</button>
-					<a href="/admin/reports" class="btn btn-outline-secondary btn-sm">Reset</a>
+					<a href="/reports" class="btn btn-outline-secondary btn-sm">Reset</a>
 				</div>
 			</form>
 		</div>
@@ -619,7 +619,7 @@ require_once __DIR__ . '/../../templates/header.php';
 							<i class="bi bi-chat-left-text"></i>
 							<span>Complaints</span>
 						</a>
-						<a href="/admin/invoicing" class="btn btn-sm btn-quick-link" title="Open invoicing workspace">
+						<a href="/invoicing" class="btn btn-sm btn-quick-link" title="Open invoicing workspace">
 							<i class="bi bi-file-earmark-text"></i>
 							<span>Invoicing</span>
 						</a>
@@ -631,8 +631,8 @@ require_once __DIR__ . '/../../templates/header.php';
 						<h6 class="card-title mb-0"><i class="bi bi-droplet-half me-1"></i> Usage Exports</h6>
 					</div>
 					<div class="card-body py-3 d-flex flex-wrap gap-2">
-						<?php $usageExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage']))); ?>
-						<?php $usageExportPdfUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage_pdf']))); ?>
+						<?php $usageExportCsvUrl = '/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage']))); ?>
+						<?php $usageExportPdfUrl = '/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage_pdf']))); ?>
 						<a href="<?php echo $usageExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm">
 							<i class="bi bi-download"></i> Usage CSV
 						</a>

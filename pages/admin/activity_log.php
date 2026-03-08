@@ -151,7 +151,7 @@ if ($db) {
 				</div>
 				<div class="col-12 col-md-2 mt-2 mt-md-0 d-flex gap-2 justify-content-start justify-content-md-end">
 					<button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i> Apply</button>
-					<a href="/admin/activity_log" class="btn btn-outline-secondary btn-sm">Reset</a>
+					<a href="/activity_log" class="btn btn-outline-secondary btn-sm">Reset</a>
 				</div>
 			</form>
 		</div>
@@ -205,7 +205,7 @@ if ($db) {
 					</tbody>
 				</table>
 			</div>
-			<?php if ($totalPages > 1): ?>
+					<?php if ($totalPages > 1): ?>
 				<nav class="mt-2">
 					<ul class="pagination pagination-sm justify-content-end mb-0 px-3 pb-2">
 						<?php
@@ -213,27 +213,27 @@ if ($db) {
 							$nextPage = min($totalPages, $page + 1);
 							$queryBase = $_GET;
 						?>
-						<li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-							<?php $q = $queryBase; $q['page'] = 1; $firstUrl = '/admin/activity_log?' . htmlspecialchars(http_build_query($q)); ?>
-							<a class="page-link" href="<?php echo $firstUrl; ?>" aria-label="First"><span aria-hidden="true">&laquo;&laquo;</span></a>
+							<li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
+								<?php $q = $queryBase; $q['page'] = 1; $firstUrl = '/activity_log?' . htmlspecialchars(http_build_query($q)); ?>
+								<a class="page-link" href="<?php echo $firstUrl; ?>" aria-label="First"><span aria-hidden="true">&laquo;&laquo;</span></a>
 						</li>
-						<li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-							<?php $q = $queryBase; $q['page'] = $prevPage; $prevUrl = '/admin/activity_log?' . htmlspecialchars(http_build_query($q)); ?>
-							<a class="page-link" href="<?php echo $prevUrl; ?>" aria-label="Previous"><span aria-hidden="true">&laquo;</span></a>
+							<li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
+								<?php $q = $queryBase; $q['page'] = $prevPage; $prevUrl = '/activity_log?' . htmlspecialchars(http_build_query($q)); ?>
+								<a class="page-link" href="<?php echo $prevUrl; ?>" aria-label="Previous"><span aria-hidden="true">&laquo;</span></a>
 						</li>
-						<?php for ($i = 1; $i <= $totalPages; $i++): ?>
-							<?php $q = $queryBase; $q['page'] = $i; $url = '/admin/activity_log?' . htmlspecialchars(http_build_query($q)); ?>
+							<?php for ($i = 1; $i <= $totalPages; $i++): ?>
+								<?php $q = $queryBase; $q['page'] = $i; $url = '/activity_log?' . htmlspecialchars(http_build_query($q)); ?>
 							<li class="page-item <?php echo $i === $page ? 'active' : ''; ?>">
 								<a class="page-link" href="<?php echo $url; ?>"><?php echo $i; ?></a>
 							</li>
 						<?php endfor; ?>
-						<li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
-							<?php $q = $queryBase; $q['page'] = $nextPage; $nextUrl = '/admin/activity_log?' . htmlspecialchars(http_build_query($q)); ?>
-							<a class="page-link" href="<?php echo $nextUrl; ?>" aria-label="Next"><span aria-hidden="true">&raquo;</span></a>
+							<li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
+								<?php $q = $queryBase; $q['page'] = $nextPage; $nextUrl = '/activity_log?' . htmlspecialchars(http_build_query($q)); ?>
+								<a class="page-link" href="<?php echo $nextUrl; ?>" aria-label="Next"><span aria-hidden="true">&raquo;</span></a>
 						</li>
-						<li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
-							<?php $q = $queryBase; $q['page'] = $totalPages; $lastUrl = '/admin/activity_log?' . htmlspecialchars(http_build_query($q)); ?>
-							<a class="page-link" href="<?php echo $lastUrl; ?>" aria-label="Last"><span aria-hidden="true">&raquo;&raquo;</span></a>
+							<li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
+								<?php $q = $queryBase; $q['page'] = $totalPages; $lastUrl = '/activity_log?' . htmlspecialchars(http_build_query($q)); ?>
+								<a class="page-link" href="<?php echo $lastUrl; ?>" aria-label="Last"><span aria-hidden="true">&raquo;&raquo;</span></a>
 						</li>
 					</ul>
 				</nav>

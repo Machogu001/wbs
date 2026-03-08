@@ -92,7 +92,12 @@ if ($db) {
 	<div class="row">
 		<div class="col-md-12">
 			<h2>My Bills</h2>
-			<p class="text-muted">Your billing history and current charges.</p>
+			<p class="text-muted mb-1">Your billing history and current charges.</p>
+			<p class="small mb-0">
+				<a href="#" data-bs-toggle="modal" data-bs-target="#billingPolicyModal">
+					<i class="bi bi-info-circle"></i> View Water Usage Billing Policy
+				</a>
+			</p>
 		</div>
 	</div>
 
@@ -350,5 +355,161 @@ document.addEventListener('DOMContentLoaded', function () {
 	});
 });
 </script>
+
+<!-- Water Usage Billing Policy Modal -->
+<div class="modal fade" id="billingPolicyModal" tabindex="-1" aria-labelledby="billingPolicyLabel" aria-hidden="true">
+	<div class="modal-dialog modal-lg modal-dialog-scrollable">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title" id="billingPolicyLabel">Water Usage Billing Policy</h5>
+				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+			</div>
+			<div class="modal-body">
+				<h6 class="mb-3">Community Water Supply – BREMAC CONSULTANT LIMITED</h6>
+
+				<h6>1. Metered Water Supply</h6>
+				<p>
+					All household connections will be fitted with a water meter to accurately measure water consumption.
+					Billing will be based strictly on the volume of water used as recorded by the meter.
+				</p>
+
+				<h6>2. Water Tariff</h6>
+				<p>
+					Water will be billed per cubic meter (m³). One cubic meter (1 m³) is equivalent to
+					<strong>1,000 litres of water</strong> or <strong>50 containers of 20 litres each</strong>.
+				</p>
+				<p>
+					The current water tariff will be communicated to all members and may be adjusted periodically
+					to accommodate operational costs such as electricity, maintenance, repairs, and system expansion.
+				</p>
+
+				<h6>3. Billing Cycle</h6>
+				<p>
+					Water usage will be billed on a <strong>monthly basis</strong>. Members will receive their usage
+					statement through SMS or other official communication channels.
+				</p>
+
+				<h6>4. Payment Timeline</h6>
+				<p>
+					Members are required to settle their water bills within <strong>14 days from the billing date</strong>.
+				</p>
+
+				<h6>5. Late Payments</h6>
+				<p>
+					Failure to settle bills within the required time may result in:
+				</p>
+				<ul>
+					<li>Late payment penalties</li>
+					<li>Temporary suspension of water supply until outstanding balances are cleared</li>
+				</ul>
+
+				<h6>6. Payment Method</h6>
+				<p>
+					Payments for water usage should be made via:
+				</p>
+				<p>
+					M-Pesa Paybill Number: <strong>4166503</strong><br>
+					Business Name: <strong>BREMAC CONSULTANT LIMITED</strong><br>
+					Account Number: <strong>Registered Customer Account Number</strong>
+				</p>
+				<p>
+					Members must retain their payment confirmation message as proof of payment.
+				</p>
+
+				<h6>7. Disconnection Due to Non-Payment</h6>
+				<p>
+					Accounts with prolonged unpaid balances may be disconnected. Reconnection will only occur after:
+				</p>
+				<ul>
+					<li>Full settlement of outstanding bills</li>
+					<li>Payment of a reconnection fee (if applicable)</li>
+				</ul>
+
+				<h6>8. Tariff Review</h6>
+				<p>
+					Water tariffs may be reviewed periodically depending on operational costs such as electricity,
+					pump maintenance, borehole servicing, and infrastructure improvements. Members will be notified
+					of any changes in advance.
+				</p>
+
+				<hr>
+				<h6 class="mb-3">Water Meter Rules and Infrastructure Protection Policy</h6>
+
+				<h6>1. Meter Ownership</h6>
+				<p>
+					All water meters installed under the project remain the property of
+					<strong>BREMAC CONSULTANT LIMITED</strong>.
+				</p>
+
+				<h6>2. Meter Protection</h6>
+				<p>
+					Members are responsible for ensuring that the water meter installed on their property is protected from:
+				</p>
+				<ul>
+					<li>Physical damage</li>
+					<li>Theft</li>
+					<li>Flooding or exposure to harmful conditions</li>
+				</ul>
+
+				<h6>3. Tampering Prohibited</h6>
+				<p>
+					Tampering with water meters, bypassing the meter, interfering with valves, or illegally connecting
+					to the pipeline is strictly prohibited.
+				</p>
+
+				<h6>4. Penalties for Tampering</h6>
+				<p>
+					Any member found tampering with the water infrastructure may face:
+				</p>
+				<ul>
+					<li>Immediate disconnection</li>
+					<li>Payment of repair or replacement costs</li>
+					<li>Additional penalties as determined by project management</li>
+				</ul>
+
+				<h6>5. Meter Inspection</h6>
+				<p>
+					Authorized personnel may conduct routine inspections, maintenance, or meter readings.
+					Members must allow access when required.
+				</p>
+
+				<h6>6. Meter Faults</h6>
+				<p>
+					If a member suspects that a meter is faulty or not recording correctly, they must report it immediately
+					to the project administration team for inspection.
+				</p>
+
+				<h6>7. Damage to Infrastructure</h6>
+				<p>
+					Any individual who damages pipelines, meters, valves, or related infrastructure will be responsible for
+					covering the full repair or replacement costs.
+				</p>
+
+				<h6>8. Illegal Connections</h6>
+				<p>
+					Unauthorized connections to the water distribution system are prohibited and may result in disconnection
+					and penalties.
+				</p>
+
+				<h6>9. Relocation of Meter</h6>
+				<p>
+					Meters must remain at the installed location unless relocation is approved and performed by authorized
+					technicians.
+				</p>
+
+				<h6>10. System Integrity</h6>
+				<p>
+					All members are expected to cooperate in protecting the water infrastructure to ensure fair usage and
+					reliable water supply for the entire community.
+				</p>
+
+				<p class="mt-3 mb-0"><strong>BREMAC CONSULTANT LIMITED</strong></p>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+			</div>
+		</div>
+	</div>
+</div>
 
 <?php require_once __DIR__ . '/../templates/footer.php'; ?>

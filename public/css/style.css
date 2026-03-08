@@ -116,6 +116,24 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: 0.01em;
 }
 
+/* Rainbow gradient text for hero heading */
+.rainbow-text {
+  background: linear-gradient(90deg,
+    #ff0000,
+    #ff7f00,
+    #ffff00,
+    #00ff00,
+    #0000ff,
+    #4b0082,
+    #8b00ff
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
 h1 {
   font-size: clamp(1.6rem, 3vw, 2rem);
 }
@@ -143,6 +161,130 @@ a:not(.btn):hover {
 /* ===== LAYOUT ===== */
 main.container-fluid {
   min-height: calc(100vh - var(--header-height) - var(--footer-height));
+}
+
+/* ===== SUPPORT CHAT WIDGET ===== */
+.support-chat-toggle {
+  position: fixed;
+  right: 32px;
+  bottom: 224px;
+  z-index: 9999;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #10b981, #0ea5e9);
+  color: #ffffff;
+  border: none;
+}
+
+.support-chat-toggle:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-xl);
+}
+
+.support-chat-window {
+  position: fixed;
+  right: 24px;
+  bottom: 290px;
+  width: 320px;
+  max-width: 90vw;
+  background-color: #ffffff;
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-xl);
+  z-index: 9999;
+  display: none;
+  overflow: hidden;
+}
+
+.support-chat-header {
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  color: #ffffff;
+  padding: 0.6rem 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.support-chat-body {
+  padding: 0.6rem 0.75rem;
+  max-height: 260px;
+  overflow-y: auto;
+  background-color: #f9fafb;
+}
+
+.support-chat-input {
+  padding: 0.45rem 0.6rem;
+  border-top: 1px solid var(--neutral-200);
+  background-color: #ffffff;
+}
+
+.support-chat-typing {
+  margin-bottom: 0.25rem;
+  color: #6b7280;
+}
+
+.support-chat-message {
+  margin-bottom: 0.35rem;
+  display: flex;
+  align-items: flex-end;
+}
+
+.support-chat-message.support-chat-message-user {
+  justify-content: flex-end;
+}
+
+.support-chat-message.support-chat-message-admin {
+  justify-content: flex-start;
+}
+
+.support-chat-bubble {
+  padding: 0.4rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  max-width: 80%;
+}
+
+.support-chat-message-user .support-chat-bubble {
+  background-color: #0ea5e9;
+  color: #ffffff;
+  border-bottom-right-radius: 2px;
+}
+
+.support-chat-message-admin .support-chat-bubble {
+  background-color: #e5e7eb;
+  color: #111827;
+  border-bottom-left-radius: 2px;
+}
+
+.support-chat-timestamp {
+  display: inline-block;
+  font-size: 0.7rem;
+  color: #9ca3af;
+  margin-left: 0.35rem;
+}
+
+.support-chat-day-divider {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin: 0.4rem 0;
+}
+
+@media (max-width: 640px) {
+  .support-chat-toggle {
+    right: 16px;
+    bottom: 224px;
+  }
+
+  .support-chat-window {
+    right: 12px;
+    bottom: 290px;
+    width: 94vw;
+  }
 }
 
 /* ===== NAVBAR ===== */
@@ -408,6 +550,125 @@ footer.bg-dark a:hover {
   text-decoration: underline;
 }
 
+/* Landing page section headings & feature cards */
+.landing-section-title {
+  color: #0ea5e9;
+  text-shadow: 0 2px 4px rgba(15, 23, 42, 0.15);
+}
+
+.landing-section-subtitle {
+  color: var(--neutral-700);
+}
+
+.landing-feature-title {
+  color: #0ea5e9;
+}
+
+/* Animated color cycle for highlight text */
+@keyframes wbsColorCycle {
+  0%   { color: #0ea5e9; }
+  25%  { color: #f97316; }
+  50%  { color: #22c55e; }
+  75%  { color: #e11d48; }
+  100% { color: #0ea5e9; }
+}
+
+.color-cycle {
+  animation: wbsColorCycle 6s linear infinite;
+}
+
+/* Footer accents */
+.footer-title-accent {
+  color: #fbbf24;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.footer-text-soft {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* Floating action buttons (WhatsApp + Contact) */
+.whatsapp-float,
+.whatsapp-group-float,
+.contact-float {
+  position: fixed !important;
+  right: 32px !important;
+  left: auto !important;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  color: #fff;
+  text-decoration: none;
+  animation: wbsWhatsappFloat 3s ease-in-out infinite;
+}
+
+.whatsapp-float {
+  bottom: 32px !important;
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.2);
+  background: #25D366;
+}
+
+.whatsapp-group-float {
+  bottom: 96px !important;
+  box-shadow: 0 4px 16px rgba(14, 165, 233, 0.25);
+  background: #0ea5e9;
+  animation-delay: 0.5s;
+}
+
+.contact-float {
+  bottom: 160px !important;
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.25);
+  background: #2563eb;
+  animation-delay: 1s;
+}
+
+.whatsapp-float:hover,
+.whatsapp-group-float:hover {
+  opacity: 0.9;
+}
+
+@media (max-width: 640px) {
+  .whatsapp-float,
+  .whatsapp-group-float,
+  .contact-float {
+    right: 16px !important;
+    width: 46px;
+    height: 46px;
+  }
+
+  .whatsapp-float {
+    bottom: 24px !important;
+  }
+
+  .whatsapp-group-float {
+    bottom: 88px !important;
+  }
+
+  .contact-float {
+    bottom: 152px !important;
+  }
+}
+
+@keyframes wbsWhatsappFloat {
+  0% {
+    transform: translateY(0);
+    box-shadow: 0 4px 16px rgba(34, 197, 94, 0.2);
+  }
+  50% {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(34, 197, 94, 0.35);
+  }
+  100% {
+    transform: translateY(0);
+    box-shadow: 0 4px 16px rgba(34, 197, 94, 0.2);
+  }
+}
+
 /* ===== GLOBAL TOAST ===== */
 #globalToast {
   border-radius: var(--border-radius-md);
@@ -562,6 +823,18 @@ footer.bg-dark a:hover {
 
 .metric-card .card-body {
   position: relative;
+}
+
+/* Dashboard chart containers */
+.dashboard-chart-container {
+  position: relative;
+  height: 240px;
+}
+
+@media (max-width: 767.98px) {
+  .dashboard-chart-container {
+    height: 200px;
+  }
 }
 
 .aging-card .card-header {

@@ -111,10 +111,14 @@ require_once __DIR__ . '/../templates/header.php';
                                 <div class="mb-3">
                                     <label for="password" class="form-label">Password *</label>
                                     <div class="input-group">
-                                        <input type="password" class="form-control" id="password" name="password" required>
-                                        <button class="btn btn-outline-secondary toggle-password" type="button">
+                                        <input type="password" class="form-control" id="password" name="password" autocomplete="new-password" required>
+                                        <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
                                             <i class="bi bi-eye"></i>
                                         </button>
+                                    </div>
+                                    <div class="form-check mt-1">
+                                        <input class="form-check-input" type="checkbox" id="registerShowPassword">
+                                        <label class="form-check-label small" for="registerShowPassword">Show password</label>
                                     </div>
                                     <div class="invalid-feedback">Please enter a password.</div>
                                 </div>
@@ -123,10 +127,14 @@ require_once __DIR__ . '/../templates/header.php';
                                 <div class="mb-3">
                                     <label for="confirm_password" class="form-label">Confirm Password *</label>
                                     <div class="input-group">
-                                        <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
-                                        <button class="btn btn-outline-secondary toggle-password" type="button">
+                                        <input type="password" class="form-control" id="confirm_password" name="confirm_password" autocomplete="new-password" required>
+                                        <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
                                             <i class="bi bi-eye"></i>
                                         </button>
+                                    </div>
+                                    <div class="form-check mt-1">
+                                        <input class="form-check-input" type="checkbox" id="registerShowConfirmPassword">
+                                        <label class="form-check-label small" for="registerShowConfirmPassword">Show confirm password</label>
                                     </div>
                                     <div class="invalid-feedback">Please confirm your password.</div>
                                 </div>
@@ -143,7 +151,12 @@ require_once __DIR__ . '/../templates/header.php';
 
                         <?php if ($registrationFee > 0): ?>
                         <div class="alert alert-info py-2 mb-3">
-                            <small>A one-time registration fee of <strong><?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?> <?php echo number_format($registrationFee, 2); ?></strong> will be charged via M-Pesa STK push when you submit this form.</small>
+                            <small>
+                                A one-time non-refundable installation/registration fee of
+                                <strong><?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>
+                                <?php echo number_format($registrationFee, 2); ?></strong>
+                                will be charged via M-Pesa STK push when you submit this form.
+                            </small>
                         </div>
                         <?php endif; ?>
                         
@@ -158,40 +171,20 @@ require_once __DIR__ . '/../templates/header.php';
             </div>
         </div>
     </div>
-</div>
-
-<!-- Terms Modal -->
-<div class="modal fade" id="termsModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Terms and Conditions</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <h6>1. Account Registration</h6>
-                <p>You must provide accurate and complete information when registering for an account.</p>
-                
-                <h6>2. Bill Payments</h6>
-                <p>All payments made through the system are final and non-refundable.</p>
-                
-                <h6>3. Privacy</h6>
-                <p>Your personal information will be protected and used only for billing purposes.</p>
-                
-                <h6>4. Service Availability</h6>
-                <p>The system may be temporarily unavailable for maintenance.</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <?php 
 $custom_scripts = <<<'JS'
 <script>
 $(document).ready(function() {
+    // Show/hide passwords on full registration page
+    $('#registerShowPassword').on('change', function() {
+        var $input = $('#password');
+        $input.attr('type', this.checked ? 'text' : 'password');
+    });
+    $('#registerShowConfirmPassword').on('change', function() {
+        var $input = $('#confirm_password');
+        $input.attr('type', this.checked ? 'text' : 'password');
+    });
+
     $('#registerForm').on('submit', function(e) {
         e.preventDefault();
 		

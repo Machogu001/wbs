@@ -18,13 +18,19 @@ if (!$installed && strpos($_SERVER['REQUEST_URI'], '/install') !== 0) {
     header('Location: /install/');
     exit;
 }
+
+// Application name from environment (.env APP_NAME), with a sensible default
+if (!isset($appName) || $appName === '') {
+    $envAppName = getenv('APP_NAME');
+    $appName = ($envAppName !== false && $envAppName !== '') ? $envAppName : 'Water Billing System';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo isset($page_title) ? $page_title . ' - ' : ''; ?>Water Billing System</title>
+    <title><?php echo isset($page_title) ? $page_title . ' - ' : ''; ?><?php echo htmlspecialchars($appName, ENT_QUOTES, 'UTF-8'); ?></title>
     <link rel="icon" type="image/svg+xml" href="/public/images/favicon-water.svg">
     <link rel="alternate icon" type="image/png" href="/public/images/favicon-water.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -65,8 +71,10 @@ if (!$installed && strpos($_SERVER['REQUEST_URI'], '/install') !== 0) {
     <?php if(!isset($hide_nav) || !$hide_nav): ?>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
         <div class="container">
-            <a class="navbar-brand" href="../index.php">
-                <i class="bi bi-droplet"></i> Water Billing System
+            <a class="navbar-brand" href="/">
+				<i class="bi bi-droplet"></i> <span style="color:#ffeb3b; font-weight:600;">
+					<?php echo htmlspecialchars($appName, ENT_QUOTES, 'UTF-8'); ?>
+				</span>
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -76,12 +84,7 @@ if (!$installed && strpos($_SERVER['REQUEST_URI'], '/install') !== 0) {
                     <?php if(isset($_SESSION['user_id'])): ?>
                         <?php if(isset($_SESSION['user_data']['role']) && $_SESSION['user_data']['role'] === 'admin'): ?>
                             <li class="nav-item">
-                                <a class="nav-link" href="/admin">
-                                    <i class="bi bi-shield-lock"></i> Admin
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="/admin/invoicing">
+                                <a class="nav-link" href="/invoicing">
                                     <i class="bi bi-file-earmark-text"></i> Invoicing
                                 </a>
                             </li>
@@ -101,9 +104,12 @@ if (!$installed && strpos($_SERVER['REQUEST_URI'], '/install') !== 0) {
                             </a>
                             <ul class="dropdown-menu" aria-labelledby="navbarServices">
                                 <?php if(isset($_SESSION['user_data']['role']) && $_SESSION['user_data']['role'] === 'admin'): ?>
+                                    <li><a class="dropdown-item" href="/settings"><i class="bi bi-gear"></i> System Setting</a></li>
+                                    <li><hr class="dropdown-divider"></li>
                                     <li><a class="dropdown-item" href="/admin/users"><i class="bi bi-people"></i> Users</a></li>
-                                    <li><a class="dropdown-item" href="/admin/reports"><i class="bi bi-graph-up"></i> Reports</a></li>
-                                    <li><a class="dropdown-item" href="/admin/activity_log"><i class="bi bi-clipboard-check"></i> Activity Log</a></li>
+                                    <li><a class="dropdown-item" href="/reports"><i class="bi bi-graph-up"></i> Reports</a></li>
+                                    <li><a class="dropdown-item" href="/activity_log"><i class="bi bi-clipboard-check"></i> Activity Log</a></li>
+                                    <li><a class="dropdown-item" href="/chat"><i class="bi bi-headset"></i> Support Chat</a></li>
                                     <li><hr class="dropdown-divider"></li>
                                 <?php endif; ?>
                                 <li><a class="dropdown-item" href="/bills"><i class="bi bi-receipt"></i> My Bills</a></li>
@@ -123,9 +129,9 @@ if (!$installed && strpos($_SERVER['REQUEST_URI'], '/install') !== 0) {
                             <ul class="dropdown-menu">
                                 <li><a class="dropdown-item" href="/profile"><i class="bi bi-person"></i> Profile</a></li>
                                 <?php if(isset($_SESSION['user_data']['role']) && $_SESSION['user_data']['role'] === 'admin'): ?>
-                                    <li><a class="dropdown-item" href="/admin/invoicing"><i class="bi bi-file-earmark-text"></i> Invoicing</a></li>
-                                    <li><a class="dropdown-item" href="/admin/reports"><i class="bi bi-graph-up"></i> Reports</a></li>
-                                    <li><a class="dropdown-item" href="/admin/complaints"><i class="bi bi-flag"></i> Complaints</a></li>
+                                    <li><a class="dropdown-item" href="/invoicing"><i class="bi bi-file-earmark-text"></i> Invoicing</a></li>
+                                    <li><a class="dropdown-item" href="/reports"><i class="bi bi-graph-up"></i> Reports</a></li>
+                                    <li><a class="dropdown-item" href="/complaints"><i class="bi bi-flag"></i> Complaints</a></li>
                                 <?php endif; ?>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a></li>

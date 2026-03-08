@@ -41,35 +41,8 @@ if(empty($request)) {
     exit;
 }
 
-// Define routes
-$routes = [
-    '' => 'pages/index.php',
-    'home' => 'pages/index.php',
-    'register' => 'pages/register.php',
-    'login' => 'pages/login.php',
-    'change-password' => 'pages/change_password.php',
-    'forgot-password' => 'pages/forgot_password.php',
-    'registration-payment' => 'pages/registration_payment.php',
-    'dashboard' => 'pages/dashboard.php',
-    'bills' => 'pages/bills.php',
-    'pay' => 'pages/pay_bill.php',
-    'pay-link' => 'pages/pay_link.php',
-    'payment-receipt' => 'pages/payment_receipt.php',
-    'payment-receipt-pdf' => 'pages/payment_receipt_pdf.php',
-    'profile' => 'pages/profile.php',
-    'submit-reading' => 'pages/submit_reading.php',
-    'invoice' => 'pages/invoice.php',
-    'statement' => 'pages/statement.php',
-    'complaints' => 'pages/complaints.php',
-	'logout' => 'pages/logout.php',
-    'admin' => 'pages/admin/index.php',
-    'admin/payments' => 'pages/admin/payments.php',
-    'admin/users' => 'pages/admin/users.php',
-    'admin/invoicing' => 'pages/admin/invoicing.php',
-    'admin/reports' => 'pages/admin/reports.php',
-    'admin/complaints' => 'pages/admin/complaints.php',
-    'admin/activity_log' => 'pages/admin/activity_log.php'
-];
+// Load routes from separate file
+$routes = require BASE_PATH . '/routes/web.php';
 
 // Check if route exists
 if(isset($routes[$request])) {
