@@ -35,8 +35,24 @@ if ($base_dir !== '' && strpos($request_uri, $base_dir) === 0) {
 }
 $request = trim($request, '/');
 
+// Check if it's an API request first (supports both pretty URLs and ?url=api/...)
+$apiRequest = null;
+if (isset($_GET['url']) && strpos($_GET['url'], 'api/') === 0) {
+    $apiRequest = trim($_GET['url'], '/');
+} elseif (strpos($request, 'api/') === 0) {
+    $apiRequest = $request;
+}
+
+if ($apiRequest !== null) {
+    $api_file = BASE_PATH . '/' . $apiRequest . '.php';
+    if (file_exists($api_file)) {
+        require_once $api_file;
+        exit;
+    }
+}
+
 // Default route
-if(empty($request)) {
+if (empty($request)) {
     require_once 'pages/index.php';
     exit;
 }
@@ -45,18 +61,9 @@ if(empty($request)) {
 $routes = require BASE_PATH . '/routes/web.php';
 
 // Check if route exists
-if(isset($routes[$request])) {
+if (isset($routes[$request])) {
     require_once $routes[$request];
     exit;
-}
-
-// Check if it's an API request
-if(strpos($request, 'api/') === 0) {
-    $api_file = BASE_PATH . '/' . $request . '.php';
-    if(file_exists($api_file)) {
-        require_once $api_file;
-        exit;
-    }
 }
 
 // 404 - Page not found

@@ -97,6 +97,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$address = trim($_POST['address'] ?? '');
 			$tax_pin = trim($_POST['tax_pin'] ?? '');
 			$connection_type = trim($_POST['connection_type'] ?? 'domestic');
+			$location_label = trim($_POST['location_label'] ?? '');
+			$latitude = trim($_POST['latitude'] ?? '');
+			$longitude = trim($_POST['longitude'] ?? '');
 			$role = isset($_POST['role']) ? strtolower(trim((string)$_POST['role'])) : 'customer';
 			$password = (string)($_POST['password'] ?? '');
 
@@ -120,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				$role = 'customer';
 			}
 
-			$sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, connection_type = :connection_type, role = :role';
+			$sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, connection_type = :connection_type, location_label = :location_label, latitude = :latitude, longitude = :longitude, role = :role';
 			$updatePassword = ($password !== '');
 			if ($updatePassword) {
 				$sql .= ', password_hash = :password_hash';
@@ -136,6 +139,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$taxPinValue = $tax_pin !== '' ? $tax_pin : null;
 			$stmt->bindParam(':tax_pin', $taxPinValue);
 			$stmt->bindParam(':connection_type', $connection_type);
+			$locValue = $location_label !== '' ? $location_label : null;
+			$latValue = $latitude !== '' ? (float)$latitude : null;
+			$lngValue = $longitude !== '' ? (float)$longitude : null;
+			$stmt->bindParam(':location_label', $locValue);
+			$stmt->bindParam(':latitude', $latValue);
+			$stmt->bindParam(':longitude', $lngValue);
 			$stmt->bindParam(':role', $role);
 			if ($updatePassword) {
 				$password_hash = password_hash($password, PASSWORD_BCRYPT);
@@ -164,6 +173,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$address = trim($_POST['address'] ?? '');
 			$tax_pin = trim($_POST['tax_pin'] ?? '');
 			$connection_type = trim($_POST['connection_type'] ?? 'domestic');
+				$location_label = trim($_POST['location_label'] ?? '');
+				$latitude = trim($_POST['latitude'] ?? '');
+				$longitude = trim($_POST['longitude'] ?? '');
 			$password = (string)($_POST['password'] ?? '');
 			$role = isset($_POST['role']) ? strtolower(trim((string)$_POST['role'])) : 'customer';
 			$registration_already_paid = isset($_POST['registration_already_paid']);
@@ -199,6 +211,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$user->tax_pin = $tax_pin !== '' ? $tax_pin : null;
 			$user->meter_number = $account_number;
 			$user->connection_type = $connection_type !== '' ? $connection_type : 'domestic';
+			$user->location_label = $location_label !== '' ? $location_label : null;
+			$user->latitude = $latitude !== '' ? (float)$latitude : null;
+			$user->longitude = $longitude !== '' ? (float)$longitude : null;
 			$user->password = $password;
 			$allowedRoles = ['admin','reader','finance','support','customer'];
 			if (!in_array($role, $allowedRoles, true)) {
@@ -392,6 +407,11 @@ require_once __DIR__ . '/../../templates/header.php';
 					<h2 class="mb-1">Users</h2>
 					<p class="text-muted mb-0">Create customer accounts directly from the admin panel.</p>
 				</div>
+				<div>
+					<a href="/admin/customer-locations" class="btn btn-outline-primary btn-sm">
+						<i class="bi bi-geo-alt"></i> View customer map
+					</a>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -462,6 +482,9 @@ require_once __DIR__ . '/../../templates/header.php';
 											<td>
 												<div class="d-flex flex-wrap gap-1">
 													<a href="<?php echo htmlspecialchars('/admin/users?page=' . $currentPage . '&edit_id=' . (int)$u['id']); ?>" class="btn btn-sm btn-outline-primary">Edit</a>
+													<a href="<?php echo htmlspecialchars('/admin/customer-locations?user_id=' . (int)$u['id']); ?>" class="btn btn-sm btn-outline-info" title="View on map">
+														<i class="bi bi-geo-alt"></i>
+													</a>
 													<?php if (($u['status'] ?? '') !== 'active'): ?>
 														<form method="post" action="" class="d-inline">
 															<input type="hidden" name="form_type" value="update_status">
@@ -596,6 +619,36 @@ require_once __DIR__ . '/../../templates/header.php';
 						</div>
 						<div class="row">
 							<div class="col-md-6 mb-3">
+								<label for="location_label" class="form-label">Location (optional)</label>
+								<input type="text" class="form-control location-autocomplete" id="location_label" name="location_label" value="<?php echo htmlspecialchars(isset($_POST['location_label']) ? $_POST['location_label'] : ($editUser['location_label'] ?? '')); ?>" placeholder="e.g. P5PP+CJ, Nguluni" autocomplete="off">
+								<div class="form-text">Type a nearby landmark, estate, village name or Plus Code (e.g. "P5PP+CJ, Nguluni"); use the map below to fine-tune the exact pin.</div>
+							</div>
+							<div class="col-md-6 mb-3">
+								<label class="form-label d-block">GPS (internal only)</label>
+								<input type="hidden" id="latitude" name="latitude" value="<?php echo htmlspecialchars(isset($_POST['latitude']) ? $_POST['latitude'] : ($editUser['latitude'] ?? '')); ?>">
+								<input type="hidden" id="longitude" name="longitude" value="<?php echo htmlspecialchars(isset($_POST['longitude']) ? $_POST['longitude'] : ($editUser['longitude'] ?? '')); ?>">
+								<small class="text-muted d-block mb-1">Exact GPS coordinates are used internally for maps and reports; they are never shown to customers.</small>
+								<input type="text" class="form-control form-control-sm" id="gps_dms_input" placeholder="e.g. 1°15'51.6&quot;S 37°11'15.2&quot;E">
+								<div class="form-text">Advanced: paste latitude/longitude in DMS format and the map plus GPS fields will update automatically.</div>
+							</div>
+						</div>
+						<div class="row">
+							<div class="col-md-12 mb-2">
+								<button type="button" class="btn btn-outline-secondary btn-sm" id="adminDetectLocationBtn">
+									<i class="bi bi-geo-alt"></i> Use my current GPS location
+								</button>
+								<div class="form-text">Optional. Use this if you are physically at the property and want to pin it using your current device location.</div>
+							</div>
+						</div>
+						<div class="row">
+							<div class="col-12 mb-3">
+								<label class="form-label">Pinned Location</label>
+								<div id="customerLocationMap" style="height:260px;border-radius:0.5rem;overflow:hidden;border:1px solid #dee2e6;"></div>
+								<div class="form-text">Zoom, drag and click on the map to place the pin exactly where the customer lives.</div>
+							</div>
+						</div>
+						<div class="row">
+							<div class="col-md-6 mb-3">
 								<label for="connection_type" class="form-label">Connection Type</label>
 								<select class="form-select" id="connection_type" name="connection_type">
 									<?php $selType = isset($_POST['connection_type']) ? $_POST['connection_type'] : ($editUser['connection_type'] ?? 'domestic'); ?>
@@ -660,4 +713,504 @@ require_once __DIR__ . '/../../templates/header.php';
 	</div>
 </div>
 
-<?php require_once __DIR__ . '/../../templates/footer.php'; ?>
+<?php
+$googleMapsApiKey = getenv('GOOGLE_MAPS_API_KEY') ?: '';
+
+if ($googleMapsApiKey) {
+	$custom_scripts = <<<JS
+<script>
+function initAdminCustomerLocationMap() {
+	var btn = document.getElementById('adminDetectLocationBtn');
+	var latInput = document.getElementById('latitude');
+	var lngInput = document.getElementById('longitude');
+	var locationInput = document.getElementById('location_label');
+	var mapEl = document.getElementById('customerLocationMap');
+	var dmsInput = document.getElementById('gps_dms_input');
+
+	if (!mapEl || typeof google === 'undefined' || !google.maps) {
+		return;
+	}
+
+	var defaultLat = -1.292066; // Nairobi fallback
+	var defaultLng = 36.821945;
+	var startLat = defaultLat;
+	var startLng = defaultLng;
+	var zoom = 13;
+
+	if (latInput && lngInput && latInput.value && lngInput.value) {
+		var parsedLat = parseFloat(latInput.value);
+		var parsedLng = parseFloat(lngInput.value);
+		if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+			startLat = parsedLat;
+			startLng = parsedLng;
+			zoom = 16;
+		}
+	}
+
+	var map = new google.maps.Map(mapEl, {
+		center: { lat: startLat, lng: startLng },
+		zoom: zoom,
+		mapTypeId: google.maps.MapTypeId.ROADMAP,
+		mapTypeControl: true,
+		streetViewControl: false
+	});
+
+	var marker = null;
+
+	function updateInputsFromLatLng(lat, lng) {
+		if (!latInput || !lngInput) return;
+		latInput.value = lat.toFixed(7);
+		lngInput.value = lng.toFixed(7);
+	}
+
+	function ensureMarker(lat, lng) {
+		if (!map) return;
+		var pos = new google.maps.LatLng(lat, lng);
+		if (!marker) {
+			marker = new google.maps.Marker({
+				position: pos,
+				map: map,
+				draggable: true
+			});
+			marker.addListener('dragend', function() {
+				var ll = marker.getPosition();
+				updateInputsFromLatLng(ll.lat(), ll.lng());
+			});
+		} else {
+			marker.setPosition(pos);
+		}
+		updateInputsFromLatLng(lat, lng);
+	}
+
+	function parseDMSValue(input) {
+		if (!input) return null;
+		var str = input.trim();
+		if (!str) return null;
+
+		// Normalize quotes
+		str = str.replace(/"/g, '"').replace(/'/g, "'");
+
+		var latRegex = /(\d+)[°º]\s*(\d+)[']\s*([0-9.]+)["”]?\s*([NS])/i;
+		var lonRegex = /(\d+)[°º]\s*(\d+)[']\s*([0-9.]+)["”]?\s*([EW])/i;
+
+		var latMatch = str.match(latRegex);
+		var lonMatch = str.match(lonRegex);
+
+		if (!latMatch || !lonMatch) {
+			return null;
+		}
+
+		function toDecimal(deg, min, sec, hemi) {
+			var d = parseFloat(deg) + parseFloat(min) / 60 + parseFloat(sec) / 3600;
+			if (/[SW]/i.test(hemi)) {
+				return -d;
+			}
+			return d;
+		}
+
+		var lat = toDecimal(latMatch[1], latMatch[2], latMatch[3], latMatch[4]);
+		var lng = toDecimal(lonMatch[1], lonMatch[2], lonMatch[3], lonMatch[4]);
+
+		if (isNaN(lat) || isNaN(lng)) {
+			return null;
+		}
+		return { lat: lat, lng: lng };
+	}
+
+	function geocodeAndZoomFromQuery(query, showToastOnFound) {
+		if (!map) return;
+		if (!query) return;
+		query = query.trim();
+		if (query.length < 3) return;
+
+		var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(query + ', Kenya');
+		fetch(url, { headers: { 'Accept-Language': 'en' } })
+			.then(function(resp) { return resp.json(); })
+			.then(function(results) {
+				if (!Array.isArray(results) || results.length === 0) {
+					return;
+				}
+				var r = results[0];
+				var lat = parseFloat(r.lat);
+				var lng = parseFloat(r.lon);
+				if (isNaN(lat) || isNaN(lng)) return;
+				map.setCenter({ lat: lat, lng: lng });
+				map.setZoom(16);
+				ensureMarker(lat, lng);
+				if (showToastOnFound && window.showToast) {
+					showToast('Suggested location for "' + query + '". Adjust on the map if needed.', 'info');
+				}
+			})
+			.catch(function() {
+				// Fail silently; admin can still place pin manually.
+			});
+	}
+
+	// Initialize marker if existing GPS values are present
+	if (latInput && lngInput && latInput.value && lngInput.value && !isNaN(parseFloat(latInput.value)) && !isNaN(parseFloat(lngInput.value))) {
+		ensureMarker(parseFloat(latInput.value), parseFloat(lngInput.value));
+	}
+
+	// Click on map to place/move pin
+	map.addListener('click', function(e) {
+		var lat = e.latLng.lat();
+		var lng = e.latLng.lng();
+		ensureMarker(lat, lng);
+	});
+
+	// Geolocation button
+	if (btn) {
+		btn.addEventListener('click', function() {
+			if (!navigator.geolocation) {
+				var msg = 'Geolocation is not supported by this browser.';
+				if (window.showToast) {
+					showToast(msg, 'danger');
+				} else {
+					alert(msg);
+				}
+				return;
+			}
+			btn.disabled = true;
+			btn.textContent = 'Detecting location...';
+			navigator.geolocation.getCurrentPosition(function(position) {
+				var lat = position.coords.latitude;
+				var lng = position.coords.longitude;
+				map.setCenter({ lat: lat, lng: lng });
+				map.setZoom(16);
+				ensureMarker(lat, lng);
+				btn.disabled = false;
+				btn.innerHTML = '<i class="bi bi-geo-alt"></i> Use my current GPS location';
+			}, function() {
+				var msg = 'Unable to get location. Please allow location access in your browser.';
+				if (window.showToast) {
+					showToast(msg, 'danger');
+				} else {
+					alert(msg);
+				}
+				btn.disabled = false;
+				btn.innerHTML = '<i class="bi bi-geo-alt"></i> Use my current GPS location';
+			}, {
+				enableHighAccuracy: true,
+				timeout: 10000,
+				maximumAge: 0
+			});
+		});
+	}
+
+	// Allow admin to paste DMS coordinates like 1°15'51.6"S 37°11'15.2"E
+	if (dmsInput) {
+		var applyDms = function() {
+			var parsed = parseDMSValue(dmsInput.value || '');
+			if (!parsed) {
+				if (window.showToast && dmsInput.value.trim() !== '') {
+					showToast('Could not understand the coordinates. Please use a format like 1°15\'51.6"S 37°11\'15.2"E.', 'danger');
+				}
+				return;
+			}
+			map.setCenter({ lat: parsed.lat, lng: parsed.lng });
+			map.setZoom(16);
+			ensureMarker(parsed.lat, parsed.lng);
+			if (window.showToast) {
+				showToast('GPS coordinates applied from DMS input.', 'success');
+			}
+		};
+
+		dmsInput.addEventListener('change', applyDms);
+		dmsInput.addEventListener('blur', applyDms);
+		dmsInput.addEventListener('keydown', function(e) {
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				applyDms();
+			}
+		});
+	}
+
+	// When admin types or changes the textual location, try to zoom map
+	if (locationInput) {
+		var lastLocationQuery = '';
+		locationInput.addEventListener('change', function() {
+			var q = locationInput.value || '';
+			if (q.trim() === '' || q.trim() === lastLocationQuery) return;
+			lastLocationQuery = q.trim();
+			geocodeAndZoomFromQuery(lastLocationQuery, true);
+		});
+		locationInput.addEventListener('blur', function() {
+			var q = locationInput.value || '';
+			q = q.trim();
+			if (q.length < 3 || q === lastLocationQuery) return;
+			lastLocationQuery = q;
+			geocodeAndZoomFromQuery(lastLocationQuery, true);
+		});
+	}
+
+	// If we don't have GPS yet but we do have a textual location, try to suggest a pin
+	if ((!latInput || !latInput.value || !lngInput || !lngInput.value) && locationInput && locationInput.value) {
+		geocodeAndZoomFromQuery(locationInput.value, true);
+	}
+}
+</script>
+<script src="https://maps.googleapis.com/maps/api/js?key=$googleMapsApiKey&callback=initAdminCustomerLocationMap" async defer></script>
+JS;
+} else {
+	// Fallback to Leaflet map if Google Maps API key is not configured
+	$custom_scripts = <<<'JS'
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+	var btn = document.getElementById('adminDetectLocationBtn');
+	var latInput = document.getElementById('latitude');
+	var lngInput = document.getElementById('longitude');
+	var locationInput = document.getElementById('location_label');
+	var mapEl = document.getElementById('customerLocationMap');
+	var map = null;
+	var marker = null;
+	var dmsInput = document.getElementById('gps_dms_input');
+
+	function updateInputsFromLatLng(lat, lng) {
+		if (!latInput || !lngInput) return;
+		latInput.value = lat.toFixed(7);
+		lngInput.value = lng.toFixed(7);
+	}
+
+	function ensureMarker(lat, lng) {
+		if (!map) return;
+		var pos = [lat, lng];
+		if (!marker) {
+			marker = L.marker(pos, { draggable: true }).addTo(map);
+			marker.on('dragend', function(e) {
+				var ll = e.target.getLatLng();
+				updateInputsFromLatLng(ll.lat, ll.lng);
+			});
+		} else {
+			marker.setLatLng(pos);
+		}
+		updateInputsFromLatLng(lat, lng);
+	}
+
+	function parseDMSValue(input) {
+		if (!input) return null;
+		var str = input.trim();
+		if (!str) return null;
+
+		// Normalize quotes
+		str = str.replace(/"/g, '"').replace(/'/g, "'");
+
+		var latRegex = /(\d+)[°º]\s*(\d+)[']\s*([0-9.]+)["”]?\s*([NS])/i;
+		var lonRegex = /(\d+)[°º]\s*(\d+)[']\s*([0-9.]+)["”]?\s*([EW])/i;
+
+		var latMatch = str.match(latRegex);
+		var lonMatch = str.match(lonRegex);
+
+		if (!latMatch || !lonMatch) {
+			return null;
+		}
+
+		function toDecimal(deg, min, sec, hemi) {
+			var d = parseFloat(deg) + parseFloat(min) / 60 + parseFloat(sec) / 3600;
+			if (/[SW]/i.test(hemi)) {
+				return -d;
+			}
+			return d;
+		}
+
+		var lat = toDecimal(latMatch[1], latMatch[2], latMatch[3], latMatch[4]);
+		var lng = toDecimal(lonMatch[1], lonMatch[2], lonMatch[3], lonMatch[4]);
+
+		if (isNaN(lat) || isNaN(lng)) {
+			return null;
+		}
+		return { lat: lat, lng: lng };
+	}
+
+	function geocodeAndZoomFromQuery(query, showToastOnFound) {
+		if (!map) return;
+		if (!query) return;
+		query = query.trim();
+		if (query.length < 3) return;
+
+		var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(query + ', Kenya');
+		fetch(url, { headers: { 'Accept-Language': 'en' } })
+			.then(function(resp) { return resp.json(); })
+			.then(function(results) {
+				if (!Array.isArray(results) || results.length === 0) {
+					return;
+				}
+				var r = results[0];
+				var lat = parseFloat(r.lat);
+				var lng = parseFloat(r.lon);
+				if (isNaN(lat) || isNaN(lng)) return;
+				map.setView([lat, lng], 16);
+				ensureMarker(lat, lng);
+				if (showToastOnFound && window.showToast) {
+					showToast('Suggested location for "' + query + '". Adjust on the map if needed.', 'info');
+				}
+			})
+			.catch(function() {
+				// Fail silently; admin can still place pin manually.
+			});
+	}
+
+	function initMap() {
+		if (!mapEl || typeof L === 'undefined') {
+			return;
+		}
+		var defaultLat = -1.292066;
+		var defaultLng = 36.821945;
+		var startLat = defaultLat;
+		var startLng = defaultLng;
+		var zoom = 13;
+
+		if (latInput && lngInput && latInput.value && lngInput.value) {
+			var parsedLat = parseFloat(latInput.value);
+			var parsedLng = parseFloat(lngInput.value);
+			if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+				startLat = parsedLat;
+				startLng = parsedLng;
+				zoom = 16;
+			}
+		}
+
+		map = L.map('customerLocationMap').setView([startLat, startLng], zoom);
+
+		var streetsLayer = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+			maxZoom: 19,
+			attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles style by Humanitarian OpenStreetMap Team hosted by OpenStreetMap France'
+		});
+		var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{x}/{y}', {
+			maxZoom: 19,
+			attribution: 'Imagery &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+		});
+
+		streetsLayer.addTo(map);
+		L.control.layers({
+			'Streets (OSM HOT)': streetsLayer,
+			'Satellite (Esri)': satelliteLayer
+		}, {}).addTo(map);
+
+		if (latInput && lngInput && latInput.value && lngInput.value && !isNaN(parseFloat(latInput.value)) && !isNaN(parseFloat(lngInput.value))) {
+			ensureMarker(parseFloat(latInput.value), parseFloat(lngInput.value));
+		}
+
+		map.on('click', function(e) {
+			ensureMarker(e.latlng.lat, e.latlng.lng);
+		});
+
+		// Keep view focused on the current customer area when switching to satellite
+		map.on('baselayerchange', function(e) {
+			if (e && e.name === 'Satellite (Esri)') {
+				if (latInput && lngInput && latInput.value && lngInput.value && !isNaN(parseFloat(latInput.value)) && !isNaN(parseFloat(lngInput.value))) {
+					var clat = parseFloat(latInput.value);
+					var clng = parseFloat(lngInput.value);
+					map.setView([clat, clng], 16);
+				} else {
+					map.setView([startLat, startLng], zoom);
+				}
+			}
+		});
+
+		// If we don't have GPS yet but we do have a textual location,
+		// try to suggest a pin using a geocoding service.
+		if ((!latInput || !latInput.value || !lngInput || !lngInput.value) && locationInput && locationInput.value) {
+			geocodeAndZoomFromQuery(locationInput.value, true);
+		}
+	}
+
+	if (btn) {
+		btn.addEventListener('click', function() {
+			if (!navigator.geolocation) {
+				var msg = 'Geolocation is not supported by this browser.';
+				if (window.showToast) {
+					showToast(msg, 'danger');
+				} else {
+					alert(msg);
+				}
+				return;
+			}
+			btn.disabled = true;
+			btn.textContent = 'Detecting location...';
+			navigator.geolocation.getCurrentPosition(function(position) {
+				var lat = position.coords.latitude;
+				var lng = position.coords.longitude;
+				if (map) {
+					map.setView([lat, lng], 16);
+					ensureMarker(lat, lng);
+				} else {
+					updateInputsFromLatLng(lat, lng);
+				}
+				btn.disabled = false;
+				btn.innerHTML = '<i class="bi bi-geo-alt"></i> Use my current GPS location';
+			}, function(error) {
+				var msg = 'Unable to get location. Please allow location access in your browser.';
+				if (window.showToast) {
+					showToast(msg, 'danger');
+				} else {
+					alert(msg);
+				}
+				btn.disabled = false;
+				btn.innerHTML = '<i class="bi bi-geo-alt"></i> Use my current GPS location';
+			}, {
+				enableHighAccuracy: true,
+				timeout: 10000,
+				maximumAge: 0
+			});
+		});
+	}
+
+	// Allow admin to paste DMS coordinates like 1°15'51.6"S 37°11'15.2"E
+	if (dmsInput) {
+		var applyDms = function() {
+			var parsed = parseDMSValue(dmsInput.value || '');
+			if (!parsed) {
+				if (window.showToast && dmsInput.value.trim() !== '') {
+					showToast('Could not understand the coordinates. Please use a format like 1°15\'51.6"S 37°11\'15.2"E.', 'danger');
+				}
+				return;
+			}
+			if (map) {
+				map.setView([parsed.lat, parsed.lng], 16);
+				ensureMarker(parsed.lat, parsed.lng);
+			} else {
+				updateInputsFromLatLng(parsed.lat, parsed.lng);
+			}
+			if (window.showToast) {
+				showToast('GPS coordinates applied from DMS input.', 'success');
+			}
+		};
+
+		dmsInput.addEventListener('change', applyDms);
+		dmsInput.addEventListener('blur', applyDms);
+		dmsInput.addEventListener('keydown', function(e) {
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				applyDms();
+			}
+		});
+	}
+
+	// When admin types or changes the textual location, try to zoom map
+	if (locationInput) {
+		var lastLocationQuery = '';
+		locationInput.addEventListener('change', function() {
+			var q = locationInput.value || '';
+			if (q.trim() === '' || q.trim() === lastLocationQuery) return;
+			lastLocationQuery = q.trim();
+			geocodeAndZoomFromQuery(lastLocationQuery, true);
+		});
+		locationInput.addEventListener('blur', function() {
+			var q = locationInput.value || '';
+			q = q.trim();
+			if (q.length < 3 || q === lastLocationQuery) return;
+			lastLocationQuery = q;
+			geocodeAndZoomFromQuery(lastLocationQuery, true);
+		});
+	}
+
+	if (mapEl && typeof L !== 'undefined') {
+		initMap();
+	}
+});
+</script>
+JS;
+}
+
+require_once __DIR__ . '/../../templates/footer.php';
+?>

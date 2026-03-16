@@ -13,6 +13,9 @@ class User {
     public $address;
     public $meter_number;
     public $connection_type;
+    public $location_label;
+    public $latitude;
+    public $longitude;
     public $password;
     public $password_hash;
     public $role;
@@ -23,6 +26,7 @@ class User {
         $this->conn = $db;
         $this->ensureTaxPinColumn();
         $this->ensureMustChangePasswordColumn();
+        $this->ensureLocationColumns();
     }
     
     // Create new user
@@ -37,6 +41,9 @@ class User {
                     address = :address,
                     meter_number = :meter_number,
                     connection_type = :connection_type,
+                    location_label = :location_label,
+                    latitude = :latitude,
+                    longitude = :longitude,
                     password_hash = :password_hash,
                     role = :role,
                     status = :status";
@@ -56,6 +63,13 @@ class User {
         $stmt->bindParam(":address", $this->address);
         $stmt->bindParam(":meter_number", $this->meter_number);
         $stmt->bindParam(":connection_type", $this->connection_type);
+        $locationLabel = $this->location_label !== null && $this->location_label !== '' ? $this->location_label : null;
+        // Latitude/longitude are optional; allow null
+        $lat = $this->latitude !== null && $this->latitude !== '' ? $this->latitude : null;
+        $lng = $this->longitude !== null && $this->longitude !== '' ? $this->longitude : null;
+        $stmt->bindParam(":location_label", $locationLabel);
+        $stmt->bindParam(":latitude", $lat);
+        $stmt->bindParam(":longitude", $lng);
         $stmt->bindParam(":password_hash", $this->password_hash);
         $stmt->bindParam(":role", $this->role);
         $stmt->bindParam(":status", $this->status);
@@ -211,6 +225,31 @@ class User {
             }
         } catch (\PDOException $e) {
             // Ignore schema errors here as well.
+        }
+    }
+
+    private function ensureLocationColumns() {
+        try {
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'location_label'");
+            $existsLabel = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'latitude'");
+            $existsLat = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'longitude'");
+            $existsLng = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$existsLabel) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN location_label VARCHAR(191) NULL AFTER connection_type");
+            }
+            if (!$existsLat) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN latitude DECIMAL(10,7) NULL AFTER location_label");
+            }
+            if (!$existsLng) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN longitude DECIMAL(10,7) NULL AFTER latitude");
+            }
+        } catch (\PDOException $e) {
+            // Ignore schema errors; core auth/registration can continue without GPS.
         }
     }
 }

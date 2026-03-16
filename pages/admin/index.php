@@ -333,9 +333,6 @@ require_once __DIR__ . '/../../templates/header.php';
 					<h2 class="mb-1">System Setting</h2>
 					<p class="text-muted mb-0">Manage billing settings and record meter readings.</p>
 				</div>
-				<button type="button" class="btn btn-sm btn-outline-light border" onclick="if(window.showToast){showToast('Sample admin toast working','info');}">
-					Test Toast
-				</button>
 			</div>
 		</div>
 	</div>

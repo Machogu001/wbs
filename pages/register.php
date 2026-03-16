@@ -90,6 +90,11 @@ require_once __DIR__ . '/../templates/header.php';
                             <textarea class="form-control" id="address" name="address" rows="2" required></textarea>
                             <div class="invalid-feedback">Please enter your address.</div>
                         </div>
+                        <div class="mb-3">
+                            <label for="location_label" class="form-label">Location (optional)</label>
+                            <input type="text" class="form-control location-autocomplete" id="location_label" name="location_label" placeholder="e.g. P5PP+CJ, Nguluni" autocomplete="off">
+                            <div class="form-text">Optional short location such as Plus Code or estate name (e.g. "P5PP+CJ, Nguluni").</div>
+                        </div>
                         
                         <div class="row">
                             <div class="col-md-6">
@@ -214,6 +219,7 @@ $(document).ready(function() {
             email: $('#email').val(),
             id_number: $('#id_number').val(),
             address: $('#address').val(),
+            location_label: $('#location_label').val(),
             connection_type: $('#connection_type').val(),
             password: password,
             tax_pin: $('#tax_pin').val()

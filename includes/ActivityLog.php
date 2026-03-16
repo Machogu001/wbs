@@ -6,6 +6,7 @@ class ActivityLog {
     public function __construct($db) {
         $this->conn = $db;
         $this->ensureTable();
+        $this->purgeOlderThanDays(30);
     }
 
     private function ensureTable() {
@@ -46,6 +47,22 @@ class ActivityLog {
             } catch (\PDOException $e2) {
                 // If even this fails, silently ignore to avoid breaking the app
             }
+        }
+    }
+
+    private function purgeOlderThanDays($days) {
+        $days = (int)$days;
+        if ($days <= 0) {
+            return;
+        }
+
+        try {
+            $sql = "DELETE FROM " . $this->table . " WHERE created_at < (NOW() - INTERVAL :days DAY)";
+            $stmt = $this->conn->prepare($sql);
+            $stmt->bindValue(':days', $days, \PDO::PARAM_INT);
+            $stmt->execute();
+        } catch (\PDOException $e) {
+            // Do not break main flow if cleanup fails
         }
     }
 

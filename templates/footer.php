@@ -90,8 +90,8 @@
                             <label for="landing_identifier" class="form-label">Account Number, Phone or Email *</label>
                             <div class="input-group">
                                 <span class="input-group-text"><i class="bi bi-person"></i></span>
-                                <input type="text" class="form-control" id="landing_identifier" name="identifier" required
-                                       placeholder="e.g. MTR0001, 07XXXXXXXX or name@example.com">
+                                    <input type="text" class="form-control" id="landing_identifier" name="identifier" required
+                                        placeholder="e.g. MTR0001, 07XXXXXXXX or name@example.com" autocomplete="username">
                             </div>
                             <div class="invalid-feedback">Please enter your account number, phone or email.</div>
                         </div>
@@ -124,8 +124,8 @@
     </div>
 
     <!-- Global Registration Modal (quick access) -->
-    <div class="modal fade" id="registerModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal fade" id="registerModal" tabindex="-1" aria-hidden="true">
+		<div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-person-plus"></i> Create Account</h5>
@@ -161,7 +161,7 @@
                                 <label for="landing_email" class="form-label">Email Address *</label>
                                 <div class="input-group">
                                     <span class="input-group-text"><i class="bi bi-envelope"></i></span>
-                                    <input type="email" class="form-control" id="landing_email" required>
+                                    <input type="email" class="form-control" id="landing_email" required autocomplete="email">
                                 </div>
                                 <div class="invalid-feedback">Please enter a valid email address.</div>
                             </div>
@@ -178,6 +178,11 @@
                                 <label for="landing_address" class="form-label">Physical Address *</label>
                                 <textarea class="form-control" id="landing_address" rows="2" required></textarea>
                                 <div class="invalid-feedback">Please enter your address.</div>
+                            </div>
+                            <div class="col-12">
+                                <label for="landing_location_label" class="form-label">Location (optional)</label>
+                                <input type="text" class="form-control location-autocomplete" id="landing_location_label" placeholder="e.g. P5PP+CJ, Nguluni" autocomplete="off">
+                                <div class="form-text">Optional short location such as Plus Code or estate name (e.g. "P5PP+CJ, Nguluni").</div>
                             </div>
                             <div class="col-md-6">
                                 <label for="landing_connection_type" class="form-label">Connection Type *</label>
@@ -599,15 +604,99 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <?php if (isset($page_title) && $page_title === 'Dashboard'): ?>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <?php endif; ?>
     <script>
         window.CURRENT_USER_ID = <?php echo isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 'null'; ?>;
     </script>
-    <script src="/public/js/script.js?v=20260305"></script>
+    <script src="/public/js/script.js?v=20260316"></script>
 
     <script>
+    // Simple location autocomplete using Nominatim (OpenStreetMap)
+    // Helps customers pick a clear text location while admins still control the actual GPS pin.
+    function setupLocationAutocomplete() {
+        if (typeof $ === 'undefined') {
+            return;
+        }
+
+        $('.location-autocomplete').each(function() {
+            var $input = $(this);
+            var typingTimer = null;
+            var lastQuery = '';
+
+            // Create suggestions container just after the input
+            var $suggestions = $('<div class="list-group location-suggestions mt-1"></div>').hide();
+            $input.after($suggestions);
+
+            $input.on('input', function() {
+                var query = $input.val().trim();
+
+                if (typingTimer) {
+                    clearTimeout(typingTimer);
+                }
+
+                if (query.length < 3) {
+                    $suggestions.empty().hide();
+                    return;
+                }
+
+                // Avoid spamming the API with the same query
+                if (query === lastQuery) {
+                    return;
+                }
+                lastQuery = query;
+
+                typingTimer = setTimeout(function() {
+                    var url = 'https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=' +
+                              encodeURIComponent(query + ', Kenya');
+
+                    fetch(url, {
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    })
+                        .then(function(response) { return response.json(); })
+                        .then(function(results) {
+                            $suggestions.empty();
+
+                            if (!Array.isArray(results) || results.length === 0) {
+                                $suggestions.hide();
+                                return;
+                            }
+
+                            results.forEach(function(item) {
+                                var label = item.display_name || '';
+                                if (!label) return;
+
+                                var $item = $('<button type="button" class="list-group-item list-group-item-action small"></button>');
+                                $item.text(label);
+                                $item.on('click', function(e) {
+                                    e.preventDefault();
+                                    $input.val(label);
+                                    $suggestions.empty().hide();
+                                });
+                                $suggestions.append($item);
+                            });
+
+                            $suggestions.show();
+                        })
+                        .catch(function() {
+                            $suggestions.empty().hide();
+                        });
+                }, 400);
+            });
+
+            // Hide suggestions shortly after blur to allow click selection
+            $input.on('blur', function() {
+                setTimeout(function() {
+                    $suggestions.hide();
+                }, 200);
+            });
+        });
+    }
+
     window.showToast = function(message, type) {
         var toastEl = document.getElementById('globalToast');
         var bodyEl = document.getElementById('globalToastBody');
@@ -700,6 +789,9 @@
 
     // Global handlers for header/home login & registration modals
     $(document).ready(function() {
+        // Initialize location autocomplete for any customer-facing location fields
+        setupLocationAutocomplete();
+
         // Login modal form
 
         // Switch from login modal to full registration modal without leaving the page
@@ -832,6 +924,7 @@
                 email: $('#landing_email').val(),
                 id_number: $('#landing_id_number').val(),
                 address: $('#landing_address').val(),
+                location_label: $('#landing_location_label').val(),
                 connection_type: $('#landing_connection_type').val(),
                 password: password,
                 tax_pin: $('#landing_tax_pin').val()

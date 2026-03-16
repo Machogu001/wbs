@@ -221,7 +221,7 @@ $(document).ready(function() {
         }
     }
 
-    function openSupportChat() {
+    function openSupportChat(onReady) {
         if (!$chatWindow.length) return;
         $chatWindow.show();
 
@@ -239,6 +239,9 @@ $(document).ready(function() {
                         appendChatMessages(resp.messages);
                     }
                     startChatPolling();
+                    if (typeof onReady === 'function') {
+                        onReady();
+                    }
                 } else {
                     if (window.showToast) {
                         showToast((resp && resp.message) || 'Unable to start chat.', 'danger');
@@ -251,6 +254,9 @@ $(document).ready(function() {
             });
         } else {
             startChatPolling();
+            if (typeof onReady === 'function') {
+                onReady();
+            }
         }
     }
 

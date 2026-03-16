@@ -62,6 +62,15 @@ try {
     // Meter number matches account number
     $user->meter_number = $account_number;
     $user->connection_type = isset($data->connection_type) ? $data->connection_type : 'domestic';
+    // Optional human-readable location label (e.g. Plus Code or landmark)
+    $user->location_label = isset($data->location_label) ? trim($data->location_label) : null;
+    // Optional GPS location (latitude/longitude)
+    if (isset($data->latitude) && $data->latitude !== '') {
+        $user->latitude = (float)$data->latitude;
+    }
+    if (isset($data->longitude) && $data->longitude !== '') {
+        $user->longitude = (float)$data->longitude;
+    }
     $user->password = $data->password;
     $user->role = 'customer';
 

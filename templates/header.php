@@ -35,6 +35,7 @@ if (!isset($appName) || $appName === '') {
     <link rel="alternate icon" type="image/png" href="/public/images/favicon-water.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <link rel="stylesheet" href="../public/css/style.css">
 </head>
 <body class="<?php echo !empty($hide_nav) ? 'auth-layout' : ''; ?>">

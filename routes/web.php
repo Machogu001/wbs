@@ -42,4 +42,6 @@ return [
     'admin/activity_log' => 'pages/admin/activity_log.php',
     'chat' => 'pages/admin/chat.php',
     'admin/chat' => 'pages/admin/chat.php',
+    // Customer locations map (admin only)
+    'admin/customer-locations' => 'pages/admin/customer_locations.php',
 ];
