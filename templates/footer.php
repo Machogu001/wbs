@@ -86,36 +86,57 @@
                 </div>
                 <div class="modal-body">
                     <form id="landingLoginForm" novalidate>
-                        <div class="mb-3">
-                            <label for="landing_identifier" class="form-label">Account Number, Phone or Email *</label>
-                            <div class="input-group">
-                                <span class="input-group-text"><i class="bi bi-person"></i></span>
-                                    <input type="text" class="form-control" id="landing_identifier" name="identifier" required
-                                        placeholder="e.g. MTR0001, 07XXXXXXXX or name@example.com" autocomplete="username">
-                            </div>
-                            <div class="invalid-feedback">Please enter your account number, phone or email.</div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="landing_password" class="form-label">Password *</label>
-                            <div class="input-group">
-                                <input type="password" class="form-control" id="landing_password" name="password" autocomplete="current-password" required>
-                                <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
-                                    <i class="bi bi-eye"></i>
-                                </button>
-                            </div>
-                            <div class="d-flex justify-content-between align-items-center mt-1">
-                                <div class="form-check mb-0">
-                                    <input class="form-check-input" type="checkbox" id="landingShowPasswordToggle">
-                                    <label class="form-check-label small" for="landingShowPasswordToggle">Show password</label>
+                        <div id="landingCredentialsSection">
+                            <div class="mb-3">
+                                <label for="landing_identifier" class="form-label">Account Number, Phone or Email *</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-person"></i></span>
+                                        <input type="text" class="form-control" id="landing_identifier" name="identifier" required
+                                            placeholder="e.g. MTR0001, 07XXXXXXXX or name@example.com" autocomplete="username">
                                 </div>
-                                <a href="/forgot-password" class="small">Forgot password?</a>
+                                <div class="invalid-feedback">Please enter your account number, phone or email.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="landing_password" class="form-label">Password *</label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="landing_password" name="password" autocomplete="current-password" required>
+                                    <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mt-1">
+                                    <div class="form-check mb-0">
+                                        <input class="form-check-input" type="checkbox" id="landingShowPasswordToggle">
+                                        <label class="form-check-label small" for="landingShowPasswordToggle">Show password</label>
+                                    </div>
+                                    <a href="/forgot-password" class="small">Forgot password?</a>
+                                </div>
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary" id="landingLoginBtn">
+                                    <i class="bi bi-box-arrow-in-right"></i> Login
+                                </button>
+                                <a href="#" id="openFullRegistrationFromLogin" class="btn btn-link">Need an account? Open full registration</a>
                             </div>
                         </div>
-                        <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-primary" id="landingLoginBtn">
-                                <i class="bi bi-box-arrow-in-right"></i> Login
-                            </button>
-                            <a href="#" id="openFullRegistrationFromLogin" class="btn btn-link">Need an account? Open full registration</a>
+
+                        <div id="landingTwoFactorSection" class="d-none">
+                            <h6 class="mb-2"><i class="bi bi-shield-lock"></i> Enter verification code</h6>
+                            <p class="small text-muted mb-1" id="landingTwoFactorMessage">We sent a code to your phone. Enter it below to finish logging in.</p>
+                            <p class="small text-muted mb-3">
+                                Didn't receive the code?
+                                <span><a href="#" id="landingTwoFactorUsePhone">Use phone</a></span>
+                                <span class="ms-2"><a href="#" id="landingTwoFactorUseEmail">Use email</a></span>
+                                <span class="ms-2 text-primary fw-semibold d-none" id="landingTwoFactorCountdown"></span>
+                            </p>
+                            <div class="mb-3">
+                                <label for="landing_two_factor_code" class="form-label">6-digit code</label>
+                                <input type="text" class="form-control" id="landing_two_factor_code" placeholder="6-digit code" autocomplete="one-time-code">
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button type="button" class="btn btn-primary" id="landingVerify2faBtn">Verify and Login</button>
+                                <button type="button" class="btn btn-link" id="landingBackToCredentialsBtn">Back to login details</button>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -837,6 +858,229 @@
             }
         });
 
+        function handleLandingPostLoginSuccess(response) {
+            var requiresRegPayment = response.data && response.data.requires_registration_payment;
+            var requiresPasswordChange = response.data && response.data.requires_password_change;
+
+            if (requiresRegPayment) {
+                if (window.showToast) {
+                    showToast('Login successful. Please complete your registration payment.','info');
+                }
+                setTimeout(function() { window.location.href = '/registration-payment'; }, 1000);
+                return;
+            }
+
+            if (requiresPasswordChange) {
+                if (window.showToast) {
+                    showToast('Login successful! Please change your password.','success');
+                }
+                setTimeout(function() { window.location.href = '/change-password'; }, 1000);
+                return;
+            }
+
+            if (window.showToast) {
+                showToast('Login successful! Redirecting...','success');
+            }
+            setTimeout(function() { window.location.href = '/dashboard'; }, 1000);
+        }
+
+        function showLandingTwoFactorPrompt(methodLabel) {
+            var $credentials = $('#landingCredentialsSection');
+            var $twofa = $('#landingTwoFactorSection');
+            var $msg = $('#landingTwoFactorMessage');
+            if (!$credentials.length || !$twofa.length) return;
+
+            var where = methodLabel === 'email' ? 'email' : 'phone';
+            $msg.text('We sent a code to your ' + where + '. Enter it below to finish logging in.');
+
+            $credentials.addClass('d-none');
+            $twofa.removeClass('d-none');
+            $('#landing_two_factor_code').val('').focus();
+        }
+
+        var landingTwoFactorVerifying = false;
+        var landingTwoFactorResendTimer = null;
+        var landingTwoFactorResendRemaining = 0;
+
+        function startLandingTwoFactorCooldown(seconds) {
+            var $phoneLink = $('#landingTwoFactorUsePhone');
+            var $emailLink = $('#landingTwoFactorUseEmail');
+            var $countdown = $('#landingTwoFactorCountdown');
+            if (!$countdown.length) return;
+
+            if (landingTwoFactorResendTimer) {
+                clearInterval(landingTwoFactorResendTimer);
+            }
+
+            landingTwoFactorResendRemaining = parseInt(seconds, 10) || 0;
+            if (landingTwoFactorResendRemaining <= 0) {
+                return;
+            }
+
+            if ($phoneLink.length) {
+                $phoneLink.addClass('disabled').css('pointer-events', 'none');
+            }
+            if ($emailLink.length) {
+                $emailLink.addClass('disabled').css('pointer-events', 'none');
+            }
+
+            $countdown.removeClass('d-none');
+            $countdown.text('You can resend in ' + landingTwoFactorResendRemaining + 's');
+
+            landingTwoFactorResendTimer = setInterval(function() {
+                landingTwoFactorResendRemaining--;
+                if (landingTwoFactorResendRemaining <= 0) {
+                    clearInterval(landingTwoFactorResendTimer);
+                    landingTwoFactorResendTimer = null;
+                    $countdown.addClass('d-none').text('');
+                    if ($phoneLink.length) {
+                        $phoneLink.removeClass('disabled').css('pointer-events', '');
+                    }
+                    if ($emailLink.length) {
+                        $emailLink.removeClass('disabled').css('pointer-events', '');
+                    }
+                } else {
+                    $countdown.text('You can resend in ' + landingTwoFactorResendRemaining + 's');
+                }
+            }, 1000);
+        }
+
+        function submitLandingTwoFactorCode() {
+            var code = $('#landing_two_factor_code').val().trim();
+            if (!code) {
+                if (window.showToast) {
+                    showToast('Please enter the verification code.','danger');
+                }
+                return;
+            }
+
+            if (landingTwoFactorVerifying) {
+                return;
+            }
+            landingTwoFactorVerifying = true;
+
+            var $btn = $('#landingVerify2faBtn');
+            if ($btn.length) {
+                $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Verifying...');
+            }
+
+            $.ajax({
+                url: '/api/auth/verify_2fa',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ code: code }),
+                success: function(response) {
+                    if (response.status === 'success') {
+                        handleLandingPostLoginSuccess(response);
+                    } else if (window.showToast) {
+                        showToast(response.message || 'Verification failed','danger');
+                    }
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON ? xhr.responseJSON.message : 'Verification failed';
+                    if (window.showToast) {
+                        showToast(error,'danger');
+                    }
+                },
+                complete: function() {
+                    if ($btn.length) {
+                        $btn.prop('disabled', false).html('Verify and Login');
+                    }
+                    landingTwoFactorVerifying = false;
+                }
+            });
+        }
+
+        $(document).on('click', '#landingVerify2faBtn', function() {
+            submitLandingTwoFactorCode();
+        });
+
+        $(document).on('click', '#landingBackToCredentialsBtn', function() {
+            $('#landingTwoFactorSection').addClass('d-none');
+            $('#landingCredentialsSection').removeClass('d-none');
+        });
+
+        // Auto-verify when 6-digit code is fully entered in modal
+        $('#landing_two_factor_code').on('input', function() {
+            var val = $(this).val().replace(/\D/g, '');
+            $(this).val(val);
+            if (val.length === 6) {
+                submitLandingTwoFactorCode();
+            }
+        });
+
+        $(document).on('click', '#landingTwoFactorUsePhone', function(e) {
+            e.preventDefault();
+            if ($(this).hasClass('disabled')) return;
+            $.ajax({
+                url: '/api/auth/resend_2fa',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ method: 'sms' }),
+                success: function(resp) {
+                    if (resp.status === 'success') {
+                        if (window.showToast) {
+                            showToast('Verification code sent to your phone.','info');
+                        }
+                        showLandingTwoFactorPrompt('phone');
+                        startLandingTwoFactorCooldown(60);
+                    } else if (resp.status === 'cooldown') {
+                        var remaining = resp.data && resp.data.remaining ? resp.data.remaining : 0;
+                        if (remaining > 0) {
+                            startLandingTwoFactorCooldown(remaining);
+                        }
+                        if (window.showToast) {
+                            showToast(resp.message || 'Please wait before requesting another code.','warning');
+                        }
+                    } else if (window.showToast) {
+                        showToast(resp.message || 'Could not resend code.','danger');
+                    }
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON ? xhr.responseJSON.message : 'Could not resend code.';
+                    if (window.showToast) {
+                        showToast(error,'danger');
+                    }
+                }
+            });
+        });
+
+        $(document).on('click', '#landingTwoFactorUseEmail', function(e) {
+            e.preventDefault();
+            if ($(this).hasClass('disabled')) return;
+            $.ajax({
+                url: '/api/auth/resend_2fa',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ method: 'email' }),
+                success: function(resp) {
+                    if (resp.status === 'success') {
+                        if (window.showToast) {
+                            showToast('Verification code sent to your email.','info');
+                        }
+                        showLandingTwoFactorPrompt('email');
+                        startLandingTwoFactorCooldown(60);
+                    } else if (resp.status === 'cooldown') {
+                        var remaining = resp.data && resp.data.remaining ? resp.data.remaining : 0;
+                        if (remaining > 0) {
+                            startLandingTwoFactorCooldown(remaining);
+                        }
+                        if (window.showToast) {
+                            showToast(resp.message || 'Please wait before requesting another code.','warning');
+                        }
+                    } else if (window.showToast) {
+                        showToast(resp.message || 'Could not resend code.','danger');
+                    }
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON ? xhr.responseJSON.message : 'Could not resend code.';
+                    if (window.showToast) {
+                        showToast(error,'danger');
+                    }
+                }
+            });
+        });
+
         $('#landingLoginForm').on('submit', function(e) {
             e.preventDefault();
 
@@ -861,26 +1105,17 @@
                 contentType: 'application/json',
                 data: JSON.stringify(formData),
                 success: function(response) {
-                    if (response.status === 'success') {
-                        var requiresRegPayment = response.data && response.data.requires_registration_payment;
-                        var requiresPasswordChange = response.data && response.data.requires_password_change;
-
-                        if (requiresRegPayment) {
-                            if (window.showToast) {
-                                showToast('Login successful. Please complete your registration payment.','info');
-                            }
-                            setTimeout(function() { window.location.href = '/registration-payment'; }, 1000);
-                        } else if (requiresPasswordChange) {
-                            if (window.showToast) {
-                                showToast('Login successful! Please change your password.','success');
-                            }
-                            setTimeout(function() { window.location.href = '/change-password'; }, 1000);
-                        } else {
-                            if (window.showToast) {
-                                showToast('Login successful! Redirecting...','success');
-                            }
-                            setTimeout(function() { window.location.href = '/dashboard'; }, 1000);
+                    if (response.status === 'two_factor_required') {
+                        var method = (response.data && response.data.method) || 'phone';
+                        var label = method === 'email' ? 'email' : 'phone';
+                        if (window.showToast) {
+                            showToast('Verification code sent to your ' + label + '.','info');
                         }
+                        showLandingTwoFactorPrompt(label);
+                        // Start initial resend cooldown
+                        startLandingTwoFactorCooldown(60);
+                    } else if (response.status === 'success') {
+                        handleLandingPostLoginSuccess(response);
                     } else if (window.showToast) {
                         showToast(response.message || 'Login failed','danger');
                     }

@@ -5,6 +5,8 @@ require_once __DIR__ . '/../../includes/User.php';
 require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/Payment.php';
 require_once __DIR__ . '/../../includes/ActivityLog.php';
+require_once __DIR__ . '/../../includes/SMS.php';
+require_once __DIR__ . '/../../includes/Email.php';
 
 // Simple login rate limiting to protect against brute-force attacks
 const LOGIN_MAX_ATTEMPTS = 5;          // maximum failed attempts
@@ -98,6 +100,94 @@ function clearLoginAttempts(PDO $db, string $identifier, string $ip): void {
     $stmt->execute();
 }
 
+function sendTwoFactorCode(array $userRow, string $identifier, string $clientIp): array {
+    $method = isset($userRow['two_factor_method']) ? strtolower((string)$userRow['two_factor_method']) : 'sms';
+    if ($method !== 'sms' && $method !== 'email') {
+        $method = 'sms';
+    }
+
+    $phone = trim((string)($userRow['phone_number'] ?? ''));
+    $emailAddr = trim((string)($userRow['email'] ?? ''));
+
+    $availableMethods = [];
+    if ($phone !== '') {
+        $availableMethods[] = 'sms';
+    }
+    if ($emailAddr !== '' && filter_var($emailAddr, FILTER_VALIDATE_EMAIL)) {
+        $availableMethods[] = 'email';
+    }
+
+    if ($method === 'sms' && $phone === '' && $emailAddr !== '') {
+        $method = 'email';
+    } elseif ($method === 'email' && ($emailAddr === '' || !filter_var($emailAddr, FILTER_VALIDATE_EMAIL)) && $phone !== '') {
+        $method = 'sms';
+    }
+
+    if ($method === 'sms' && $phone === '') {
+        return [
+            'success' => false,
+            'message' => 'Two-step verification is enabled, but no phone number is set. Please contact support.',
+        ];
+    }
+    if ($method === 'email' && ($emailAddr === '' || !filter_var($emailAddr, FILTER_VALIDATE_EMAIL))) {
+        return [
+            'success' => false,
+            'message' => 'Two-step verification is enabled, but no valid email address is set. Please contact support.',
+        ];
+    }
+
+    $code = (string)random_int(100000, 999999);
+    $appName = getenv('APP_NAME') ?: 'Water Billing System';
+    $messageText = "{$code} is your {$appName} login verification code. It expires in 5 minutes.";
+
+    $sent = false;
+    $lastError = '';
+
+    if ($method === 'sms') {
+        $sms = new SMS();
+        $result = $sms->send($phone, $messageText);
+        $sent = !empty($result['success']);
+        if (!$sent) {
+            $lastError = (string)($result['message'] ?? 'SMS send failed');
+        }
+    } else {
+        $email = new Email();
+        $result = $email->send($emailAddr, 'Your login verification code', $messageText);
+        $sent = !empty($result['success']);
+        if (!$sent) {
+            $lastError = (string)($result['message'] ?? 'Email send failed');
+        }
+    }
+
+    if (!$sent) {
+        return [
+            'success' => false,
+            'message' => 'Failed to send verification code: ' . $lastError,
+        ];
+    }
+
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+
+    $_SESSION['login_2fa'] = [
+        'user_id' => (int)$userRow['id'],
+        'user' => $userRow,
+        'code' => $code,
+        'method' => $method,
+        'identifier' => $identifier,
+        'ip' => $clientIp,
+        'expires_at' => time() + 300,
+        'attempts' => 0,
+    ];
+
+    return [
+        'success' => true,
+        'method' => $method,
+        'available_methods' => $availableMethods,
+    ];
+}
+
 try {
     $database = new Database();
     $db = $database->getConnection();
@@ -139,7 +229,31 @@ try {
     $user_data = $user->login($identifier, $data->password);
     
     if($user_data) {
-        // Start session and login
+        $twoFactorEnabled = !empty($user_data['two_factor_enabled']);
+
+        if ($twoFactorEnabled) {
+            $sendResult = sendTwoFactorCode($user_data, $identifier, $clientIp);
+            if (!$sendResult['success']) {
+                throw new Exception($sendResult['message']);
+            }
+
+            // Password is correct; clear failed attempts immediately
+            clearLoginAttempts($db, $identifier, $clientIp);
+
+            http_response_code(200);
+            echo json_encode(array(
+                "status" => "two_factor_required",
+                "message" => "Verification code sent",
+                "data" => array(
+                    "method" => $sendResult['method'],
+                    "available_methods" => $sendResult['available_methods'] ?? array(),
+                    "session_id" => session_id()
+                )
+            ));
+            return;
+        }
+
+        // Start session and login (no 2FA)
         $auth->login($user_data['id'], $user_data);
 
         // Log successful login

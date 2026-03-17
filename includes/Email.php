@@ -92,8 +92,9 @@ class Email
 
         stream_set_timeout($stream, $timeout);
 
-        $read = $this->readLine($stream);
-        if (substr($read, 0, 3) !== '220') {
+        // Read full server greeting (may be multi-line 220- ... 220 )
+        $read = $this->readMultiline($stream);
+        if ($this->getResponseCode($read) !== '220') {
             fclose($stream);
             return [
                 'success' => false,
@@ -103,7 +104,7 @@ class Email
 
         $domain = 'localhost';
         $ehloResp = $this->sendCommand($stream, 'EHLO ' . $domain);
-        if (substr($ehloResp, 0, 3) !== '250') {
+        if ($this->getResponseCode($ehloResp) !== '250') {
             fclose($stream);
             return [
                 'success' => false,
@@ -113,7 +114,7 @@ class Email
 
         if ($this->scheme === 'tls') {
             $starttls = $this->sendCommand($stream, 'STARTTLS');
-            if (substr($starttls, 0, 3) !== '220') {
+            if ($this->getResponseCode($starttls) !== '220') {
                 fclose($stream);
                 return [
                     'success' => false,
@@ -128,7 +129,7 @@ class Email
                 ];
             }
             $ehloResp = $this->sendCommand($stream, 'EHLO ' . $domain);
-            if (substr($ehloResp, 0, 3) !== '250') {
+            if ($this->getResponseCode($ehloResp) !== '250') {
                 fclose($stream);
                 return [
                     'success' => false,
@@ -139,7 +140,7 @@ class Email
 
         if ($this->username !== '') {
             $authResp = $this->sendCommand($stream, 'AUTH LOGIN');
-            if (substr($authResp, 0, 3) !== '334') {
+            if ($this->getResponseCode($authResp) !== '334') {
                 fclose($stream);
                 return [
                     'success' => false,
@@ -147,7 +148,7 @@ class Email
                 ];
             }
             $userResp = $this->sendCommand($stream, base64_encode($this->username));
-            if (substr($userResp, 0, 3) !== '334') {
+            if ($this->getResponseCode($userResp) !== '334') {
                 fclose($stream);
                 return [
                     'success' => false,
@@ -155,7 +156,7 @@ class Email
                 ];
             }
             $passResp = $this->sendCommand($stream, base64_encode($this->password));
-            if (substr($passResp, 0, 3) !== '235') {
+            if ($this->getResponseCode($passResp) !== '235') {
                 fclose($stream);
                 return [
                     'success' => false,
@@ -165,7 +166,7 @@ class Email
         }
 
         $mailFrom = $this->sendCommand($stream, 'MAIL FROM: <' . $this->fromAddress . '>');
-        if (substr($mailFrom, 0, 3) !== '250') {
+        if ($this->getResponseCode($mailFrom) !== '250') {
             fclose($stream);
             return [
                 'success' => false,
@@ -174,7 +175,8 @@ class Email
         }
 
         $rcptTo = $this->sendCommand($stream, 'RCPT TO: <' . $to . '>');
-        if (substr($rcptTo, 0, 3) !== '250' && substr($rcptTo, 0, 3) !== '251') {
+        $rcptCode = $this->getResponseCode($rcptTo);
+        if ($rcptCode !== '250' && $rcptCode !== '251') {
             fclose($stream);
             return [
                 'success' => false,
@@ -183,7 +185,7 @@ class Email
         }
 
         $dataResp = $this->sendCommand($stream, 'DATA');
-        if (substr($dataResp, 0, 3) !== '354') {
+        if ($this->getResponseCode($dataResp) !== '354') {
             fclose($stream);
             return [
                 'success' => false,
@@ -195,7 +197,7 @@ class Email
         $data = $subjectHeader . "\r\n" . $headers . "\r\n\r\n" . $body . "\r\n.";
         fwrite($stream, $data . "\r\n");
         $dataResult = $this->readLine($stream);
-        if (substr($dataResult, 0, 3) !== '250') {
+        if ($this->getResponseCode($dataResult) !== '250') {
             fclose($stream);
             return [
                 'success' => false,
@@ -234,6 +236,35 @@ class Email
             }
         }
         return $data;
+    }
+
+    private function getResponseCode(string $response): string
+    {
+        $response = trim($response);
+        if ($response === '') {
+            return '';
+        }
+
+        $lines = preg_split("/(\r\n|\r|\n)/", $response);
+        if ($lines === false || count($lines) === 0) {
+            return '';
+        }
+
+        $lastLine = '';
+        // Find the last non-empty line
+        for ($i = count($lines) - 1; $i >= 0; $i--) {
+            $candidate = trim($lines[$i]);
+            if ($candidate !== '') {
+                $lastLine = $candidate;
+                break;
+            }
+        }
+
+        if ($lastLine === '' || strlen($lastLine) < 3) {
+            return '';
+        }
+
+        return substr($lastLine, 0, 3);
     }
 }
 

@@ -51,38 +51,59 @@ if ($logged_out) {
                     <div id="loginMessage" class="alert d-none"></div>
                     
                     <form id="loginForm" novalidate>
-                        <div class="mb-3">
-                            <label for="identifier" class="form-label">Account Number, Phone or Email *</label>
-                            <div class="input-group">
-                                <span class="input-group-text"><i class="bi bi-person"></i></span>
-                                <input type="text" class="form-control" id="identifier" name="identifier" 
-                                       placeholder="e.g. MTR0001, 07XXXXXXXX or name@example.com" required>
-                            </div>
-                            <div class="invalid-feedback">Please enter your account number, phone or email.</div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="password" class="form-label">Password *</label>
-                            <div class="input-group">
-                                <input type="password" class="form-control" id="password" name="password" autocomplete="current-password" required>
-                                <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
-                                    <i class="bi bi-eye"></i>
-                                </button>
-                            </div>
-                            <div class="d-flex justify-content-between align-items-center mt-1">
-                                <div class="form-check mb-0">
-                                    <input class="form-check-input" type="checkbox" id="showPasswordToggle">
-                                    <label class="form-check-label small" for="showPasswordToggle">Show password</label>
+                        <div id="loginCredentialsSection">
+                            <div class="mb-3">
+                                <label for="identifier" class="form-label">Account Number, Phone or Email *</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-person"></i></span>
+                                    <input type="text" class="form-control" id="identifier" name="identifier" 
+                                           placeholder="e.g. MTR0001, 07XXXXXXXX or name@example.com" required>
                                 </div>
-                                <a href="/forgot-password" class="small">Forgot password?</a>
+                                <div class="invalid-feedback">Please enter your account number, phone or email.</div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Password *</label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="password" name="password" autocomplete="current-password" required>
+                                    <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mt-1">
+                                    <div class="form-check mb-0">
+                                        <input class="form-check-input" type="checkbox" id="showPasswordToggle">
+                                        <label class="form-check-label small" for="showPasswordToggle">Show password</label>
+                                    </div>
+                                    <a href="/forgot-password" class="small">Forgot password?</a>
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary btn-lg" id="loginBtn">
+                                    <i class="bi bi-box-arrow-in-right"></i> Login
+                                </button>
+                                <a href="/register" class="btn btn-link">Don't have an account? Register here</a>
                             </div>
                         </div>
-                        
-                        <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-primary btn-lg" id="loginBtn">
-                                <i class="bi bi-box-arrow-in-right"></i> Login
-                            </button>
-                            <a href="/register" class="btn btn-link">Don't have an account? Register here</a>
+
+                        <div id="loginTwoFactorSection" class="d-none">
+                            <h5 class="mb-2"><i class="bi bi-shield-lock"></i> Enter verification code</h5>
+                            <p class="small text-muted mb-1" id="loginTwoFactorMessage">We sent a code to your phone. Enter it below to finish logging in.</p>
+                            <p class="small text-muted mb-3">
+                                Didn't receive the code?
+                                <span><a href="#" id="loginTwoFactorUsePhone">Use phone</a></span>
+                                <span class="ms-2"><a href="#" id="loginTwoFactorUseEmail">Use email</a></span>
+                                <span class="ms-2 text-primary fw-semibold d-none" id="loginTwoFactorCountdown"></span>
+                            </p>
+                            <div class="mb-3">
+                                <label for="two_factor_code" class="form-label">6-digit code</label>
+                                <input type="text" class="form-control" id="two_factor_code" placeholder="6-digit code" autocomplete="one-time-code">
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button type="button" class="btn btn-primary btn-lg" id="verify2faBtn">Verify and Login</button>
+                                <button type="button" class="btn btn-link" id="backToCredentialsBtn">Back to login details</button>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -95,6 +116,11 @@ if ($logged_out) {
 $custom_scripts = <<<'JS'
 <script>
 $(document).ready(function() {
+    var twoFactorAvailableMethods = [];
+    var twoFactorCurrentMethod = null;
+    var twoFactorVerifying = false;
+    var twoFactorResendTimer = null;
+    var twoFactorResendRemaining = 0;
     // Show/hide password using the checkbox
     $('#showPasswordToggle').on('change', function() {
         var input = $('#password');
@@ -105,81 +131,312 @@ $(document).ready(function() {
         }
     });
 
+    function handlePostLoginSuccess(response) {
+        var requiresRegPayment = response.data && response.data.requires_registration_payment;
+        var requiresPasswordChange = response.data && response.data.requires_password_change;
+
+        if (requiresRegPayment) {
+            if (window.showToast) {
+                showToast('Login successful. Please complete your registration payment.','info');
+            } else {
+                $('#loginMessage')
+                    .removeClass('d-none alert-danger')
+                    .addClass('alert-info')
+                    .html('<i class="bi bi-info-circle"></i> Login successful. Please complete your registration payment.');
+            }
+
+            setTimeout(function() {
+                window.location.href = '/registration-payment';
+            }, 1000);
+            return;
+        }
+
+        if (requiresPasswordChange) {
+            if (window.showToast) {
+                showToast('Login successful! Please change your password.','success');
+            } else {
+                $('#loginMessage')
+                    .removeClass('d-none alert-danger')
+                    .addClass('alert-success')
+                    .html('<i class="bi bi-check-circle"></i> Login successful! Redirecting to change password...');
+            }
+
+            setTimeout(function() {
+                window.location.href = '/change-password';
+            }, 1000);
+            return;
+        }
+
+        if (window.showToast) {
+            showToast('Login successful! Redirecting...','success');
+        } else {
+            $('#loginMessage')
+                .removeClass('d-none alert-danger')
+                .addClass('alert-success')
+                .html('<i class="bi bi-check-circle"></i> Login successful! Redirecting...');
+        }
+
+        setTimeout(function() {
+            window.location.href = '/dashboard';
+        }, 1000);
+    }
+
+    function showTwoFactorPrompt(methodLabel) {
+        var $credentials = $('#loginCredentialsSection');
+        var $twofa = $('#loginTwoFactorSection');
+        var $msg = $('#loginTwoFactorMessage');
+        if (!$credentials.length || !$twofa.length) return;
+
+        var where = methodLabel === 'email' ? 'email' : 'phone';
+        $msg.text('We sent a code to your ' + where + '. Enter it below to finish logging in.');
+
+        $credentials.addClass('d-none');
+        $twofa.removeClass('d-none');
+        $('#two_factor_code').val('').focus();
+    }
+
+    function startTwoFactorCooldownMain(seconds) {
+        var $phoneLink = $('#loginTwoFactorUsePhone');
+        var $emailLink = $('#loginTwoFactorUseEmail');
+        var $countdown = $('#loginTwoFactorCountdown');
+        if (!$countdown.length) return;
+
+        if (twoFactorResendTimer) {
+            clearInterval(twoFactorResendTimer);
+        }
+
+        twoFactorResendRemaining = parseInt(seconds, 10) || 0;
+        if (twoFactorResendRemaining <= 0) {
+            return;
+        }
+
+        if ($phoneLink.length) {
+            $phoneLink.addClass('disabled').css('pointer-events', 'none');
+        }
+        if ($emailLink.length) {
+            $emailLink.addClass('disabled').css('pointer-events', 'none');
+        }
+
+        $countdown.removeClass('d-none');
+        $countdown.text('You can resend in ' + twoFactorResendRemaining + 's');
+
+        twoFactorResendTimer = setInterval(function() {
+            twoFactorResendRemaining--;
+            if (twoFactorResendRemaining <= 0) {
+                clearInterval(twoFactorResendTimer);
+                twoFactorResendTimer = null;
+                $countdown.addClass('d-none').text('');
+                if ($phoneLink.length) {
+                    $phoneLink.removeClass('disabled').css('pointer-events', '');
+                }
+                if ($emailLink.length) {
+                    $emailLink.removeClass('disabled').css('pointer-events', '');
+                }
+            } else {
+                $countdown.text('You can resend in ' + twoFactorResendRemaining + 's');
+            }
+        }, 1000);
+    }
+
+    function updateTwoFactorMethodSwitch() {
+        var $phoneLink = $('#loginTwoFactorUsePhone');
+        var $emailLink = $('#loginTwoFactorUseEmail');
+        if (!twoFactorAvailableMethods.length) {
+            if ($phoneLink.length) $phoneLink.closest('span').hide();
+            if ($emailLink.length) $emailLink.closest('span').hide();
+            return;
+        }
+
+        if ($phoneLink.length) {
+            var showPhone = twoFactorAvailableMethods.indexOf('sms') !== -1;
+            $phoneLink.closest('span').toggle(showPhone);
+        }
+        if ($emailLink.length) {
+            var showEmail = twoFactorAvailableMethods.indexOf('email') !== -1;
+            $emailLink.closest('span').toggle(showEmail);
+        }
+    }
+
+    function submitTwoFactorCode() {
+        var code = $('#two_factor_code').val().trim();
+        if (!code) {
+            if (window.showToast) {
+                showToast('Please enter the verification code.','danger');
+            }
+            return;
+        }
+
+        if (twoFactorVerifying) {
+            return;
+        }
+        twoFactorVerifying = true;
+
+        var $btn = $('#verify2faBtn');
+        if ($btn.length) {
+            $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Verifying...');
+        }
+
+        $.ajax({
+            url: '/api/auth/verify_2fa',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ code: code }),
+            success: function(response) {
+                if (response.status === 'success') {
+                    handlePostLoginSuccess(response);
+                } else {
+                    if (window.showToast) {
+                        showToast(response.message || 'Verification failed','danger');
+                    }
+                }
+            },
+            error: function(xhr) {
+                var error = xhr.responseJSON ? xhr.responseJSON.message : 'Verification failed';
+                if (window.showToast) {
+                    showToast(error,'danger');
+                }
+            },
+            complete: function() {
+                if ($btn.length) {
+                    $btn.prop('disabled', false).html('Verify and Login');
+                }
+                twoFactorVerifying = false;
+            }
+        });
+    }
+
+    $(document).on('click', '#verify2faBtn', function() {
+        submitTwoFactorCode();
+    });
+
+    $(document).on('click', '#backToCredentialsBtn', function() {
+        $('#loginTwoFactorSection').addClass('d-none');
+        $('#loginCredentialsSection').removeClass('d-none');
+    });
+
+    // Auto-verify when 6-digit code is fully entered
+    $('#two_factor_code').on('input', function() {
+        var val = $(this).val().replace(/\D/g, '');
+        $(this).val(val);
+        if (val.length === 6) {
+            submitTwoFactorCode();
+        }
+    });
+
+    $(document).on('click', '#loginTwoFactorUsePhone', function(e) {
+        e.preventDefault();
+        if ($(this).hasClass('disabled')) return;
+        if (twoFactorAvailableMethods.indexOf('sms') === -1) return;
+        $.ajax({
+            url: '/api/auth/resend_2fa',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ method: 'sms' }),
+            success: function(resp) {
+                if (resp.status === 'success') {
+                    twoFactorCurrentMethod = 'sms';
+                    if (window.showToast) {
+                        showToast('Verification code sent to your phone.','info');
+                    }
+                    showTwoFactorPrompt('phone');
+                    startTwoFactorCooldownMain(60);
+                } else if (resp.status === 'cooldown') {
+                    var remaining = resp.data && resp.data.remaining ? resp.data.remaining : 0;
+                    if (remaining > 0) {
+                        startTwoFactorCooldownMain(remaining);
+                    }
+                    if (window.showToast) {
+                        showToast(resp.message || 'Please wait before requesting another code.','warning');
+                    }
+                } else if (window.showToast) {
+                    showToast(resp.message || 'Could not resend code.','danger');
+                }
+            },
+            error: function(xhr) {
+                var error = xhr.responseJSON ? xhr.responseJSON.message : 'Could not resend code.';
+                if (window.showToast) {
+                    showToast(error,'danger');
+                }
+            }
+        });
+    });
+
+    $(document).on('click', '#loginTwoFactorUseEmail', function(e) {
+        e.preventDefault();
+        if ($(this).hasClass('disabled')) return;
+        if (twoFactorAvailableMethods.indexOf('email') === -1) return;
+        $.ajax({
+            url: '/api/auth/resend_2fa',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ method: 'email' }),
+            success: function(resp) {
+                if (resp.status === 'success') {
+                    twoFactorCurrentMethod = 'email';
+                    if (window.showToast) {
+                        showToast('Verification code sent to your email.','info');
+                    }
+                    showTwoFactorPrompt('email');
+                    startTwoFactorCooldownMain(60);
+                } else if (resp.status === 'cooldown') {
+                    var remaining = resp.data && resp.data.remaining ? resp.data.remaining : 0;
+                    if (remaining > 0) {
+                        startTwoFactorCooldownMain(remaining);
+                    }
+                    if (window.showToast) {
+                        showToast(resp.message || 'Please wait before requesting another code.','warning');
+                    }
+                } else if (window.showToast) {
+                    showToast(resp.message || 'Could not resend code.','danger');
+                }
+            },
+            error: function(xhr) {
+                var error = xhr.responseJSON ? xhr.responseJSON.message : 'Could not resend code.';
+                if (window.showToast) {
+                    showToast(error,'danger');
+                }
+            }
+        });
+    });
+
     $('#loginForm').on('submit', function(e) {
         e.preventDefault();
-        
-        // Validate form
+
         if(!this.checkValidity()) {
             e.stopPropagation();
             $(this).addClass('was-validated');
             return;
         }
-        
-        // Prepare data
+
         const formData = {
             identifier: $('#identifier').val(),
             password: $('#password').val()
         };
-        
-        // Show loading
+
         const loginBtn = $('#loginBtn');
         loginBtn.prop('disabled', true);
-        loginBtn.html('<span class=\"spinner-border spinner-border-sm\"></span> Logging in...');
-        
-        // Send request
+        loginBtn.html('<span class="spinner-border spinner-border-sm"></span> Logging in...');
+
         $.ajax({
             url: '/api/auth/login',
             type: 'POST',
             contentType: 'application/json',
             data: JSON.stringify(formData),
             success: function(response) {
-                if(response.status === 'success') {
-                    var requiresRegPayment = response.data && response.data.requires_registration_payment;
-                    var requiresPasswordChange = response.data && response.data.requires_password_change;
-
-                    if (requiresRegPayment) {
-                        if (window.showToast) {
-                            showToast('Login successful. Please complete your registration payment.','info');
-                        } else {
-                            $('#loginMessage')
-                                .removeClass('d-none alert-danger')
-                                .addClass('alert-info')
-                                .html('<i class="bi bi-info-circle"></i> Login successful. Please complete your registration payment.');
-                        }
-
-                        // Redirect to registration payment page instead of dashboard
-                        setTimeout(function() {
-                            window.location.href = '/registration-payment';
-                        }, 1000);
-                    } else if (requiresPasswordChange) {
-                        if (window.showToast) {
-                            showToast('Login successful! Please change your password.','success');
-                        } else {
-                            $('#loginMessage')
-                                .removeClass('d-none alert-danger')
-                                .addClass('alert-success')
-                                .html('<i class="bi bi-check-circle"></i> Login successful! Redirecting to change password...');
-                        }
-
-						// Redirect to change-password page first
-						setTimeout(function() {
-							window.location.href = '/change-password';
-						}, 1000);
-                    } else {
-                        if (window.showToast) {
-                            showToast('Login successful! Redirecting...','success');
-                        } else {
-                            $('#loginMessage')
-                                .removeClass('d-none alert-danger')
-                                .addClass('alert-success')
-                                .html('<i class="bi bi-check-circle"></i> Login successful! Redirecting...');
-                        }
-
-                        // Redirect to dashboard for normal logins
-                        setTimeout(function() {
-                            window.location.href = '/dashboard';
-                        }, 1000);
+                if (response.status === 'two_factor_required') {
+                    var method = (response.data && response.data.method) || 'phone';
+                    var label = method === 'email' ? 'email' : 'phone';
+                    twoFactorCurrentMethod = method;
+                    twoFactorAvailableMethods = (response.data && response.data.available_methods) || [method];
+                    if (window.showToast) {
+                        showToast('Verification code sent to your ' + label + '.','info');
                     }
+                    showTwoFactorPrompt(label);
+                    updateTwoFactorMethodSwitch();
+                    // Start initial resend cooldown
+                    startTwoFactorCooldownMain(60);
+                } else if (response.status === 'success') {
+                    handlePostLoginSuccess(response);
                 } else {
                     if (window.showToast) {
                         showToast(response.message || 'Login failed','danger');
@@ -187,7 +444,7 @@ $(document).ready(function() {
                         $('#loginMessage')
                             .removeClass('d-none alert-success')
                             .addClass('alert-danger')
-                            .html('<i class=\"bi bi-exclamation-triangle\"></i> ' + response.message);
+                            .html('<i class="bi bi-exclamation-triangle"></i> ' + response.message);
                     }
                 }
             },

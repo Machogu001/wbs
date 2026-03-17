@@ -27,6 +27,7 @@ class User {
         $this->ensureTaxPinColumn();
         $this->ensureMustChangePasswordColumn();
         $this->ensureLocationColumns();
+        $this->ensureTwoFactorColumns();
     }
     
     // Create new user
@@ -95,17 +96,18 @@ class User {
         return $stmt->rowCount() > 0;
     }
     
-    // Login user with account number, phone number, or email
-    public function login($identifier, $password) {
-        $query = "SELECT id, account_number, full_name, phone_number, 
-                         email, id_number, tax_pin, address, meter_number,
-                         connection_type, password_hash, role, status, must_change_password 
-                  FROM " . $this->table . " 
-                  WHERE status = 'active'
-                    AND (phone_number = :identifier 
-                         OR account_number = :identifier
-                         OR email = :identifier)
-                  LIMIT 1";
+        // Login user with account number, phone number, or email
+        public function login($identifier, $password) {
+         $query = "SELECT id, account_number, full_name, phone_number, 
+                    email, id_number, tax_pin, address, meter_number,
+                    connection_type, password_hash, role, status, must_change_password,
+                    two_factor_enabled, two_factor_method
+                FROM " . $this->table . " 
+                WHERE status = 'active'
+                  AND (phone_number = :identifier 
+                    OR account_number = :identifier
+                    OR email = :identifier)
+                LIMIT 1";
         
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":identifier", $identifier);
@@ -124,16 +126,17 @@ class User {
         return false;
     }
 
-    // Fetch full auth row (including password_hash) by identifier, regardless of status
-    public function getAuthRowByIdentifier($identifier) {
-        $query = "SELECT id, account_number, full_name, phone_number,
-                     email, id_number, tax_pin, address, meter_number,
-                     connection_type, password_hash, role, status, must_change_password
-             FROM " . $this->table . "
-             WHERE phone_number = :identifier
-                OR account_number = :identifier
-                OR email = :identifier
-             LIMIT 1";
+     // Fetch full auth row (including password_hash) by identifier, regardless of status
+     public function getAuthRowByIdentifier($identifier) {
+          $query = "SELECT id, account_number, full_name, phone_number,
+                            email, id_number, tax_pin, address, meter_number,
+                            connection_type, password_hash, role, status, must_change_password,
+                            two_factor_enabled, two_factor_method
+                 FROM " . $this->table . "
+                 WHERE phone_number = :identifier
+                     OR account_number = :identifier
+                     OR email = :identifier
+                 LIMIT 1";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":identifier", $identifier);
         $stmt->execute();
@@ -250,6 +253,25 @@ class User {
             }
         } catch (\PDOException $e) {
             // Ignore schema errors; core auth/registration can continue without GPS.
+        }
+    }
+
+    private function ensureTwoFactorColumns() {
+        try {
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'two_factor_enabled'");
+            $existsEnabled = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'two_factor_method'");
+            $existsMethod = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$existsEnabled) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER must_change_password");
+            }
+            if (!$existsMethod) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN two_factor_method VARCHAR(10) NOT NULL DEFAULT 'sms' AFTER two_factor_enabled");
+            }
+        } catch (\PDOException $e) {
+            // Ignore schema errors; login/registration still works without 2FA settings.
         }
     }
 }

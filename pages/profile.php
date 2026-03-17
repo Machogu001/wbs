@@ -78,6 +78,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			}
 
 			switch ($action) {
+						case 'update_2fa_settings':
+							$enabled = isset($_POST['two_factor_enabled']) && $_POST['two_factor_enabled'] === '1' ? 1 : 0;
+							$method = isset($_POST['two_factor_method']) ? strtolower(trim((string)$_POST['two_factor_method'])) : 'sms';
+							if ($method !== 'sms' && $method !== 'email') {
+								$method = 'sms';
+							}
+
+							// Validate contact details for the chosen method when enabling 2FA
+							if ($enabled) {
+								if ($method === 'sms') {
+									$phone = trim((string)($user['phone_number'] ?? ''));
+									if ($phone === '') {
+										throw new Exception('Please add a phone number to your profile before enabling SMS verification.');
+									}
+								} else {
+									$emailAddr = trim((string)($user['email'] ?? ''));
+									if ($emailAddr === '' || !filter_var($emailAddr, FILTER_VALIDATE_EMAIL)) {
+										throw new Exception('Please add a valid email address to your profile before enabling email verification.');
+									}
+								}
+							}
+
+							$stmt = $db->prepare('UPDATE users SET two_factor_enabled = :enabled, two_factor_method = :method WHERE id = :id');
+							$stmt->bindParam(':enabled', $enabled, PDO::PARAM_INT);
+							$stmt->bindParam(':method', $method);
+							$stmt->bindParam(':id', $userId, PDO::PARAM_INT);
+							if ($stmt->execute()) {
+								$_SESSION['user_data']['two_factor_enabled'] = $enabled;
+								$_SESSION['user_data']['two_factor_method'] = $method;
+								$user['two_factor_enabled'] = $enabled;
+								$user['two_factor_method'] = $method;
+								$_SESSION['profile_message'] = 'Two-step verification settings updated.';
+								$_SESSION['profile_message_type'] = 'success';
+								$_SESSION['profile_active_section'] = $activeSection;
+								header('Location: /profile');
+								exit;
+							} else {
+								throw new Exception('Failed to update two-step verification settings.');
+							}
+							break;
 				case 'update_tax_pin':
 					$tax_pin = isset($_POST['tax_pin']) ? trim($_POST['tax_pin']) : '';
 					$stmt = $db->prepare("UPDATE users SET tax_pin = :tax_pin WHERE id = :id");
@@ -429,6 +469,30 @@ require_once __DIR__ . '/../templates/header.php';
 							<option value="change_password" <?php echo $activeSection === 'change_password' ? 'selected' : ''; ?>>Change Password</option>
 						</select>
 					</div>
+					<hr>
+					<h5 class="card-title">Two-step Verification</h5>
+					<p class="text-muted small mb-2">Add an extra security step when logging in. When enabled, you will receive a one-time code after entering your password.</p>
+					<form method="POST" class="mb-3">
+						<input type="hidden" name="action" value="update_2fa_settings">
+						<div class="form-check form-switch mb-2">
+							<input class="form-check-input" type="checkbox" id="two_factor_enabled" name="two_factor_enabled" value="1" <?php echo !empty($user['two_factor_enabled']) ? 'checked' : ''; ?>>
+							<label class="form-check-label" for="two_factor_enabled">Enable two-step verification</label>
+						</div>
+						<div class="mb-2">
+							<label class="form-label d-block mb-1">How should we send your login code?</label>
+							<?php $twoFactorMethod = $user['two_factor_method'] ?? 'sms'; ?>
+							<div class="form-check">
+								<input class="form-check-input" type="radio" name="two_factor_method" id="two_factor_sms" value="sms" <?php echo $twoFactorMethod === 'sms' ? 'checked' : ''; ?>>
+								<label class="form-check-label" for="two_factor_sms">SMS to your phone number (<?php echo htmlspecialchars($user['phone_number'] ?? 'not set'); ?>)</label>
+							</div>
+							<div class="form-check">
+								<input class="form-check-input" type="radio" name="two_factor_method" id="two_factor_email" value="email" <?php echo $twoFactorMethod === 'email' ? 'checked' : ''; ?>>
+								<label class="form-check-label" for="two_factor_email">Email (<?php echo htmlspecialchars($user['email'] ?? 'not set'); ?>)</label>
+							</div>
+							<div class="form-text">If the selected method has no phone/email on file, you'll be asked to update it first.</div>
+						</div>
+						<button type="submit" class="btn btn-outline-primary btn-sm">Save 2-step verification settings</button>
+					</form>
 					<div id="change_phone_section" class="profile-change-section <?php echo $activeSection === 'change_phone' ? '' : 'd-none'; ?>">
 						<h5 class="card-title">Change Phone Number</h5>
 						<p class="text-muted small mb-2">An OTP will be sent via SMS (and email if available) to your current contact details before the change is applied.</p>

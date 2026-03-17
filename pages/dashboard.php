@@ -210,6 +210,15 @@ if ($db) {
         <div class="col-md-12">
             <h2>Dashboard</h2>
             <p>Welcome, <?php echo htmlspecialchars($_SESSION['user_data']['full_name'] ?? 'User'); ?>!</p>
+            <?php
+            $twoFactorEnabled = !empty($_SESSION['user_data']['two_factor_enabled']);
+            if ($twoFactorEnabled):
+            ?>
+                <p class="small mb-1 text-success">
+                    <i class="bi bi-shield-check"></i> Two-step verification is <strong>enabled</strong> on your account.
+                    <a href="/profile" class="ms-1">Manage</a>
+                </p>
+            <?php endif; ?>
             <p class="small mb-0">
                 <a href="#" data-bs-toggle="modal" data-bs-target="#termsModal">
                     <i class="bi bi-info-circle"></i> View Community Water Supply Rules &amp; Terms
