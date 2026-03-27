@@ -114,7 +114,7 @@ $(document).ready(function() {
                         return;
                     }
 
-                    var secondsRemaining = 59;
+                    var secondsRemaining = 180;
                     var countdownInterval = null;
                     var pollInterval = null;
                     var finished = false;
@@ -197,8 +197,8 @@ $(document).ready(function() {
 
                     setTimeout(function() {
                         if (finished) return;
-                        handleError('Payment not confirmed within 59 seconds. If you approved the STK later, please try accessing the dashboard; otherwise, try again.');
-                    }, 59000);
+                        handleError('Payment confirmation is taking longer than expected. If you approved the STK prompt, try opening the dashboard in a moment or resend only if no payment was deducted.');
+                    }, 180000);
                 } else {
                     var msg = response.message || 'Failed to initiate payment.';
                     $('#regPayMessage')

@@ -250,13 +250,25 @@ if (!empty($userBills)) {
 
 $currency = $settings['currency_code'] ?? 'KES';
 
+$page_title = 'Admin - Payments';
+$is_admin_page = true;
+
 include __DIR__ . '/../../templates/header.php';
 ?>
-<div class="container-fluid py-3">
-	<div class="admin-page-header">
-		<div>
-			<h1>Payments &amp; Credit Notes</h1>
-			<p>Record manual receipts and apply credit notes to bills.</p>
+<div class="container-fluid py-3 admin-shell admin-payments-page">
+	<div class="admin-page-header admin-hero-header">
+		<div class="admin-hero-main">
+			<p class="admin-hero-eyebrow mb-2"><i class="bi bi-wallet2"></i> Revenue Operations</p>
+			<h2 class="mb-1"><i class="bi bi-wallet2 me-1"></i> Payments &amp; Credit Notes</h2>
+			<p class="mb-0 text-muted">Record manual receipts and apply bill adjustments with audit-ready controls.</p>
+		</div>
+		<div class="admin-hero-actions">
+			<div class="admin-hero-chip text-success">
+				<i class="bi bi-shield-check"></i> Audit trail enabled
+			</div>
+			<a href="/reports?report_scope=payments" class="btn btn-sm btn-outline-primary">
+				<i class="bi bi-graph-up"></i> View Payment Reports
+			</a>
 		</div>
 	</div>
 
@@ -267,7 +279,7 @@ include __DIR__ . '/../../templates/header.php';
 	<div class="row mt-3">
 		<div class="col-md-4">
 			<div class="card mb-3">
-				<div class="card-header admin-section-title">Find Account</div>
+				<div class="card-header admin-section-title">Account Lookup</div>
 				<div class="card-body">
 					<form method="POST">
 						<input type="hidden" name="action" value="search_account">
@@ -286,7 +298,7 @@ include __DIR__ . '/../../templates/header.php';
 							</datalist>
 							<small class="text-muted">Type to search; select from suggestions.</small>
 						</div>
-						<button type="submit" class="btn btn-primary w-100">Load Account</button>
+						<button type="submit" class="btn btn-primary w-100"><i class="bi bi-search me-1"></i> Load Account</button>
 					</form>
 					<?php if ($currentUser): ?>
 						<hr>
@@ -339,7 +351,7 @@ include __DIR__ . '/../../templates/header.php';
 								<input type="text" name="phone_number" class="form-control" value="<?php echo htmlspecialchars($currentUser['phone_number'] ?? ''); ?>">
 							</div>
 							<div class="col-md-6 d-flex align-items-end">
-								<button type="submit" class="btn btn-success w-100">Record Payment</button>
+								<button type="submit" class="btn btn-success w-100"><i class="bi bi-receipt-cutoff me-1"></i> Record Manual Payment</button>
 							</div>
 						</form>
 						<p class="text-muted small mt-2 mb-0">Note: Only full payments are supported here. For adjustments, use a credit note.</p>
@@ -348,7 +360,7 @@ include __DIR__ . '/../../templates/header.php';
 			</div>
 
 			<div class="card mb-3">
-				<div class="card-header admin-section-title">Credit Note</div>
+				<div class="card-header admin-section-title">Credit Note Adjustment</div>
 				<div class="card-body">
 					<?php if (!$currentUser): ?>
 						<p class="text-muted mb-0">Search for an account first to apply a credit note.</p>
@@ -383,7 +395,7 @@ include __DIR__ . '/../../templates/header.php';
 								<input type="text" name="note" class="form-control">
 							</div>
 							<div class="col-12 d-flex justify-content-end">
-								<button type="submit" class="btn btn-outline-warning">Apply Credit Note</button>
+								<button type="submit" class="btn btn-outline-warning" data-confirm-message="Apply this credit note to the selected invoice?"><i class="bi bi-journal-minus me-1"></i> Apply Credit Note</button>
 							</div>
 						</form>
 						<p class="text-muted small mt-2 mb-0">Full credit will cancel the invoice. Partial credit reduces billed units and amount while keeping the bill open.</p>

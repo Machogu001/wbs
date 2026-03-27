@@ -108,7 +108,7 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST' && $billData && $userData
 }
 ?>
 
-<div class="container mt-4">
+<div class="container mt-4 pay-link-page">
     <div class="row">
         <div class="col-md-12">
             <h2>Quick Bill Payment</h2>
@@ -238,7 +238,7 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST' && $billData && $userData
                     <?php if(!$billData || !$userData): ?>
                         <p class="text-danger mb-0"><?php echo htmlspecialchars($message ?: 'Unable to load bill details.'); ?></p>
                     <?php else: ?>
-                        <dl class="row">
+                        <dl class="row receipt-detail-grid">
                             <dt class="col-sm-4">Account Number</dt>
                             <dd class="col-sm-8"><?php echo htmlspecialchars($billData['account_number']); ?></dd>
 
@@ -259,7 +259,7 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST' && $billData && $userData
                             <form method="POST" id="quickPayForm">
                                 <div class="mb-3">
                                     <label class="form-label">M-Pesa Phone Number *</label>
-                                    <input type="tel" name="phone" class="form-control" value="<?php echo htmlspecialchars($userData['phone_number'] ?? ''); ?>" placeholder="07XXXXXXXX, 01XXXXXXXX or 2547XXXXXXXX" pattern="^(?:254|\+254|0)?((?:7|1)\d{8})$" required>
+                                    <input type="tel" name="phone" class="form-control" autocomplete="tel" value="<?php echo htmlspecialchars($userData['phone_number'] ?? ''); ?>" placeholder="07XXXXXXXX, 01XXXXXXXX or 2547XXXXXXXX" pattern="^(?:254|\+254|0)?((?:7|1)\d{8})$" required>
                                     <small class="text-muted">Enter the phone number registered with M-Pesa (07..., 01..., or 254...). You will receive an M-Pesa prompt on this number.</small>
                                 </div>
                                 <div class="d-grid gap-2">
@@ -273,9 +273,9 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST' && $billData && $userData
                             <p class="text-success mb-3">This bill has already been paid.</p>
                             <?php if($latestPayment && $latestPayment['status'] === 'completed'): ?>
                                 <h6>Payment Receipt</h6>
-                                <dl class="row mb-3">
+                                <dl class="row mb-3 receipt-detail-grid">
                                     <dt class="col-sm-4">Receipt Number</dt>
-                                    <dd class="col-sm-8"><?php echo htmlspecialchars($latestPayment['mpesa_receipt'] ?? 'N/A'); ?></dd>
+                                    <dd class="col-sm-8 text-break"><?php echo htmlspecialchars($latestPayment['mpesa_receipt'] ?? 'N/A'); ?></dd>
 
                                     <dt class="col-sm-4">Amount Paid</dt>
                                     <dd class="col-sm-8">KES <?php echo number_format((float)$latestPayment['amount'], 2); ?></dd>

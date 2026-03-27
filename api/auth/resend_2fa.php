@@ -71,33 +71,57 @@ try {
 
     $code = (string)random_int(100000, 999999);
     $appName = getenv('APP_NAME') ?: 'Water Billing System';
-    $messageText = "{$code} is your {$appName} login verification code. It expires in 5 minutes.";
+    // WebOTP binding line — Android Chrome reads this line to auto-fill the code
+    $otpDomain = preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? (getenv('APP_DOMAIN') ?: ''));
+    $otpSuffix = $otpDomain !== '' ? "\n\n@{$otpDomain} #{$code}" : '';
+    $messageText = "{$code} is your {$appName} login verification code. It expires in 5 minutes.{$otpSuffix}";
 
     $sent = false;
     $lastError = '';
+    $actualMethod = $requestedMethod;
+    $attemptedMethods = [];
 
-    if ($requestedMethod === 'sms') {
-        $sms = new SMS();
-        $result = $sms->send($phone, $messageText);
-        $sent = !empty($result['success']);
-        if (!$sent) {
+    $sendByMethod = function(string $m) use (&$lastError, $phone, $emailAddr, $messageText): bool {
+        if ($m === 'sms') {
+            $sms = new SMS();
+            $result = $sms->send($phone, $messageText);
+            if (!empty($result['success'])) {
+                return true;
+            }
             $lastError = (string)($result['message'] ?? 'SMS send failed');
+            return false;
         }
-    } else {
+
         $email = new Email();
         $result = $email->send($emailAddr, 'Your login verification code', $messageText);
-        $sent = !empty($result['success']);
-        if (!$sent) {
-            $lastError = (string)($result['message'] ?? 'Email send failed');
+        if (!empty($result['success'])) {
+            return true;
+        }
+        $lastError = (string)($result['message'] ?? 'Email send failed');
+        return false;
+    };
+
+    $attemptedMethods[] = $requestedMethod;
+    $sent = $sendByMethod($requestedMethod);
+
+    if (!$sent) {
+        $alternate = $requestedMethod === 'sms' ? 'email' : 'sms';
+        $canUseAlternate = ($alternate === 'sms' && $phone !== '') || ($alternate === 'email' && $emailAddr !== '' && filter_var($emailAddr, FILTER_VALIDATE_EMAIL));
+        if ($canUseAlternate) {
+            $attemptedMethods[] = $alternate;
+            if ($sendByMethod($alternate)) {
+                $sent = true;
+                $actualMethod = $alternate;
+            }
         }
     }
 
     if (!$sent) {
-        throw new Exception('Failed to resend verification code: ' . $lastError);
+        throw new Exception('Failed to resend verification code via ' . implode(' then ', $attemptedMethods) . ': ' . $lastError);
     }
 
     $_SESSION['login_2fa']['code'] = $code;
-    $_SESSION['login_2fa']['method'] = $requestedMethod;
+    $_SESSION['login_2fa']['method'] = $actualMethod;
     $_SESSION['login_2fa']['expires_at'] = time() + 300;
     $_SESSION['login_2fa']['attempts'] = 0;
     $_SESSION['login_2fa']['last_sent_at'] = $now;
@@ -109,18 +133,26 @@ try {
         'login_2fa_resend',
         null,
         null,
-        'Resent 2FA verification code via ' . $requestedMethod,
+        'Resent 2FA verification code via ' . $actualMethod,
         [
-            'method' => $requestedMethod,
+            'requested_method' => $requestedMethod,
+            'method' => $actualMethod,
+            'fallback_used' => $actualMethod !== $requestedMethod,
         ]
     );
+
+    $responseMessage = 'Verification code resent';
+    if ($actualMethod !== $requestedMethod) {
+        $responseMessage .= ' via ' . $actualMethod . ' (fallback)';
+    }
 
     http_response_code(200);
     echo json_encode([
         'status' => 'success',
-        'message' => 'Verification code resent',
+        'message' => $responseMessage,
         'data' => [
-            'method' => $requestedMethod,
+            'method' => $actualMethod,
+            'requested_method' => $requestedMethod,
         ],
     ]);
 } catch (Exception $e) {

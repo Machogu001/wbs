@@ -205,25 +205,31 @@ if ($db) {
 }
 ?>
 
-<div class="container-fluid mt-4">
+<div class="container-fluid mt-4 admin-shell dashboard-page">
     <div class="row">
         <div class="col-md-12">
-            <h2>Dashboard</h2>
-            <p>Welcome, <?php echo htmlspecialchars($_SESSION['user_data']['full_name'] ?? 'User'); ?>!</p>
-            <?php
-            $twoFactorEnabled = !empty($_SESSION['user_data']['two_factor_enabled']);
-            if ($twoFactorEnabled):
-            ?>
-                <p class="small mb-1 text-success">
-                    <i class="bi bi-shield-check"></i> Two-step verification is <strong>enabled</strong> on your account.
-                    <a href="/profile" class="ms-1">Manage</a>
-                </p>
-            <?php endif; ?>
-            <p class="small mb-0">
-                <a href="#" data-bs-toggle="modal" data-bs-target="#termsModal">
-                    <i class="bi bi-info-circle"></i> View Community Water Supply Rules &amp; Terms
-                </a>
-            </p>
+            <?php $twoFactorEnabled = !empty($_SESSION['user_data']['two_factor_enabled']); ?>
+            <div class="admin-page-header dashboard-hero-header">
+                <div class="dashboard-hero-main">
+                    <p class="dashboard-hero-eyebrow mb-2"><i class="bi bi-stars"></i> Operations Overview</p>
+                    <h2 class="mb-1">Dashboard</h2>
+                    <p class="admin-page-subtitle mb-0">Welcome, <?php echo htmlspecialchars($_SESSION['user_data']['full_name'] ?? 'User'); ?>.</p>
+                </div>
+                <div class="dashboard-hero-actions">
+                    <?php if ($twoFactorEnabled): ?>
+                        <div class="dashboard-hero-chip text-success">
+                            <i class="bi bi-shield-check"></i>
+                            Two-step verification is <strong>enabled</strong>
+                        </div>
+                        <a href="/profile" class="btn btn-sm btn-outline-success">
+                            <i class="bi bi-sliders"></i> Manage
+                        </a>
+                    <?php endif; ?>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#termsModal">
+                        <i class="bi bi-info-circle"></i> Community Rules &amp; Terms
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
     

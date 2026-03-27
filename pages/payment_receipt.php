@@ -58,7 +58,7 @@ if (!$db) {
 }
 ?>
 
-<div class="container mt-4">
+<div class="container mt-4 payment-receipt-page">
     <div class="row">
         <div class="col-md-12">
             <div class="d-flex align-items-center mb-2">
@@ -101,7 +101,7 @@ if (!$db) {
 
     <div class="row mt-4">
         <div class="col-md-8">
-            <div class="card shadow-sm">
+            <div class="card shadow-sm receipt-primary-card">
                 <div class="card-header bg-light">
                     <h5 class="mb-0">Receipt Details</h5>
                 </div>
@@ -109,12 +109,12 @@ if (!$db) {
                     <?php if(!$paymentRow || !$billRow || !$userRow || $paymentRow['status'] !== 'completed'): ?>
                         <p class="mb-0"><?php echo htmlspecialchars($message ?: 'Unable to load receipt details.'); ?></p>
                     <?php else: ?>
-                        <dl class="row mb-0">
+                        <dl class="row mb-0 receipt-detail-grid">
                             <dt class="col-sm-4">Receipt Number</dt>
-                            <dd class="col-sm-8 fw-semibold"><?php echo htmlspecialchars($paymentRow['mpesa_receipt'] ?? 'N/A'); ?></dd>
+                            <dd class="col-sm-8 fw-semibold text-break"><?php echo htmlspecialchars($paymentRow['mpesa_receipt'] ?? 'N/A'); ?></dd>
 
                             <dt class="col-sm-4">Account Number</dt>
-                            <dd class="col-sm-8"><?php echo htmlspecialchars($billRow['account_number']); ?></dd>
+                            <dd class="col-sm-8 text-break"><?php echo htmlspecialchars($billRow['account_number']); ?></dd>
 
                             <dt class="col-sm-4">Customer Name</dt>
                             <dd class="col-sm-8"><?php echo htmlspecialchars($userRow['full_name']); ?></dd>
@@ -137,11 +137,11 @@ if (!$db) {
         </div>
 
         <div class="col-md-4">
-            <div class="card shadow-sm">
+            <div class="card shadow-sm receipt-next-card">
                 <div class="card-header bg-light">
                     <h5 class="mb-0">Next Steps</h5>
                 </div>
-                <div class="card-body d-grid gap-2">
+                <div class="card-body d-grid gap-2 receipt-next-actions">
                     <?php if($paymentRow && $billRow && $userRow && $paymentRow['status'] === 'completed'): ?>
                     <a href="/payment-receipt-pdf?t=<?php echo urlencode($token); ?>&p=<?php echo (int)$paymentId; ?>" class="btn btn-outline-primary">
                         <i class="bi bi-file-earmark-arrow-down"></i> Download PDF Receipt

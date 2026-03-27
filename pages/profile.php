@@ -449,7 +449,7 @@ require_once __DIR__ . '/../templates/header.php';
 						<?php endif; ?>
 						<div class="mb-3">
 							<label class="form-label">PIN / Tax ID (optional)</label>
-							<input type="text" name="tax_pin" class="form-control" value="<?php echo htmlspecialchars($user['tax_pin'] ?? ''); ?>" placeholder="e.g. P012345678Z">
+							<input type="text" name="tax_pin" class="form-control" autocomplete="off" value="<?php echo htmlspecialchars($user['tax_pin'] ?? ''); ?>" placeholder="e.g. P012345678Z">
 							<div class="form-text">If you have a PIN/Tax ID you want used on eTIMS submissions, you can add it here. This field is optional.</div>
 						</div>
 						<button type="submit" class="btn btn-primary">Save PIN</button>
@@ -505,11 +505,11 @@ require_once __DIR__ . '/../templates/header.php';
 							</div>
 							<div class="mb-3">
 								<label for="new_phone" class="form-label">New Phone Number</label>
-								<input type="text" class="form-control" id="new_phone" name="new_phone" placeholder="e.g. 254712345678" value="<?php echo htmlspecialchars($_POST['new_phone'] ?? ''); ?>">
+								<input type="text" class="form-control" id="new_phone" name="new_phone" autocomplete="tel" placeholder="e.g. 254712345678" value="<?php echo htmlspecialchars($_POST['new_phone'] ?? ''); ?>">
 							</div>
 							<div class="mb-3 d-none">
 								<label for="phone_otp" class="form-label">OTP</label>
-								<input type="text" class="form-control" id="phone_otp" name="phone_otp" placeholder="Enter OTP after you receive it" value="<?php echo htmlspecialchars($_POST['phone_otp'] ?? ''); ?>">
+								<input type="text" class="form-control" id="phone_otp" name="phone_otp" autocomplete="one-time-code" placeholder="Enter OTP after you receive it" value="<?php echo htmlspecialchars($_POST['phone_otp'] ?? ''); ?>">
 							</div>
 							<div class="d-flex gap-2">
 								<button type="submit" name="submit_action" value="request_phone_otp" class="btn btn-outline-primary btn-sm">Send OTP</button>
@@ -528,11 +528,11 @@ require_once __DIR__ . '/../templates/header.php';
 							</div>
 							<div class="mb-3">
 								<label for="new_email" class="form-label">New Email Address</label>
-								<input type="email" class="form-control" id="new_email" name="new_email" value="<?php echo htmlspecialchars($_POST['new_email'] ?? ''); ?>">
+								<input type="email" class="form-control" id="new_email" name="new_email" autocomplete="email" value="<?php echo htmlspecialchars($_POST['new_email'] ?? ''); ?>">
 							</div>
 							<div class="mb-3 d-none">
 								<label for="email_otp" class="form-label">OTP</label>
-								<input type="text" class="form-control" id="email_otp" name="email_otp" placeholder="Enter OTP after you receive it" value="<?php echo htmlspecialchars($_POST['email_otp'] ?? ''); ?>">
+								<input type="text" class="form-control" id="email_otp" name="email_otp" autocomplete="one-time-code" placeholder="Enter OTP after you receive it" value="<?php echo htmlspecialchars($_POST['email_otp'] ?? ''); ?>">
 							</div>
 							<div class="d-flex gap-2">
 								<button type="submit" name="submit_action" value="request_email_otp" class="btn btn-outline-primary btn-sm">Send OTP</button>
@@ -543,10 +543,11 @@ require_once __DIR__ . '/../templates/header.php';
 						<h5 class="card-title">Change Password</h5>
 						<form method="POST">
 							<input type="hidden" name="action" value="change_password">
+							<input type="text" name="username" class="visually-hidden" tabindex="-1" aria-hidden="true" autocomplete="username" value="<?php echo htmlspecialchars($user['email'] ?? ($user['phone_number'] ?? $user['account_number'] ?? '')); ?>">
 							<div class="mb-3">
 								<label for="old_password" class="form-label">Current Password</label>
 								<div class="input-group">
-									<input type="password" class="form-control" id="old_password" name="old_password">
+									<input type="password" class="form-control" id="old_password" name="old_password" autocomplete="current-password">
 									<button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide current password">
 										<i class="bi bi-eye"></i>
 									</button>
@@ -555,7 +556,7 @@ require_once __DIR__ . '/../templates/header.php';
 							<div class="mb-3">
 								<label for="new_password" class="form-label">New Password</label>
 								<div class="input-group">
-									<input type="password" class="form-control" id="new_password" name="new_password">
+									<input type="password" class="form-control" id="new_password" name="new_password" autocomplete="new-password">
 									<button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide new password">
 										<i class="bi bi-eye"></i>
 									</button>
@@ -564,7 +565,7 @@ require_once __DIR__ . '/../templates/header.php';
 							<div class="mb-3">
 								<label for="confirm_new_password" class="form-label">Confirm New Password</label>
 								<div class="input-group">
-									<input type="password" class="form-control" id="confirm_new_password" name="confirm_new_password">
+									<input type="password" class="form-control" id="confirm_new_password" name="confirm_new_password" autocomplete="new-password">
 									<button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide confirm password">
 										<i class="bi bi-eye"></i>
 									</button>
@@ -588,7 +589,7 @@ require_once __DIR__ . '/../templates/header.php';
 				</div>
 				<div class="modal-body">
 					<p id="otpModalMessage">Enter OTP after you receive it.</p>
-					<input type="text" class="form-control mt-2" id="otpModalInput" placeholder="Enter OTP">
+					<input type="text" class="form-control mt-2" id="otpModalInput" autocomplete="one-time-code" placeholder="Enter OTP">
 				</div>
 				<div class="modal-footer">
 					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>

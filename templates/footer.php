@@ -6,11 +6,19 @@
     $footerSupportEmail = 'support@bremac.co.ke';
     $footerRegistrationFee = 0.00;
     $footerCurrencyCode = 'KES';
+    $footerCountryCodeOptions = [
+        '254' => 'Kenya (+254)',
+        '256' => 'Uganda (+256)',
+        '255' => 'Tanzania (+255)',
+        '1' => 'USA/Canada (+1)',
+        '44' => 'United Kingdom (+44)'
+    ];
 
     try {
         if (file_exists(__DIR__ . '/../config/database.php')) {
             require_once __DIR__ . '/../config/database.php';
             require_once __DIR__ . '/../includes/BillingSettings.php';
+            require_once __DIR__ . '/../includes/CountryDialCode.php';
             if (class_exists('Database')) {
                 $dbFooter = (new Database())->getConnection();
                 if ($dbFooter) {
@@ -27,6 +35,12 @@
                     }
                     if (!empty($footerSettings['currency_code'])) {
                         $footerCurrencyCode = $footerSettings['currency_code'];
+                    }
+
+                    $countryDialCodeService = new CountryDialCode($dbFooter);
+                    $dbCountryCodeOptions = $countryDialCodeService->listActive();
+                    if (!empty($dbCountryCodeOptions)) {
+                        $footerCountryCodeOptions = $dbCountryCodeOptions;
                     }
                 }
             }
@@ -47,10 +61,10 @@
                     <h5 class="footer-title-accent">Quick Links</h5>
                     <ul class="list-unstyled">
                         <?php if (!isset($_SESSION['user_id'])): ?>
-                            <li><a href="/register" class="text-white-50" data-bs-toggle="modal" data-bs-target="#registerModal">Register</a></li>
-                            <li><a href="/login" class="text-white-50" data-bs-toggle="modal" data-bs-target="#loginModal">Login</a></li>
+                            <li><a href="/register" class="footer-quick-link" data-bs-toggle="modal" data-bs-target="#registerModal">Register</a></li>
+                            <li><a href="/login" class="footer-quick-link" data-bs-toggle="modal" data-bs-target="#loginModal">Login</a></li>
                         <?php endif; ?>
-                        <li><a href="/dashboard" class="text-white-50">Dashboard</a></li>
+                        <li><a href="/dashboard" class="footer-quick-link">Dashboard</a></li>
                     </ul>
                 </div>
                 <div class="col-md-4">
@@ -88,13 +102,13 @@
                     <form id="landingLoginForm" novalidate>
                         <div id="landingCredentialsSection">
                             <div class="mb-3">
-                                <label for="landing_identifier" class="form-label">Account Number, Phone or Email *</label>
+                                <label for="landing_identifier" class="form-label">Username, Account Number, Phone or Email *</label>
                                 <div class="input-group">
                                     <span class="input-group-text"><i class="bi bi-person"></i></span>
                                         <input type="text" class="form-control" id="landing_identifier" name="identifier" required
                                             placeholder="e.g. MTR0001, 07XXXXXXXX or name@example.com" autocomplete="username">
                                 </div>
-                                <div class="invalid-feedback">Please enter your account number, phone or email.</div>
+                                <div class="invalid-feedback">Please enter your username, account number, phone or email.</div>
                             </div>
                             <div class="mb-3">
                                 <label for="landing_password" class="form-label">Password *</label>
@@ -153,61 +167,106 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="small text-muted mb-3">
+                    <div class="small text-muted mb-3" id="landingRegisterIntro">
                         You can register directly from any page. For a larger view,
                         you can also use the full registration page from the menu.
                     </div>
+                    <div id="landingRegisterMessage" class="alert d-none"></div>
+
+                    <!-- M-Pesa payment waiting/countdown panel (hidden until STK is sent) -->
+                    <div id="landingPaymentWaiting" class="reg-payment-waiting d-none">
+                        <div class="reg-countdown-ring">
+                            <svg viewBox="0 0 90 90">
+                                <circle class="ring-bg" cx="45" cy="45" r="38"/>
+                                <circle class="ring-arc" id="landingRingArc" cx="45" cy="45" r="38"/>
+                            </svg>
+                            <span class="reg-countdown-number" id="landingCountdownNum">59</span>
+                        </div>
+                        <h6 class="mb-1" id="landingCdTitle">Waiting for M-Pesa Payment</h6>
+                        <p class="reg-payment-status-text" id="landingCdStatus">Check your phone and approve the M-Pesa prompt to activate your account.</p>
+                        <div class="reg-payment-actions d-none" id="landingPaymentActions">
+                            <button type="button" class="btn btn-primary btn-sm me-2" id="landingRetryPayBtn">
+                                <i class="bi bi-arrow-repeat"></i> Resend M-Pesa Prompt
+                            </button>
+                            <a href="/login" class="btn btn-outline-secondary btn-sm">
+                                <i class="bi bi-box-arrow-in-right"></i> Login to Pay
+                            </a>
+                        </div>
+                    </div>
+
                     <form id="landingRegisterForm" novalidate>
+                        <div class="mb-3">
+                            <label for="landing_registration_type" class="form-label">Register As *</label>
+                            <select class="form-select" id="landing_registration_type" required>
+                                <option value="client" selected>Client</option>
+                                <option value="staff">Office Staff</option>
+                            </select>
+                            <div class="form-text">Clients include billing and meter setup. Office staff accounts are created without meter numbers and require a unique username.</div>
+                        </div>
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label for="landing_first_name" class="form-label">First Name *</label>
-                                <input type="text" class="form-control" id="landing_first_name" required>
+                                <input type="text" class="form-control" id="landing_first_name" autocomplete="given-name" required>
                                 <div class="invalid-feedback">Please enter your first name.</div>
                             </div>
                             <div class="col-md-6">
+                                <label for="landing_middle_name" class="form-label">Middle Name</label>
+                                <input type="text" class="form-control" id="landing_middle_name" autocomplete="additional-name">
+                            </div>
+                            <div class="col-md-6">
                                 <label for="landing_last_name" class="form-label">Last Name *</label>
-                                <input type="text" class="form-control" id="landing_last_name" required>
+                                <input type="text" class="form-control" id="landing_last_name" autocomplete="family-name" required>
                                 <div class="invalid-feedback">Please enter your last name.</div>
                             </div>
                             <div class="col-md-6">
-                                <label for="landing_phone_number" class="form-label">Phone Number *</label>
+                                <label for="landing_phone_number_local" class="form-label">Phone Number *</label>
                                 <div class="input-group">
-                                    <span class="input-group-text"><i class="bi bi-phone"></i></span>
-                                    <input type="tel" class="form-control" id="landing_phone_number"
-                                           placeholder="2547XXXXXXXX" pattern="^(?:254|\+254|0)?(7\d{8})$" required>
+                                    <span class="input-group-text">+</span>
+                                    <select class="form-select" id="landing_phone_country_code" style="max-width: 190px;" required>
+                                        <?php foreach ($footerCountryCodeOptions as $code => $label): ?>
+                                            <option value="<?php echo htmlspecialchars($code); ?>" <?php echo $code === '254' ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <input type="tel" class="form-control" id="landing_phone_number_local" placeholder="e.g. 712345678" autocomplete="tel-national" inputmode="numeric" required>
                                 </div>
-                                <div class="invalid-feedback">Please enter a valid phone number (e.g., 254712345678).</div>
+                                <div class="invalid-feedback">Please choose country code and enter a valid phone number.</div>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-6 landing-staff-only-field d-none">
+                                <label for="landing_username" class="form-label">Username *</label>
+                                <input type="text" class="form-control" id="landing_username" minlength="3" maxlength="30" pattern="^[A-Za-z0-9._-]{3,30}$" autocomplete="username">
+                                <div class="form-text">Used to login for office staff accounts.</div>
+                                <div class="invalid-feedback">Please enter a valid username (3-30 characters: letters, numbers, dot, underscore, hyphen).</div>
+                            </div>
+                            <div class="col-md-6 landing-client-only-field">
                                 <label for="landing_email" class="form-label">Email Address *</label>
                                 <div class="input-group">
                                     <span class="input-group-text"><i class="bi bi-envelope"></i></span>
-                                    <input type="email" class="form-control" id="landing_email" required autocomplete="email">
+                                    <input type="email" class="form-control" id="landing_email" autocomplete="email">
                                 </div>
                                 <div class="invalid-feedback">Please enter a valid email address.</div>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-6 landing-client-only-field">
                                 <label for="landing_id_number" class="form-label">ID Number *</label>
-                                <input type="text" class="form-control" id="landing_id_number" required>
+                                <input type="text" class="form-control" id="landing_id_number" autocomplete="off" required>
                                 <div class="invalid-feedback">Please enter your ID number.</div>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-6 landing-client-only-field">
                                 <label for="landing_tax_pin" class="form-label">PIN / Tax ID (optional)</label>
-                                <input type="text" class="form-control" id="landing_tax_pin" placeholder="e.g. P012345678Z">
+                                <input type="text" class="form-control" id="landing_tax_pin" placeholder="e.g. P012345678Z" autocomplete="off">
                             </div>
-                            <div class="col-12">
+                            <div class="col-12 landing-client-only-field">
                                 <label for="landing_address" class="form-label">Physical Address *</label>
-                                <textarea class="form-control" id="landing_address" rows="2" required></textarea>
+                                <textarea class="form-control" id="landing_address" rows="2"></textarea>
                                 <div class="invalid-feedback">Please enter your address.</div>
                             </div>
-                            <div class="col-12">
+                            <div class="col-12 landing-client-only-field">
                                 <label for="landing_location_label" class="form-label">Location (optional)</label>
                                 <input type="text" class="form-control location-autocomplete" id="landing_location_label" placeholder="e.g. P5PP+CJ, Nguluni" autocomplete="off">
                                 <div class="form-text">Optional short location such as Plus Code or estate name (e.g. "P5PP+CJ, Nguluni").</div>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-6 landing-client-only-field">
                                 <label for="landing_connection_type" class="form-label">Connection Type *</label>
-                                <select class="form-select" id="landing_connection_type" required>
+                                <select class="form-select" id="landing_connection_type">
                                     <option value="">Select type</option>
                                     <option value="domestic">Domestic</option>
                                     <option value="commercial">Commercial</option>
@@ -215,10 +274,10 @@
                                 </select>
                                 <div class="invalid-feedback">Please select connection type.</div>
                             </div>
-                            <div class="col-md-6">
-                                <label for="landing_password" class="form-label">Password *</label>
+                            <div class="col-md-6 landing-client-only-field">
+                                <label for="landing_register_password" class="form-label">Password *</label>
                                 <div class="input-group">
-                                    <input type="password" class="form-control" id="landing_password" autocomplete="new-password" required>
+                                    <input type="password" class="form-control" id="landing_register_password" autocomplete="new-password">
                                     <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
                                         <i class="bi bi-eye"></i>
                                     </button>
@@ -228,10 +287,10 @@
                                     <label class="form-check-label small" for="landingRegisterShowPassword">Show password</label>
                                 </div>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-6 landing-client-only-field">
                                 <label for="landing_confirm_password" class="form-label">Confirm Password *</label>
                                 <div class="input-group">
-                                    <input type="password" class="form-control" id="landing_confirm_password" autocomplete="new-password" required>
+                                    <input type="password" class="form-control" id="landing_confirm_password" autocomplete="new-password">
                                     <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
                                         <i class="bi bi-eye"></i>
                                     </button>
@@ -251,7 +310,7 @@
                                     <div class="invalid-feedback">You must agree to the terms and conditions.</div>
                                 </div>
                                 <?php if (!empty($footerRegistrationFee) && $footerRegistrationFee > 0): ?>
-                                <div class="alert alert-info py-2 mb-2">
+                                <div class="alert alert-info py-2 mb-2 landing-client-only-field">
                                     <small>
                                         A one-time non-refundable installation/registration fee of
                                         <strong><?php echo htmlspecialchars($footerCurrencyCode); ?>
@@ -490,7 +549,8 @@
                     </p>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="termsModalCloseButton">Close</button>
+                    <button type="button" class="btn btn-primary d-none" id="termsAcceptButton">I Agree</button>
                 </div>
             </div>
         </div>
@@ -595,17 +655,17 @@
                     <form id="contactForm" novalidate>
                         <div class="mb-3">
                             <label for="contact_name" class="form-label">Your Name *</label>
-                            <input type="text" class="form-control" id="contact_name" name="name" required>
+                            <input type="text" class="form-control" id="contact_name" name="name" autocomplete="name" required>
                             <div class="invalid-feedback">Please enter your name.</div>
                         </div>
                         <div class="mb-3">
                             <label for="contact_email" class="form-label">Email Address *</label>
-                            <input type="email" class="form-control" id="contact_email" name="email" required>
+                            <input type="email" class="form-control" id="contact_email" name="email" autocomplete="email" required>
                             <div class="invalid-feedback">Please enter a valid email address.</div>
                         </div>
                         <div class="mb-3">
                             <label for="contact_phone" class="form-label">Phone (optional)</label>
-                            <input type="tel" class="form-control" id="contact_phone" name="phone" placeholder="2547XXXXXXXX">
+                            <input type="tel" class="form-control" id="contact_phone" name="phone" placeholder="2547XXXXXXXX" autocomplete="tel">
                         </div>
                         <div class="mb-3">
                             <label for="contact_message" class="form-label">Message *</label>
@@ -623,16 +683,34 @@
         </div>
     </div>
 
+    <button type="button"
+            class="btn btn-sm btn-outline-secondary system-density-toggle"
+            data-density-toggle
+            data-density-target="body"
+            data-density-key="global-system"
+            data-density-auto-enabled="1"
+            data-density-default="auto"
+            data-density-auto-text="Auto Mode"
+            data-density-compact-text="Compact Mode"
+            data-density-comfy-text="Comfortable Mode"
+            aria-label="Toggle compact mode for the whole system"
+            title="Toggle compact mode for the whole system">
+        <i class="bi bi-layout-text-window-reverse"></i>
+        <span class="js-density-label">Auto Mode</span>
+    </button>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <?php if (isset($page_title) && $page_title === 'Dashboard'): ?>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <?php endif; ?>
     <script>
         window.CURRENT_USER_ID = <?php echo isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 'null'; ?>;
     </script>
-    <script src="/public/js/script.js?v=20260316"></script>
+    <?php $scriptVersion = @filemtime(__DIR__ . '/../public/js/script.js') ?: time(); ?>
+    <script src="/public/js/script.js?v=<?php echo (int)$scriptVersion; ?>"></script>
 
     <script>
     // Simple location autocomplete using Nominatim (OpenStreetMap)
@@ -646,10 +724,18 @@
             var $input = $(this);
             var typingTimer = null;
             var lastQuery = '';
+            var suggestionMouseDown = false;
 
             // Create suggestions container just after the input
             var $suggestions = $('<div class="list-group location-suggestions mt-1"></div>').hide();
             $input.after($suggestions);
+
+            $suggestions.on('mousedown', function() {
+                suggestionMouseDown = true;
+            });
+            $suggestions.on('mouseup', function() {
+                suggestionMouseDown = false;
+            });
 
             $input.on('input', function() {
                 var query = $input.val().trim();
@@ -709,11 +795,12 @@
                 }, 400);
             });
 
-            // Hide suggestions shortly after blur to allow click selection
+            // Hide suggestions on blur, unless a suggestion click is in progress.
             $input.on('blur', function() {
-                setTimeout(function() {
+                if (suggestionMouseDown) return;
+                requestAnimationFrame(function() {
                     $suggestions.hide();
-                }, 200);
+                });
             });
         });
     }
@@ -808,8 +895,99 @@
         });
     });
 
+    // Enforce Terms & Conditions on first visit
+    document.addEventListener('DOMContentLoaded', function() {
+        try {
+            function hasAcceptedTerms() {
+                return document.cookie.split(';').some(function(part) {
+                    return part.trim().indexOf('terms_accepted=1') === 0;
+                });
+            }
+
+            function markTermsAccepted() {
+                var oneYear = 365 * 24 * 60 * 60;
+                document.cookie = 'terms_accepted=1; path=/; max-age=' + oneYear;
+            }
+
+            if (hasAcceptedTerms()) {
+                return;
+            }
+
+            if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+                return;
+            }
+
+            var modalEl = document.getElementById('termsModal');
+            if (!modalEl) {
+                return;
+            }
+
+            var headerClose = modalEl.querySelector('.btn-close');
+            var footerClose = document.getElementById('termsModalCloseButton');
+            var acceptBtn = document.getElementById('termsAcceptButton');
+            if (!acceptBtn) {
+                return;
+            }
+
+            // Hide normal close controls so user must either agree or close the page
+            if (headerClose) {
+                headerClose.style.display = 'none';
+            }
+            if (footerClose) {
+                footerClose.classList.add('d-none');
+            }
+            acceptBtn.classList.remove('d-none');
+
+            var modal = bootstrap.Modal.getOrCreateInstance(modalEl, {
+                backdrop: 'static',
+                keyboard: false
+            });
+
+            function onAccept() {
+                markTermsAccepted();
+                if (headerClose) {
+                    headerClose.style.display = '';
+                }
+                if (footerClose) {
+                    footerClose.classList.remove('d-none');
+                }
+                acceptBtn.classList.add('d-none');
+                modal.hide();
+                acceptBtn.removeEventListener('click', onAccept);
+            }
+
+            acceptBtn.addEventListener('click', onAccept);
+            modal.show();
+        } catch (e) {
+            // Fail open if anything goes wrong
+        }
+    });
+
     // Global handlers for header/home login & registration modals
     $(document).ready(function() {
+        function colorizeRequiredAsterisks() {
+            var selectors = 'label, legend';
+            document.querySelectorAll(selectors).forEach(function(el) {
+                if (!el || !el.innerHTML) return;
+                if (el.innerHTML.indexOf('*') === -1) return;
+                if (el.innerHTML.indexOf('required-asterisk') !== -1) return;
+
+                // Replace visual required markers with a styled span.
+                el.innerHTML = el.innerHTML.replace(/\*/g, '<span class="required-asterisk" style="color:#dc3545 !important; font-weight:800 !important;">*</span>');
+            });
+        }
+
+        colorizeRequiredAsterisks();
+        setTimeout(colorizeRequiredAsterisks, 250);
+        setTimeout(colorizeRequiredAsterisks, 1000);
+
+        if (typeof MutationObserver !== 'undefined') {
+            var observer = new MutationObserver(function() {
+                colorizeRequiredAsterisks();
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
+
         // Initialize location autocomplete for any customer-facing location fields
         setupLocationAutocomplete();
 
@@ -842,7 +1020,7 @@
 
         // Show/hide password fields in landing quick registration modal
         $('#landingRegisterShowPassword').on('change', function() {
-            var $input = $('#landing_password');
+            var $input = $('#landing_register_password');
             if (this.checked) {
                 $input.attr('type', 'text');
             } else {
@@ -857,6 +1035,37 @@
                 $input.attr('type', 'password');
             }
         });
+
+        function isLandingClientRegistration() {
+            return $('#landing_registration_type').val() === 'client';
+        }
+
+        function isLandingStaffRegistration() {
+            return $('#landing_registration_type').val() === 'staff';
+        }
+
+        function toggleLandingRegistrationModeUI() {
+            var isClient = isLandingClientRegistration();
+            var isStaff = isLandingStaffRegistration();
+            $('.landing-client-only-field').toggleClass('d-none', !isClient);
+            $('.landing-staff-only-field').toggleClass('d-none', !isStaff);
+
+            $('#landing_email, #landing_id_number, #landing_address, #landing_connection_type, #landing_register_password, #landing_confirm_password')
+                .prop('required', isClient);
+            $('#landing_username').prop('required', isStaff);
+
+            if (!isClient) {
+                $('#landing_email, #landing_id_number, #landing_address, #landing_connection_type, #landing_register_password, #landing_confirm_password')
+                    .removeClass('is-invalid');
+                $('#landing_register_password, #landing_confirm_password').val('');
+            }
+            if (!isStaff) {
+                $('#landing_username').removeClass('is-invalid').val('');
+            }
+        }
+
+        $('#landing_registration_type').on('change', toggleLandingRegistrationModeUI);
+        toggleLandingRegistrationModeUI();
 
         function handleLandingPostLoginSuccess(response) {
             var requiresRegPayment = response.data && response.data.requires_registration_payment;
@@ -996,6 +1205,7 @@
         });
 
         $(document).on('click', '#landingBackToCredentialsBtn', function() {
+            if (window.stopWebOtpListener) stopWebOtpListener();
             $('#landingTwoFactorSection').addClass('d-none');
             $('#landingCredentialsSection').removeClass('d-none');
         });
@@ -1019,11 +1229,14 @@
                 data: JSON.stringify({ method: 'sms' }),
                 success: function(resp) {
                     if (resp.status === 'success') {
+                        var actualMethod = (resp.data && resp.data.method) ? resp.data.method : 'sms';
+                        var label = actualMethod === 'email' ? 'email' : 'phone';
                         if (window.showToast) {
-                            showToast('Verification code sent to your phone.','info');
+                            showToast(resp.message || ('Verification code sent to your ' + label + '.'),'info');
                         }
-                        showLandingTwoFactorPrompt('phone');
+                        showLandingTwoFactorPrompt(actualMethod === 'email' ? 'email' : 'phone');
                         startLandingTwoFactorCooldown(60);
+                        if (actualMethod === 'sms' && window.startWebOtpListener) startWebOtpListener('#landing_two_factor_code');
                     } else if (resp.status === 'cooldown') {
                         var remaining = resp.data && resp.data.remaining ? resp.data.remaining : 0;
                         if (remaining > 0) {
@@ -1055,11 +1268,14 @@
                 data: JSON.stringify({ method: 'email' }),
                 success: function(resp) {
                     if (resp.status === 'success') {
+                        var actualMethod = (resp.data && resp.data.method) ? resp.data.method : 'email';
+                        var label = actualMethod === 'email' ? 'email' : 'phone';
                         if (window.showToast) {
-                            showToast('Verification code sent to your email.','info');
+                            showToast(resp.message || ('Verification code sent to your ' + label + '.'),'info');
                         }
-                        showLandingTwoFactorPrompt('email');
+                        showLandingTwoFactorPrompt(actualMethod === 'email' ? 'email' : 'phone');
                         startLandingTwoFactorCooldown(60);
+                        if (actualMethod === 'sms' && window.startWebOtpListener) startWebOtpListener('#landing_two_factor_code');
                     } else if (resp.status === 'cooldown') {
                         var remaining = resp.data && resp.data.remaining ? resp.data.remaining : 0;
                         if (remaining > 0) {
@@ -1080,6 +1296,41 @@
                 }
             });
         });
+
+        /* ── WebOTP: auto-fill SMS verification codes on phones/tablets —
+             Uses the Web OTP API (OTPCredential) available on Android Chrome.
+             iOS Safari uses autocomplete="one-time-code" which prompts the
+             keyboard suggestion bar automatically — no JS needed there.
+        ── */
+        var _otpAbortController = null;
+
+        window.startWebOtpListener = function(inputSelector) {
+            if (!('OTPCredential' in window)) return;  // not supported
+            // Abort previous listener before starting a new one
+            if (_otpAbortController) {
+                try { _otpAbortController.abort(); } catch (e) {}
+            }
+            _otpAbortController = new AbortController();
+            navigator.credentials.get({
+                otp: { transport: ['sms'] },
+                signal: _otpAbortController.signal
+            }).then(function (otp) {
+                var input = document.querySelector(inputSelector);
+                if (!input) return;
+                input.value = otp.code;
+                // Dispatch input event so the auto-verify handler fires
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }).catch(function () {
+                // Silently ignore: user dismissed, timed out, or unsupported
+            });
+        };
+
+        window.stopWebOtpListener = function() {
+            if (_otpAbortController) {
+                try { _otpAbortController.abort(); } catch (e) {}
+                _otpAbortController = null;
+            }
+        };
 
         $('#landingLoginForm').on('submit', function(e) {
             e.preventDefault();
@@ -1114,6 +1365,8 @@
                         showLandingTwoFactorPrompt(label);
                         // Start initial resend cooldown
                         startLandingTwoFactorCooldown(60);
+                        // WebOTP: auto-fill SMS code on phones/tablets
+                        if (window.startWebOtpListener) startWebOtpListener('#landing_two_factor_code');
                     } else if (response.status === 'success') {
                         handleLandingPostLoginSuccess(response);
                     } else if (window.showToast) {
@@ -1133,41 +1386,253 @@
             });
         });
 
-        // Registration modal form
+        function buildLandingNormalizedPhone() {
+            var code = String($('#landing_phone_country_code').val() || '').replace(/\D/g, '');
+            var local = String($('#landing_phone_number_local').val() || '').replace(/\D/g, '');
+            if (code && local.indexOf(code) === 0 && local.length > code.length) {
+                local = local.slice(code.length);
+            }
+            local = local.replace(/^0+/, '');
+            if (!code || !local) {
+                return '';
+            }
+            return code + local;
+        }
+
+        // ── Registration modal: payment countdown & retry ──────────────────
+        var ldgPaySettled = false;
+        var ldgCdInterval = null;
+        var ldgPollInterval = null;
+        var ldgTimeoutHandle = null;
+        var ldgCurrentCheckoutId = null;
+        var COUNTDOWN_S = 59;                  // M-Pesa STK typically expires in 60 s
+        var RING_CIRC = 238.76;                // 2π × r(38)
+
+        function ldgClearTimers() {
+            clearInterval(ldgCdInterval);
+            clearInterval(ldgPollInterval);
+            clearTimeout(ldgTimeoutHandle);
+            ldgCdInterval = ldgPollInterval = ldgTimeoutHandle = null;
+        }
+
+        function ldgUpdateRing(secondsLeft) {
+            var pct = secondsLeft / COUNTDOWN_S;
+            var offset = RING_CIRC * (1 - pct);
+            var arc   = document.getElementById('landingRingArc');
+            var num   = document.getElementById('landingCountdownNum');
+            if (!arc || !num) return;
+            arc.style.strokeDashoffset = offset;
+            num.textContent = secondsLeft;
+            // Colour shifts: blue → orange (≤15 s) → red (≤5 s)
+            if (secondsLeft <= 5) {
+                arc.className.baseVal = 'ring-arc ring-danger';
+                num.className = 'reg-countdown-number text-danger';
+            } else if (secondsLeft <= 15) {
+                arc.style.stroke = '#fd7e14';
+                num.className = 'reg-countdown-number';
+                num.style.color = '#fd7e14';
+            } else {
+                arc.className.baseVal = 'ring-arc';
+                num.style.color = '';
+                num.className = 'reg-countdown-number';
+            }
+        }
+
+        function ldgShowWaiting(title, status) {
+            $('#landingRegisterIntro').addClass('d-none');
+            $('#landingRegisterMessage').addClass('d-none').empty();
+            $('#landingRegisterForm').addClass('d-none');
+            $('#landingPaymentActions').addClass('d-none');
+            $('#landingCdTitle').text(title || 'Waiting for M-Pesa Payment');
+            $('#landingCdStatus').text(status || 'Check your phone and approve the M-Pesa prompt.');
+            // reset ring to full
+            var arc = document.getElementById('landingRingArc');
+            if (arc) {
+                arc.style.strokeDashoffset = 0;
+                arc.className.baseVal = 'ring-arc';
+            }
+            var num = document.getElementById('landingCountdownNum');
+            if (num) { num.textContent = COUNTDOWN_S; num.className = 'reg-countdown-number'; num.style.color = ''; }
+            $('#landingPaymentWaiting').removeClass('d-none');
+        }
+
+        function ldgShowWaitingActions() {
+            $('#landingPaymentActions').removeClass('d-none');
+        }
+
+        function ldgHideWaiting() {
+            $('#landingPaymentWaiting').addClass('d-none');
+            $('#landingPaymentActions').addClass('d-none');
+            $('#landingRegisterIntro').removeClass('d-none');
+            $('#landingRegisterForm').removeClass('d-none');
+        }
+
+        function ldgStartCountdownPoll(checkoutId) {
+            ldgClearTimers();
+            ldgPaySettled = false;
+            ldgCurrentCheckoutId = checkoutId;
+            var secondsLeft = COUNTDOWN_S;
+            ldgUpdateRing(secondsLeft);
+
+            ldgCdInterval = setInterval(function() {
+                if (ldgPaySettled) return;
+                secondsLeft = Math.max(0, secondsLeft - 1);
+                ldgUpdateRing(secondsLeft);
+                if (secondsLeft === 0) {
+                    clearInterval(ldgCdInterval);
+                }
+            }, 1000);
+
+            function doPoll() {
+                if (ldgPaySettled) return;
+                $.ajax({
+                    url: '/api/payments/check_registration_status',
+                    type: 'GET',
+                    dataType: 'json',
+                    data: { checkout_request_id: checkoutId },
+                    success: function(data) {
+                        if (!data || ldgPaySettled) return;
+                        if (data.status === 'success' && data.payment_status === 'completed') {
+                            ldgHandleSuccess();
+                        } else if (data.status === 'error' && data.payment_status === 'failed') {
+                            ldgHandleFailure(data.message || 'M-Pesa payment was declined or cancelled.');
+                        }
+                    }
+                });
+            }
+
+            doPoll();
+            ldgPollInterval = setInterval(doPoll, 3000);
+
+            // STK expires after 59 s; give a 2-second grace, then show retry
+            ldgTimeoutHandle = setTimeout(function() {
+                if (ldgPaySettled) return;
+                ldgHandleTimeout();
+            }, (COUNTDOWN_S + 2) * 1000);
+        }
+
+        function ldgHandleSuccess() {
+            ldgPaySettled = true;
+            ldgClearTimers();
+            var arc = document.getElementById('landingRingArc');
+            if (arc) arc.className.baseVal = 'ring-arc ring-success';
+            var num = document.getElementById('landingCountdownNum');
+            if (num) { num.className = 'reg-countdown-number text-success'; num.innerHTML = '<i class="bi bi-check-lg"></i>'; }
+            $('#landingCdTitle').text('Payment Confirmed!');
+            $('#landingCdStatus').text('Your account is now active. Redirecting to login...');
+            if (window.showToast) showToast('Payment confirmed! Redirecting to login...', 'success');
+            setTimeout(function() { window.location.href = '/login?registered=true'; }, 2500);
+        }
+
+        function ldgHandleFailure(message) {
+            ldgPaySettled = true;
+            ldgClearTimers();
+            var arc = document.getElementById('landingRingArc');
+            if (arc) arc.className.baseVal = 'ring-arc ring-danger';
+            var num = document.getElementById('landingCountdownNum');
+            if (num) { num.innerHTML = '<i class="bi bi-x-lg"></i>'; num.className = 'reg-countdown-number text-danger'; }
+            $('#landingCdTitle').text('Payment Failed');
+            $('#landingCdStatus').text(message || 'The payment was not completed.');
+            if (window.showToast) showToast(message || 'Payment failed.', 'danger');
+            ldgShowWaitingActions();
+        }
+
+        function ldgHandleTimeout() {
+            ldgPaySettled = true;
+            ldgClearTimers();
+            var num = document.getElementById('landingCountdownNum');
+            if (num) { num.textContent = '0'; num.className = 'reg-countdown-number text-danger'; }
+            $('#landingCdTitle').text('STK Prompt Expired');
+            $('#landingCdStatus').text('The M-Pesa prompt was not approved in time. Use the button below to resend it.');
+            if (window.showToast) showToast('M-Pesa prompt expired. Tap "Resend" to try again.', 'warning');
+            ldgShowWaitingActions();
+        }
+
+        // Retry button
+        $(document).on('click', '#landingRetryPayBtn', function() {
+            var btn = $(this);
+            if (!ldgCurrentCheckoutId) return;
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Sending...');
+            $.ajax({
+                url: '/api/payments/resend_registration_stk',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ checkout_request_id: ldgCurrentCheckoutId }),
+                success: function(res) {
+                    if (res.status === 'success' && res.data && res.data.checkout_request_id) {
+                        ldgPaySettled = false;
+                        ldgCurrentCheckoutId = res.data.checkout_request_id;
+                        ldgShowWaiting('Waiting for M-Pesa Payment', 'A new prompt has been sent. Check your phone and approve it.');
+                        if (window.showToast) showToast('New M-Pesa prompt sent. Check your phone.', 'info');
+                        ldgStartCountdownPoll(ldgCurrentCheckoutId);
+                    } else if (res.status === 'already_active') {
+                        ldgHandleSuccess();
+                    } else {
+                        if (window.showToast) showToast(res.message || 'Could not resend payment.', 'danger');
+                        $('#landingCdStatus').text(res.message || 'Failed to resend prompt. Please try again.');
+                        btn.prop('disabled', false).html('<i class="bi bi-arrow-repeat"></i> Resend M-Pesa Prompt');
+                    }
+                },
+                error: function(xhr) {
+                    var err = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Failed to resend payment request.';
+                    if (window.showToast) showToast(err, 'danger');
+                    $('#landingCdStatus').text(err);
+                    btn.prop('disabled', false).html('<i class="bi bi-arrow-repeat"></i> Resend M-Pesa Prompt');
+                }
+            });
+        });
+
+        // Registration modal form submission
         $('#landingRegisterForm').on('submit', function(e) {
             e.preventDefault();
+            var $form = $(this);
 
             if (!this.checkValidity()) {
                 e.stopPropagation();
-                $(this).addClass('was-validated');
+                $form.addClass('was-validated');
                 return;
             }
 
-            const password = $('#landing_password').val();
-            const confirmPassword = $('#landing_confirm_password').val();
-            if (password !== confirmPassword) {
-                $('#landing_confirm_password').addClass('is-invalid');
-                $('#landing_confirm_password').siblings('.invalid-feedback').text('Passwords do not match.');
+            const isClient = isLandingClientRegistration();
+            const isStaff  = isLandingStaffRegistration();
+            const password        = String($form.find('#landing_register_password').val() || '');
+            const confirmPassword = String($form.find('#landing_confirm_password').val() || '');
+            const username        = String($form.find('#landing_username').val() || '').trim();
+
+            if (isClient && password !== confirmPassword) {
+                $form.find('#landing_confirm_password').addClass('is-invalid');
+                $form.find('#landing_confirm_password').siblings('.invalid-feedback').text('Passwords do not match.');
+                return;
+            }
+            if (isStaff && !/^[A-Za-z0-9._-]{3,30}$/.test(username)) {
+                $form.find('#landing_username').addClass('is-invalid');
                 return;
             }
 
             const formData = {
-                first_name: $('#landing_first_name').val(),
-                last_name: $('#landing_last_name').val(),
-                full_name: ($('#landing_first_name').val() + ' ' + $('#landing_last_name').val()).trim(),
-                phone_number: $('#landing_phone_number').val(),
-                email: $('#landing_email').val(),
-                id_number: $('#landing_id_number').val(),
-                address: $('#landing_address').val(),
-                location_label: $('#landing_location_label').val(),
-                connection_type: $('#landing_connection_type').val(),
-                password: password,
-                tax_pin: $('#landing_tax_pin').val()
+                registration_type:  $form.find('#landing_registration_type').val(),
+                first_name:         $form.find('#landing_first_name').val(),
+                middle_name:        $form.find('#landing_middle_name').val(),
+                last_name:          $form.find('#landing_last_name').val(),
+                full_name:          ($form.find('#landing_first_name').val() + ' ' + $form.find('#landing_middle_name').val() + ' ' + $form.find('#landing_last_name').val()).trim(),
+                phone_country_code: $form.find('#landing_phone_country_code').val(),
+                phone_number_local: $form.find('#landing_phone_number_local').val(),
+                phone_number:       buildLandingNormalizedPhone(),
+                id_number:          $form.find('#landing_id_number').val()
             };
 
-            const registerBtn = $('#landingRegisterBtn');
-            registerBtn.prop('disabled', true);
-            registerBtn.html('<span class="spinner-border spinner-border-sm"></span> Registering...');
+            if (isStaff)  formData.username = username;
+            if (isClient) {
+                formData.email           = $form.find('#landing_email').val();
+                formData.address         = $form.find('#landing_address').val();
+                formData.location_label  = $form.find('#landing_location_label').val();
+                formData.connection_type = $form.find('#landing_connection_type').val();
+                formData.password        = password;
+                formData.tax_pin         = $form.find('#landing_tax_pin').val();
+            }
+
+            var registerBtn = $('#landingRegisterBtn');
+            registerBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Registering...');
 
             $.ajax({
                 url: '/api/auth/register',
@@ -1178,38 +1643,62 @@
                     if (response.status === 'success') {
                         var requiresPayment = response.data && response.data.requires_payment;
                         var baseMsg = response.message || 'Registration successful';
-                        var extra = '';
-                        if (response.data && response.data.account_number) {
-                            extra = '\nYour account number is: ' + response.data.account_number;
-                        }
-                        var successMsg = baseMsg + extra;
-
-                        if (window.showToast) {
-                            showToast(successMsg, 'success');
-                        }
 
                         if (!requiresPayment) {
-                            $('#landingRegisterForm')[0].reset();
-                            $('#landingRegisterForm').removeClass('was-validated');
+                            // No payment needed — show success toast then go to login
+                            if (window.showToast) showToast(baseMsg + (response.data && response.data.account_number ? ' Account: ' + response.data.account_number : ''), 'success');
+                            registerBtn.prop('disabled', false).html('<i class="bi bi-person-plus"></i> Create Account');
+                            $form[0].reset();
+                            $form.removeClass('was-validated');
                             setTimeout(function() { window.location.href = '/login?registered=true'; }, 3000);
-                        } else if (window.showToast) {
-                            showToast('Waiting for M-Pesa payment confirmation. Please complete the STK prompt on your phone.', 'info');
+                            return;
                         }
-                    } else if (window.showToast) {
-                        showToast(response.message || 'Registration failed','danger');
+
+                        // Payment required — show countdown UI
+                        var checkoutId = response.data && response.data.checkout_request_id;
+                        if (!checkoutId) {
+                            if (window.showToast) showToast('Registration submitted. Please complete the M-Pesa prompt on your phone.', 'info');
+                            registerBtn.prop('disabled', false).html('<i class="bi bi-person-plus"></i> Create Account');
+                            return;
+                        }
+
+                        registerBtn.prop('disabled', false).html('<i class="bi bi-person-plus"></i> Create Account');
+                        ldgShowWaiting(
+                            'Waiting for M-Pesa Payment',
+                            'An STK push has been sent to your phone. Please approve it within 59 seconds to activate your account.'
+                        );
+                        if (window.showToast) showToast('M-Pesa prompt sent! Approve it on your phone within 59 seconds.', 'info');
+                        ldgStartCountdownPoll(checkoutId);
+
+                    } else {
+                        var errMsg = response.message || 'Registration failed';
+                        if (window.showToast) showToast(errMsg, 'danger');
+                        $('#landingRegisterMessage')
+                            .removeClass('d-none alert-success alert-info alert-warning')
+                            .addClass('alert-danger')
+                            .html('<i class="bi bi-exclamation-triangle"></i> ' + errMsg);
+                        registerBtn.prop('disabled', false).html('<i class="bi bi-person-plus"></i> Create Account');
                     }
                 },
                 error: function(xhr) {
-                    const error = xhr.responseJSON ? xhr.responseJSON.message : 'Registration failed';
-                    if (window.showToast) {
-                        showToast(error,'danger');
-                    }
-                },
-                complete: function() {
-                    registerBtn.prop('disabled', false);
-                    registerBtn.html('<i class="bi bi-person-plus"></i> Create Account');
+                    var err = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Registration failed';
+                    if (window.showToast) showToast(err, 'danger');
+                    $('#landingRegisterMessage')
+                        .removeClass('d-none alert-success alert-info alert-warning')
+                        .addClass('alert-danger')
+                        .html('<i class="bi bi-exclamation-triangle"></i> ' + err);
+                    registerBtn.prop('disabled', false).html('<i class="bi bi-person-plus"></i> Create Account');
                 }
             });
+        });
+
+        // Reset the waiting panel whenever the modal is fully closed
+        $('#registerModal').on('hidden.bs.modal', function() {
+            ldgPaySettled = true;
+            ldgClearTimers();
+            ldgCurrentCheckoutId = null;
+            ldgHideWaiting();
+            $('#landingRegisterMessage').addClass('d-none').empty();
         });
     });
     </script>
@@ -1217,5 +1706,161 @@
     <?php if(isset($custom_scripts)): ?>
         <?php echo $custom_scripts; ?>
     <?php endif; ?>
+
+    <!-- ═══════════════════════════════════════════════
+         PWA INSTALL BANNER
+         Shows on phones & tablets only.  Handles:
+          • Android / Chrome  — native beforeinstallprompt
+          • iOS Safari        — manual "Add to Home Screen" guide
+         Dismissal is stored in localStorage for 14 days.
+         ═════════════════════════════════════════════ -->
+
+    <!-- Install prompt banner -->
+    <div id="pwa-install-banner" role="complementary" aria-label="Install app prompt">
+        <div class="pwa-banner-icon" aria-hidden="true">
+            <img src="/public/images/favicon-water.svg" width="32" height="32" alt="">
+        </div>
+        <div class="pwa-banner-text">
+            <strong><?php echo htmlspecialchars($appName ?? 'Water Billing System', ENT_QUOTES, 'UTF-8'); ?></strong>
+            <span>Install for quick, offline access</span>
+        </div>
+        <div class="pwa-banner-actions">
+            <button class="pwa-install-btn" id="pwa-install-btn" type="button">
+                Install
+            </button>
+            <button class="pwa-dismiss-btn" id="pwa-dismiss-btn" type="button" aria-label="Dismiss install prompt">
+                &times;
+            </button>
+        </div>
+    </div>
+
+    <!-- iOS "Add to Home Screen" instruction sheet -->
+    <div id="pwa-ios-tip" role="dialog" aria-modal="true" aria-label="How to install on iPhone or iPad">
+        <button class="pwa-ios-tip-close" id="pwa-ios-tip-close" type="button" aria-label="Close">&times;</button>
+        <h6><i class="bi bi-phone"></i> Install on your iPhone / iPad</h6>
+        <ol>
+            <li>Tap the <span class="pwa-share-icon"><i class="bi bi-box-arrow-up"></i></span> <strong>Share</strong> button at the bottom of Safari</li>
+            <li>Scroll down and tap <strong>"Add to Home Screen"</strong></li>
+            <li>Tap <strong>"Add"</strong> in the top-right corner</li>
+        </ol>
+        <p style="font-size:0.78rem;opacity:0.65;margin-top:0.6rem;margin-bottom:0;">
+            The app will appear on your home screen like a native app.
+        </p>
+    </div>
+
+    <script>
+    (function () {
+        'use strict';
+
+        /* ── helpers ── */
+        var DISMISS_KEY = 'pwa_banner_dismissed';
+        var DAYS_14     = 14 * 24 * 60 * 60 * 1000;
+
+        function wasDismissed() {
+            try {
+                var ts = localStorage.getItem(DISMISS_KEY);
+                return ts && (Date.now() - parseInt(ts, 10)) < DAYS_14;
+            } catch (e) { return false; }
+        }
+
+        function markDismissed() {
+            try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (e) {}
+        }
+
+        function hideBanner()  { banner.classList.remove('pwa-show'); }
+        function showBanner()  { banner.classList.add('pwa-show'); }
+        function hideIosTip()  { iosTip.classList.remove('pwa-show'); }
+        function showIosTip()  { iosTip.classList.add('pwa-show'); }
+
+        var banner     = document.getElementById('pwa-install-banner');
+        var iosTip     = document.getElementById('pwa-ios-tip');
+        var installBtn = document.getElementById('pwa-install-btn');
+        var dismissBtn = document.getElementById('pwa-dismiss-btn');
+        var iosTipClose= document.getElementById('pwa-ios-tip-close');
+
+        if (!banner || !iosTip) return;
+
+        /* ── Do not show on desktop ── */
+        if (window.innerWidth >= 992) return;
+
+        /* ── Do not show if already installed as PWA ── */
+        if (window.matchMedia('(display-mode: standalone)').matches) return;
+        if (window.navigator.standalone === true) return;      // iOS check
+
+        /* ── Do not show if recently dismissed ── */
+        if (wasDismissed()) return;
+
+        /* ── Detect iOS Safari ── */
+        var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        var isIosSafari = isIos && isSafari;
+
+        /* ════════════════════════════════
+           Android / Chrome: native prompt
+           ════════════════════════════════ */
+        var deferredPrompt = null;
+
+        window.addEventListener('beforeinstallprompt', function (e) {
+            e.preventDefault();
+            deferredPrompt = e;
+
+            // Small delay so the page finishes loading before we slide up
+            setTimeout(showBanner, 1800);
+        });
+
+        installBtn.addEventListener('click', function () {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then(function (result) {
+                    deferredPrompt = null;
+                    hideBanner();
+                    if (result.outcome === 'accepted') {
+                        markDismissed();      // accepted — don't pester again
+                    }
+                });
+            } else if (isIosSafari) {
+                hideBanner();
+                showIosTip();
+            }
+        });
+
+        dismissBtn.addEventListener('click', function () {
+            hideBanner();
+            markDismissed();
+        });
+
+        /* ════════════════════════════════
+           iOS Safari: manual guide
+           ════════════════════════════════ */
+        if (isIosSafari) {
+            // Chrome/Android prompt won't fire, show banner after delay
+            setTimeout(showBanner, 1800);
+
+            // Button label tweak for iOS
+            installBtn.textContent = 'Add to Home Screen';
+        }
+
+        iosTipClose.addEventListener('click', function () {
+            hideIosTip();
+            markDismissed();
+        });
+
+        /* ── Register service worker ── */
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .then(function (reg) {
+                        // Service worker registered — PWA install criteria met
+                        console.debug('[WBS] Service worker registered:', reg.scope);
+                    })
+                    .catch(function (err) {
+                        console.debug('[WBS] Service worker registration failed:', err);
+                    });
+            });
+        }
+
+    }());
+    </script>
 </body>
 </html>

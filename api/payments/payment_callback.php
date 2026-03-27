@@ -4,6 +4,8 @@ require_once __DIR__ . '/../../includes/Payment.php';
 require_once __DIR__ . '/../../includes/Bill.php';
 require_once __DIR__ . '/../../includes/User.php';
 require_once __DIR__ . '/../../includes/SMS.php';
+require_once __DIR__ . '/../../includes/ErrorLog.php';
+require_once __DIR__ . '/../../includes/CustomerCredit.php';
 require_once __DIR__ . '/../../includes/Etims.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
 
@@ -37,12 +39,15 @@ try {
     
     $payment = new Payment($db);
     $bill = new Bill($db);
+    $errorLog = new ErrorLog($db);
 	
     // Find payment by checkout request ID
     $paymentData = $payment->getByCheckoutRequestId($callback['CheckoutRequestID']);
     
     if(!$paymentData) {
-        throw new Exception("Payment not found for checkout ID: " . $callback['CheckoutRequestID']);
+        $errorMsg = "Payment not found for checkout ID: " . $callback['CheckoutRequestID'];
+        $errorLog->logApiError('M-Pesa', 'STK Callback', 404, $errorMsg, $data);
+        throw new Exception($errorMsg);
     }
     
     if($callback['ResultCode'] == 0) {
@@ -68,12 +73,12 @@ try {
             'Success'
         );
 
-        // Update bill status if linked to a bill
+        // Update bill status and credit if linked to a bill
         if (!empty($paymentData['bill_id'])) {
-            $bill->updateStatus($paymentData['bill_id'], 'paid');
+            $bill->markAsPaid($paymentData['bill_id'], $paymentData['id']);
         }
 
-        // Send SMS notification
+        // Send SMS notification (queued)
         $userService = new User($db);
         $user = $userService->getById($paymentData['user_id']);
         if ($user) {
@@ -120,7 +125,8 @@ try {
                     $companyName;
             }
 
-            $sms->send($user['phone_number'], $messageText);
+            // Queue SMS instead of sending synchronously
+            $sms->queue($user['phone_number'], $messageText, 'payment_confirmation');
 
             // Also send an email if the user has an email address
             if (!empty($user['email'])) {
@@ -144,7 +150,7 @@ try {
                 }
             }
         } catch (Exception $etimsEx) {
-            error_log('ETIMS submission error: ' . $etimsEx->getMessage());
+            $errorLog->logSystemError('ETIMS', 'Sale submission failed: ' . $etimsEx->getMessage(), __FILE__, __LINE__, ['bill_id' => $paymentData['bill_id']]);
         }
         
         error_log("Payment successful: Receipt - $receipt, Amount - $amount");
@@ -159,7 +165,16 @@ try {
             $callback['ResultDesc']
         );
 
-        // Notify user via SMS about failure
+        // Log the failed payment
+        $errorLog->logApiError(
+            'M-Pesa',
+            'STK Callback',
+            $callback['ResultCode'],
+            'Payment transaction failed: ' . $callback['ResultDesc'],
+            $data
+        );
+
+        // Notify user via SMS about failure (queued)
         $userService = new User($db);
         $user = $userService->getById($paymentData['user_id']);
         if ($user) {
@@ -198,7 +213,8 @@ try {
                     $companyName;
             }
 
-            $sms->send($user['phone_number'], $messageText);
+            // Queue SMS for delayed delivery
+            $sms->queue($user['phone_number'], $messageText, 'payment_failure');
 
             // Also send an email if the user has an email address
             if (!empty($user['email'])) {
@@ -217,6 +233,9 @@ try {
     
 } catch(Exception $e) {
     error_log("Callback error: " . $e->getMessage());
+    if(isset($errorLog)) {
+        $errorLog->logSystemError('M-Pesa', 'Callback processing exception: ' . $e->getMessage(), __FILE__, __LINE__);
+    }
 }
 
 // Always return success to M-Pesa

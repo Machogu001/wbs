@@ -15,7 +15,7 @@ $database = new Database();
 $db = $database->getConnection();
 
 $auth = new Auth($db);
-if(!$auth->isLoggedIn() || !$auth->isAdmin()) {
+if(!$auth->isLoggedIn() || !$auth->hasPermission('manage_settings')) {
 	header("Location: /login");
 	exit;
 }
@@ -40,6 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 		$support_phone = isset($_POST['support_phone']) ? trim($_POST['support_phone']) : null;
 		$support_email = isset($_POST['support_email']) ? trim($_POST['support_email']) : null;
 		$currency_code = isset($_POST['currency_code']) ? strtoupper(trim($_POST['currency_code'])) : null;
+		$locale_code = isset($_POST['locale_code']) ? trim($_POST['locale_code']) : null;
+		$timezone_name = isset($_POST['timezone_name']) ? trim($_POST['timezone_name']) : null;
 		$financial_year_start_month = isset($_POST['financial_year_start_month']) ? (int)$_POST['financial_year_start_month'] : null;
 		$vat_rate = isset($_POST['vat_rate']) ? $_POST['vat_rate'] : null;
 		$etims_taxation_type_code = isset($_POST['etims_taxation_type_code']) ? $_POST['etims_taxation_type_code'] : null;
@@ -49,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 			$message = "Rate per m³ must be greater than 0.";
 			$message_type = "danger";
 		} else {
-			if ($settingsService->updateSettings($rate, $service, $company_pin, $etims_integration_url, $etims_api_key, $company_name, $support_phone, $support_email, $currency_code, $financial_year_start_month, $vat_rate, $etims_taxation_type_code, $registration_fee)) {
+			if ($settingsService->updateSettings($rate, $service, $company_pin, $etims_integration_url, $etims_api_key, $company_name, $support_phone, $support_email, $currency_code, $financial_year_start_month, $vat_rate, $etims_taxation_type_code, $registration_fee, $locale_code, $timezone_name)) {
 				// Log activity
 				try {
 					$logger = new ActivityLog($db);
@@ -65,7 +67,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 							'company_name' => $company_name,
 							'support_phone' => $support_phone,
 							'support_email' => $support_email,
-							'currency_code' => $currency_code
+							'currency_code' => $currency_code,
+							'locale_code' => $locale_code,
+							'timezone_name' => $timezone_name
 						)
 					);
 				} catch (Exception $e) {
@@ -195,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 						}
 						$billDate = date('d-m-Y');
 						$account = $user['account_number'];
-						$paybill = MpesaConfig::SHORTCODE;
+						$paybill = MpesaConfig::getShortCode();
 						$payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
 
 						$messageText = "AC: {$account}\n" .
@@ -325,19 +329,30 @@ $page_title = "System Setting";
 require_once __DIR__ . '/../../templates/header.php';
 ?>
 
-<div class="container mt-4">
+<div class="container-fluid mt-4 admin-shell system-settings-page">
 	<div class="row">
 		<div class="col-md-12">
-			<div class="admin-page-header d-flex justify-content-between align-items-center">
-				<div>
+			<div class="admin-page-header admin-hero-header system-settings-hero">
+				<div class="admin-hero-main">
+					<p class="admin-hero-eyebrow mb-2"><i class="bi bi-sliders"></i> Billing Control Center</p>
 					<h2 class="mb-1">System Setting</h2>
 					<p class="text-muted mb-0">Manage billing settings and record meter readings.</p>
+				</div>
+				<div class="admin-hero-actions system-settings-hero-actions">
+					<div class="admin-hero-chip">
+						<i class="bi bi-cash-stack"></i>
+						Rate: <strong>KES <?php echo number_format((float)($settings['rate_per_unit'] ?? 50), 2); ?></strong>
+					</div>
+					<div class="admin-hero-chip">
+						<i class="bi bi-person-plus"></i>
+						Registration: <strong>KES <?php echo number_format((float)($settings['registration_fee'] ?? 0), 2); ?></strong>
+					</div>
 				</div>
 			</div>
 		</div>
 	</div>
 
-	<div id="adminToast" style="position:fixed; top:4.5rem; right:1rem; z-index:2000; display:none; min-width:260px;">
+	<div id="adminToast" class="admin-toast" style="position:fixed; top:4.5rem; right:1rem; z-index:2000; display:none; min-width:260px;">
 		<div id="adminToastBody" class="alert alert-success mb-0 shadow"></div>
 	</div>
 
@@ -355,6 +370,14 @@ require_once __DIR__ . '/../../templates/header.php';
 		window.addEventListener('load', function() {
 			var msg = <?php echo json_encode($message); ?>;
 			var type = <?php echo json_encode($message_type); ?>;
+			if (window.WbsAdminUi && typeof window.WbsAdminUi.showFlashToast === 'function') {
+				window.WbsAdminUi.showFlashToast(msg, type);
+				return;
+			}
+			if (window.showToast) {
+				window.showToast(msg, type);
+				return;
+			}
 			var box = document.getElementById('adminToast');
 			var body = document.getElementById('adminToastBody');
 			if (!box || !body) return;
@@ -379,9 +402,9 @@ require_once __DIR__ . '/../../templates/header.php';
 		</div>
 	<?php endif; ?>
 
-	<div class="row mt-4">
+	<div class="row mt-4 g-4 align-items-stretch">
 		<div class="col-lg-8">
-			<div class="card">
+			<div class="card system-settings-card system-settings-primary-card h-100">
 				<div class="card-header">
 					<h5 class="mb-0 admin-section-title">Billing Settings</h5>
 				</div>
@@ -421,6 +444,16 @@ require_once __DIR__ . '/../../templates/header.php';
 								<label class="form-label">Currency Code</label>
 								<input type="text" name="currency_code" class="form-control" value="<?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>" maxlength="10" placeholder="e.g. KES, USD">
 								<div class="form-text">ISO currency code used in reports and invoices.</div>
+							</div>
+							<div class="col-md-3">
+								<label class="form-label">Locale</label>
+								<input type="text" name="locale_code" class="form-control" value="<?php echo htmlspecialchars($settings['locale_code'] ?? 'en-KE'); ?>" maxlength="20" placeholder="e.g. en-KE, en-US">
+								<div class="form-text">Used for localized formatting and messaging.</div>
+							</div>
+							<div class="col-md-3">
+								<label class="form-label">Timezone</label>
+								<input type="text" name="timezone_name" class="form-control" value="<?php echo htmlspecialchars($settings['timezone_name'] ?? 'Africa/Nairobi'); ?>" maxlength="100" placeholder="e.g. Africa/Nairobi">
+								<div class="form-text">IANA timezone for billing and reporting.</div>
 							</div>
 							<div class="col-md-3">
 								<label class="form-label">Financial Year Starts</label>
@@ -470,6 +503,18 @@ require_once __DIR__ . '/../../templates/header.php';
 								</select>
 								<div class="form-text">If left as Auto, the system will choose A for 0% and B when VAT &gt; 0.</div>
 							</div>
+							<div class="col-md-5">
+								<label class="form-label">Payment Link Secret (.env)</label>
+								<div class="input-group mb-2">
+									<input type="text" id="paymentLinkSecretValue" class="form-control" value="<?php echo htmlspecialchars(MpesaConfig::getPaymentLinkSecret()); ?>" readonly>
+									<button type="button" class="btn btn-outline-primary" id="btnGeneratePaymentLinkSecret">Generate</button>
+									<button type="button" class="btn btn-outline-secondary" id="btnCopyPaymentLinkSecret">Copy</button>
+								</div>
+								<div class="form-text">
+									Use <strong>Generate</strong> to create a new 64-char secret, then <strong>Copy</strong> and paste into your .env file.
+									Changing this secret invalidates previously generated payment links.
+								</div>
+							</div>
 						</div>
 						<div class="mt-4">
 							<button type="submit" class="btn btn-primary">Save Settings</button>
@@ -479,7 +524,7 @@ require_once __DIR__ . '/../../templates/header.php';
 			</div>
 		</div>
 		<div class="col-lg-4 mt-4 mt-lg-0">
-			<div class="card h-100 admin-aside-card">
+			<div class="card h-100 admin-aside-card system-settings-card system-settings-summary-card">
 				<div class="card-header bg-light">
 					<h6 class="mb-0 admin-section-title small">At a Glance</h6>
 				</div>
@@ -488,7 +533,8 @@ require_once __DIR__ . '/../../templates/header.php';
 					<p class="mb-2"><strong>Support:</strong> <?php echo htmlspecialchars($settings['support_phone'] ?? '+254 700 000 000'); ?> &middot; <?php echo htmlspecialchars($settings['support_email'] ?? 'support@waterbilling.com'); ?></p>
 					<p class="mb-2"><strong>Rate per m³:</strong> KES <?php echo number_format((float)($settings['rate_per_unit'] ?? 50), 2); ?></p>
 					<p class="mb-2"><strong>Service Charge:</strong> KES <?php echo number_format((float)($settings['service_charge'] ?? 0), 2); ?></p>
-					<p class="mb-0"><strong>Registration Fee:</strong> KES <?php echo number_format((float)($settings['registration_fee'] ?? 0), 2); ?></p>
+					<p class="mb-2"><strong>Locale / Timezone:</strong> <?php echo htmlspecialchars($settings['locale_code'] ?? 'en-KE'); ?> &middot; <?php echo htmlspecialchars($settings['timezone_name'] ?? 'Africa/Nairobi'); ?></p>
+					<p class="mb-0"><strong>Registration Fee:</strong> <?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?> <?php echo number_format((float)($settings['registration_fee'] ?? 0), 2); ?></p>
 				</div>
 			</div>
 		</div>
@@ -496,10 +542,10 @@ require_once __DIR__ . '/../../templates/header.php';
 
 	<div class="row mt-4">
 		<div class="col-md-12">
-			<div class="card">
-				<div class="card-header d-flex justify-content-between align-items-center">
+			<div class="card system-settings-card system-settings-overview-card">
+				<div class="card-header d-flex justify-content-between align-items-center system-settings-header-stack">
 					<h5 class="mb-0 admin-section-title">Client Billing Overview</h5>
-					<div class="d-flex align-items-center gap-2">
+					<div class="d-flex align-items-center gap-2 system-settings-filter-wrap">
 						<label class="form-label mb-0">Filter:</label>
 						<select id="billingFilter" class="form-select form-select-sm">
 							<option value="all">All</option>
@@ -508,9 +554,9 @@ require_once __DIR__ . '/../../templates/header.php';
 						</select>
 					</div>
 				</div>
-				<div class="card-body">
-					<div class="table-responsive">
-						<table class="table table-striped align-middle">
+				<div class="card-body p-0">
+					<div class="table-responsive system-settings-table-wrap">
+						<table class="table table-striped align-middle mb-0 system-settings-table">
 							<thead>
 								<tr>
 									<th>Account</th>
@@ -520,12 +566,13 @@ require_once __DIR__ . '/../../templates/header.php';
 									<th>Last Status</th>
 									<th>Due Date</th>
 									<th>Total Unpaid (KES)</th>
+									<th>Action</th>
 								</tr>
 							</thead>
 							<tbody>
 								<?php if(empty($clients_summary)): ?>
 									<tr>
-										<td colspan="7" class="text-center text-muted">No clients found.</td>
+										<td colspan="8" class="text-center text-muted">No clients found.</td>
 									</tr>
 								<?php else: ?>
 									<?php foreach($clients_summary as $client): ?>
@@ -547,6 +594,23 @@ require_once __DIR__ . '/../../templates/header.php';
 												<?php echo $client['last_due_date'] ? htmlspecialchars(date('d-m-Y', strtotime($client['last_due_date']))) : 'N/A'; ?>
 											</td>
 											<td><?php echo number_format($client['total_unpaid'], 2); ?></td>
+											<td>
+												<?php if (!empty($client['last_bill_id']) && (int)$client['last_bill_id'] > 0): ?>
+													<?php $clientPayUrl = PaymentLink::generateLink((int)$client['last_bill_id']); ?>
+													<div class="d-flex gap-2 flex-wrap">
+														<button type="button"
+															class="btn btn-sm btn-outline-primary js-copy-pay-link"
+															data-pay-url="<?php echo htmlspecialchars($clientPayUrl, ENT_QUOTES, 'UTF-8'); ?>">
+															<i class="bi bi-link-45deg me-1"></i>Copy Link
+														</button>
+														<a href="<?php echo htmlspecialchars($clientPayUrl); ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+															<i class="bi bi-box-arrow-up-right me-1"></i>Open
+														</a>
+													</div>
+												<?php else: ?>
+													<span class="text-muted small">—</span>
+												<?php endif; ?>
+											</td>
 										</tr>
 									<?php endforeach; ?>
 								<?php endif; ?>
@@ -559,14 +623,14 @@ require_once __DIR__ . '/../../templates/header.php';
 	</div>
 
 	<div class="row mt-4">
-		<div class="col-md-8">
-			<div class="card">
+		<div class="col-12">
+			<div class="card system-settings-card system-settings-data-card">
 				<div class="card-header">
 					<h5 class="mb-0 admin-section-title">Pending Meter Readings</h5>
 				</div>
-				<div class="card-body">
-					<div class="table-responsive">
-						<table class="table table-striped align-middle">
+				<div class="card-body p-0">
+					<div class="table-responsive system-settings-table-wrap">
+						<table class="table table-striped align-middle mb-0 system-settings-table">
 							<thead>
 								<tr>
 									<th>Account</th>
@@ -581,7 +645,7 @@ require_once __DIR__ . '/../../templates/header.php';
 							<tbody>
 								<?php if(empty($pending_readings)): ?>
 									<tr>
-										<td colspan="7" class="text-center text-muted">No pending readings.</td>
+										<td colspan="7" class="text-center text-muted py-3">No pending readings.</td>
 									</tr>
 								<?php else: ?>
 									<?php foreach($pending_readings as $reading): ?>
@@ -599,6 +663,7 @@ require_once __DIR__ . '/../../templates/header.php';
 												<?php endif; ?>
 											</td>
 											<td>
+												<div class="reading-action-stack">
 												<form method="POST" class="d-inline">
 													<input type="hidden" name="action" value="approve_reading">
 													<input type="hidden" name="reading_id" value="<?php echo (int)$reading['id']; ?>">
@@ -609,6 +674,7 @@ require_once __DIR__ . '/../../templates/header.php';
 													<input type="hidden" name="reading_id" value="<?php echo (int)$reading['id']; ?>">
 													<button type="submit" class="btn btn-sm btn-danger">Reject</button>
 												</form>
+												</div>
 											</td>
 										</tr>
 									<?php endforeach; ?>
@@ -619,11 +685,14 @@ require_once __DIR__ . '/../../templates/header.php';
 				</div>
 			</div>
 		</div>
-		<div class="col-md-4">
-			<div class="card h-100">
-				<div class="card-header d-flex justify-content-between align-items-center">
+	</div>
+
+	<div class="row mt-4">
+		<div class="col-12">
+			<div class="card system-settings-card system-settings-data-card">
+				<div class="card-header d-flex justify-content-between align-items-center system-settings-header-stack">
 					<h5 class="mb-0 admin-section-title">Recent Payments &amp; ETIMS</h5>
-					<a href="/admin/payments" class="btn btn-sm btn-outline-secondary">Record Manual / Credit</a>
+					<a href="/admin/payments" class="btn btn-sm btn-outline-secondary system-settings-manual-link"><i class="bi bi-plus-circle me-1"></i>Record Manual / Credit</a>
 				</div>
 				<div class="card-body">
 					<?php
@@ -636,17 +705,20 @@ require_once __DIR__ . '/../../templates/header.php';
 						$recent_payments = [];
 					}
 					?>
-					<p class="text-muted small mb-2">Only completed M-Pesa payments can be submitted to eTIMS. When available, a <strong>Send</strong> or <strong>Retry</strong> button will appear in the Action column.</p>
+					<p class="text-muted small mb-3">Only completed M-Pesa payments can be submitted to eTIMS. When available, a <strong>Send</strong> or <strong>Retry</strong> button will appear in the Action column.</p>
 					<?php if (empty($recent_payments)): ?>
 						<p class="text-muted mb-0">No payments recorded yet. Once a bill is paid, it will appear here for eTIMS tracking.</p>
 					<?php else: ?>
-						<div class="table-responsive">
-							<table class="table table-sm align-middle mb-0">
+						<div class="table-responsive system-settings-table-wrap">
+							<table class="table table-sm align-middle mb-0 system-settings-table">
 								<thead>
 									<tr>
 										<th>ID</th>
 										<th>Bill</th>
+										<th>Phone</th>
+										<th>M-Pesa Receipt</th>
 										<th>Amount (KES)</th>
+										<th>Date</th>
 										<th>Status</th>
 										<th>ETIMS</th>
 										<th>Action</th>
@@ -657,7 +729,10 @@ require_once __DIR__ . '/../../templates/header.php';
 									<tr data-payment-id="<?php echo (int)$p['id']; ?>">
 										<td><?php echo (int)$p['id']; ?></td>
 										<td>#<?php echo (int)$p['bill_id']; ?></td>
+										<td><?php echo htmlspecialchars($p['phone_number'] ?? '—'); ?></td>
+										<td><code><?php echo htmlspecialchars($p['mpesa_receipt'] ?? '—'); ?></code></td>
 										<td><?php echo number_format((float)$p['amount'], 2); ?></td>
+										<td><?php echo htmlspecialchars($p['created_at'] ? date('d-m-Y H:i', strtotime($p['created_at'])) : '—'); ?></td>
 										<td><span class="badge bg-<?php echo $p['status'] === 'completed' ? 'success' : ($p['status'] === 'failed' ? 'danger' : 'secondary'); ?>"><?php echo htmlspecialchars(ucfirst($p['status'])); ?></span></td>
 										<td>
 											<?php if (empty($p['etims_status'])): ?>
@@ -674,7 +749,7 @@ require_once __DIR__ . '/../../templates/header.php';
 													<?php echo empty($p['etims_status']) ? 'Send' : 'Retry'; ?>
 												</button>
 											<?php else: ?>
-												<span class="text-muted small">-</span>
+												<span class="text-muted small">—</span>
 											<?php endif; ?>
 										</td>
 									</tr>
@@ -683,69 +758,6 @@ require_once __DIR__ . '/../../templates/header.php';
 							</table>
 						</div>
 					<?php endif; ?>
-				</div>
-			</div>
-		</div>
-	</div>
-
-	<div class="row mt-4">
-		<div class="col-md-12">
-			<div class="card">
-				<div class="card-header">
-					<h5 class="mb-0 admin-section-title">Pending Meter Readings</h5>
-				</div>
-				<div class="card-body">
-					<div class="table-responsive">
-						<table class="table table-striped align-middle">
-							<thead>
-								<tr>
-									<th>Account</th>
-									<th>Meter</th>
-									<th>Current Reading</th>
-									<th>Billing Month</th>
-									<th>Due Date</th>
-									<th>Photo</th>
-									<th>Actions</th>
-								</tr>
-							</thead>
-							<tbody>
-								<?php if(empty($pending_readings)): ?>
-									<tr>
-										<td colspan="7" class="text-center text-muted">No pending readings.</td>
-									</tr>
-								<?php else: ?>
-									<?php foreach($pending_readings as $reading): ?>
-										<tr>
-											<td><?php echo htmlspecialchars($reading['account_number']); ?></td>
-											<td><?php echo htmlspecialchars($reading['meter_number']); ?></td>
-											<td><?php echo number_format($reading['current_reading'], 2); ?></td>
-											<td><?php echo htmlspecialchars(date('M Y', strtotime($reading['billing_month']))); ?></td>
-											<td><?php echo htmlspecialchars($reading['due_date']); ?></td>
-											<td>
-												<?php if(!empty($reading['photo_path'])): ?>
-													<a href="<?php echo htmlspecialchars($reading['photo_path']); ?>" target="_blank" class="btn btn-sm btn-outline-primary">View</a>
-												<?php else: ?>
-													<span class="text-muted">N/A</span>
-												<?php endif; ?>
-											</td>
-											<td>
-												<form method="POST" class="d-inline">
-													<input type="hidden" name="action" value="approve_reading">
-													<input type="hidden" name="reading_id" value="<?php echo (int)$reading['id']; ?>">
-													<button type="submit" class="btn btn-sm btn-success">Approve</button>
-												</form>
-												<form method="POST" class="d-inline ms-1">
-													<input type="hidden" name="action" value="reject_reading">
-													<input type="hidden" name="reading_id" value="<?php echo (int)$reading['id']; ?>">
-													<button type="submit" class="btn btn-sm btn-danger">Reject</button>
-												</form>
-											</td>
-										</tr>
-									<?php endforeach; ?>
-								<?php endif; ?>
-							</tbody>
-						</table>
-					</div>
 				</div>
 			</div>
 		</div>
@@ -799,6 +811,160 @@ require_once __DIR__ . '/../../templates/header.php';
 				} else if (val === 'unpaid') {
 					row.style.display = unpaid ? '' : 'none';
 				}
+			});
+		});
+	}
+
+	const secretInput = document.getElementById('paymentLinkSecretValue');
+	const btnGenerateSecret = document.getElementById('btnGeneratePaymentLinkSecret');
+	const btnCopySecret = document.getElementById('btnCopyPaymentLinkSecret');
+
+	function copySecretText(text) {
+		if (navigator.clipboard && window.isSecureContext) {
+			return navigator.clipboard.writeText(text);
+		}
+
+		return new Promise(function(resolve, reject) {
+			try {
+				const tmp = document.createElement('textarea');
+				tmp.value = text;
+				tmp.setAttribute('readonly', '');
+				tmp.style.position = 'absolute';
+				tmp.style.left = '-9999px';
+				document.body.appendChild(tmp);
+				tmp.select();
+				const ok = document.execCommand('copy');
+				document.body.removeChild(tmp);
+				if (ok) resolve(); else reject(new Error('copy command failed'));
+			} catch (err) {
+				reject(err);
+			}
+		});
+	}
+
+	function postSecret(payload) {
+		return fetch('/api/admin/generate_payment_link_secret', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: {
+				'Content-Type': 'application/json',
+				'Accept': 'application/json',
+				'X-Requested-With': 'XMLHttpRequest'
+			},
+			body: JSON.stringify(payload || {})
+		}).then(async function(res) {
+			const raw = await res.text();
+			let data = null;
+
+			try {
+				data = raw ? JSON.parse(raw) : null;
+			} catch (e) {
+				throw new Error('Server returned HTML instead of JSON. Your session may have expired. Refresh and log in again.');
+			}
+
+			if (!res.ok && data && data.message) {
+				throw new Error(data.message);
+			}
+
+			if (!res.ok) {
+				throw new Error('Request failed with HTTP ' + res.status + '.');
+			}
+
+			return data;
+		});
+	}
+
+	if (btnGenerateSecret && secretInput) {
+		btnGenerateSecret.addEventListener('click', function() {
+			btnGenerateSecret.disabled = true;
+			const oldText = btnGenerateSecret.textContent;
+			btnGenerateSecret.textContent = 'Generating...';
+
+			postSecret({ save_to_env: false })
+				.then(function(data) {
+					if (!data || data.status !== 'success' || !data.data || !data.data.secret) {
+						throw new Error((data && data.message) ? data.message : 'Could not generate secret');
+					}
+					secretInput.value = data.data.secret;
+					if (window.showToast) {
+						showToast('New payment link secret generated. Copy or push it to .env.', 'success');
+					}
+				})
+				.catch(function(err) {
+					if (window.showToast) {
+						showToast(err.message || 'Failed to generate secret.', 'danger');
+					}
+				})
+				.finally(function() {
+					btnGenerateSecret.disabled = false;
+					btnGenerateSecret.textContent = oldText;
+				});
+		});
+	}
+
+	if (btnCopySecret && secretInput) {
+		btnCopySecret.addEventListener('click', function() {
+			const value = String(secretInput.value || '').trim();
+			if (!value) {
+				if (window.showToast) showToast('Generate a secret first.', 'warning');
+				return;
+			}
+
+			copySecretText(value)
+				.then(function() {
+					if (window.showToast) showToast('Secret copied to clipboard.', 'success');
+				})
+				.catch(function() {
+					if (window.showToast) showToast('Unable to copy automatically. Select and copy manually.', 'warning');
+				});
+		});
+	}
+
+	const copyButtons = document.querySelectorAll('.js-copy-pay-link');
+	if (copyButtons.length) {
+		const copyText = function(text) {
+			if (navigator.clipboard && window.isSecureContext) {
+				return navigator.clipboard.writeText(text);
+			}
+
+			return new Promise(function(resolve, reject) {
+				try {
+					const tmp = document.createElement('textarea');
+					tmp.value = text;
+					tmp.setAttribute('readonly', '');
+					tmp.style.position = 'absolute';
+					tmp.style.left = '-9999px';
+					document.body.appendChild(tmp);
+					tmp.select();
+					const ok = document.execCommand('copy');
+					document.body.removeChild(tmp);
+					if (ok) {
+						resolve();
+					} else {
+						reject(new Error('copy command failed'));
+					}
+				} catch (err) {
+					reject(err);
+				}
+			});
+		};
+
+		copyButtons.forEach(btn => {
+			btn.addEventListener('click', function() {
+				const url = this.getAttribute('data-pay-url');
+				if (!url) return;
+
+				copyText(url)
+					.then(() => {
+						if (window.showToast) {
+							showToast('Payment link copied to clipboard.', 'success');
+						}
+					})
+					.catch(() => {
+						if (window.showToast) {
+							showToast('Unable to copy link automatically. Please use Open and copy from the browser address bar.', 'warning');
+						}
+					});
 			});
 		});
 	}

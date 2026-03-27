@@ -9,7 +9,7 @@ class BillingSettings {
     }
 
     public function getSettings() {
-        $query = "SELECT rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, updated_at FROM " . $this->table . " WHERE id = 1 LIMIT 1";
+        $query = "SELECT rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, updated_at FROM " . $this->table . " WHERE id = 1 LIMIT 1";
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
         $settings = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -25,13 +25,19 @@ class BillingSettings {
             $settings['company_name'] = 'BreMac Consultant Ltd';
         }
         if (!isset($settings['support_phone']) || $settings['support_phone'] === null || $settings['support_phone'] === '') {
-            $settings['support_phone'] = '+254 700 000 000';
+            $settings['support_phone'] = '254724400202';
         }
         if (!isset($settings['support_email']) || $settings['support_email'] === null || $settings['support_email'] === '') {
             $settings['support_email'] = 'support@waterbilling.com';
         }
         if (!isset($settings['currency_code']) || $settings['currency_code'] === null || $settings['currency_code'] === '') {
             $settings['currency_code'] = 'KES';
+        }
+        if (!isset($settings['locale_code']) || $settings['locale_code'] === null || $settings['locale_code'] === '') {
+            $settings['locale_code'] = 'en-KE';
+        }
+        if (!isset($settings['timezone_name']) || $settings['timezone_name'] === null || $settings['timezone_name'] === '') {
+            $settings['timezone_name'] = 'Africa/Nairobi';
         }
         if (!isset($settings['financial_year_start_month']) || (int)$settings['financial_year_start_month'] < 1 || (int)$settings['financial_year_start_month'] > 12) {
             $settings['financial_year_start_month'] = 1; // January
@@ -55,7 +61,7 @@ class BillingSettings {
         return $settings;
     }
 
-    public function updateSettings($rate_per_unit, $service_charge, $company_pin = null, $etims_integration_url = null, $etims_api_key = null, $company_name = null, $support_phone = null, $support_email = null, $currency_code = null, $financial_year_start_month = null, $vat_rate = null, $etims_taxation_type_code = null, $registration_fee = null) {
+    public function updateSettings($rate_per_unit, $service_charge, $company_pin = null, $etims_integration_url = null, $etims_api_key = null, $company_name = null, $support_phone = null, $support_email = null, $currency_code = null, $financial_year_start_month = null, $vat_rate = null, $etims_taxation_type_code = null, $registration_fee = null, $locale_code = null, $timezone_name = null) {
         $query = "UPDATE " . $this->table . " 
                   SET rate_per_unit = :rate_per_unit,
                       service_charge = :service_charge,
@@ -66,6 +72,8 @@ class BillingSettings {
                       support_phone = :support_phone,
                       support_email = :support_email,
                       currency_code = :currency_code,
+                      locale_code = :locale_code,
+                      timezone_name = :timezone_name,
                       financial_year_start_month = :financial_year_start_month,
                       vat_rate = :vat_rate,
                       etims_taxation_type_code = :etims_taxation_type_code,
@@ -80,9 +88,11 @@ class BillingSettings {
         $stmt->bindParam(":etims_api_key", $etims_api_key);
         $company_name = $company_name !== null && $company_name !== '' ? $company_name : 'BreMac Consultant Ltd';
         $stmt->bindParam(":company_name", $company_name);
-        $support_phone = $support_phone !== null && $support_phone !== '' ? $support_phone : '+254 700 000 000';
+        $support_phone = $support_phone !== null && $support_phone !== '' ? $support_phone : '254724400202';
         $support_email = $support_email !== null && $support_email !== '' ? $support_email : 'support@waterbilling.com';
         $currency_code = $currency_code !== null && $currency_code !== '' ? strtoupper($currency_code) : 'KES';
+        $locale_code = $locale_code !== null && $locale_code !== '' ? trim((string)$locale_code) : 'en-KE';
+        $timezone_name = $timezone_name !== null && $timezone_name !== '' ? trim((string)$timezone_name) : 'Africa/Nairobi';
         $financial_year_start_month = (int)($financial_year_start_month ?? 1);
         if ($financial_year_start_month < 1 || $financial_year_start_month > 12) {
             $financial_year_start_month = 1;
@@ -96,6 +106,8 @@ class BillingSettings {
         $stmt->bindParam(":support_phone", $support_phone);
         $stmt->bindParam(":support_email", $support_email);
         $stmt->bindParam(":currency_code", $currency_code);
+        $stmt->bindParam(":locale_code", $locale_code);
+        $stmt->bindParam(":timezone_name", $timezone_name);
         $stmt->bindParam(":financial_year_start_month", $financial_year_start_month, PDO::PARAM_INT);
         $stmt->bindParam(":vat_rate", $vat_rate);
         $stmt->bindParam(":etims_taxation_type_code", $etims_taxation_type_code);
@@ -114,14 +126,16 @@ class BillingSettings {
           $default_service = 0.00;
           $default_registration_fee = 0.00;
           $default_company_name = 'BreMac Consultant Ltd';
-          $default_support_phone = '+254 700 000 000';
+          $default_support_phone = '254724400202';
           $default_support_email = 'support@waterbilling.com';
           $default_currency = 'KES';
+          $default_locale = 'en-KE';
+          $default_timezone = 'Africa/Nairobi';
           $default_fy_start = 1;
           $default_vat_rate = 0.0;
           $default_tax_code = '';
-          $query = "INSERT INTO " . $this->table . " (id, rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee) 
-              VALUES (1, :rate_per_unit, :service_charge, NULL, NULL, NULL, :company_name, :support_phone, :support_email, :currency_code, :financial_year_start_month, :vat_rate, :etims_taxation_type_code, :registration_fee)";
+          $query = "INSERT INTO " . $this->table . " (id, rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee) 
+              VALUES (1, :rate_per_unit, :service_charge, NULL, NULL, NULL, :company_name, :support_phone, :support_email, :currency_code, :locale_code, :timezone_name, :financial_year_start_month, :vat_rate, :etims_taxation_type_code, :registration_fee)";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":rate_per_unit", $default_rate);
         $stmt->bindParam(":service_charge", $default_service);
@@ -129,6 +143,8 @@ class BillingSettings {
         $stmt->bindParam(":support_phone", $default_support_phone);
         $stmt->bindParam(":support_email", $default_support_email);
         $stmt->bindParam(":currency_code", $default_currency);
+        $stmt->bindParam(":locale_code", $default_locale);
+        $stmt->bindParam(":timezone_name", $default_timezone);
         $stmt->bindParam(":financial_year_start_month", $default_fy_start, PDO::PARAM_INT);
         $stmt->bindParam(":vat_rate", $default_vat_rate);
         $stmt->bindParam(":etims_taxation_type_code", $default_tax_code);
@@ -145,9 +161,11 @@ class BillingSettings {
             etims_integration_url VARCHAR(255) NULL,
             etims_api_key VARCHAR(255) NULL,
             company_name VARCHAR(255) DEFAULT 'BreMac Consultant Ltd',
-            support_phone VARCHAR(50) DEFAULT '+254 700 000 000',
+            support_phone VARCHAR(50) DEFAULT '254724400202',
             support_email VARCHAR(255) DEFAULT 'support@waterbilling.com',
             currency_code VARCHAR(10) DEFAULT 'KES',
+			locale_code VARCHAR(20) DEFAULT 'en-KE',
+			timezone_name VARCHAR(100) DEFAULT 'Africa/Nairobi',
 			financial_year_start_month TINYINT UNSIGNED DEFAULT 1,
 			vat_rate DECIMAL(5,2) DEFAULT 0.00,
             etims_taxation_type_code VARCHAR(10) NULL,
@@ -182,7 +200,7 @@ class BillingSettings {
         }
 
         try {
-            $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN support_phone VARCHAR(50) DEFAULT '+254 700 000 000'");
+            $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN support_phone VARCHAR(50) DEFAULT '254724400202'");
         } catch (\PDOException $e) {
             // Ignore if column already exists
         }
@@ -195,6 +213,18 @@ class BillingSettings {
 
         try {
             $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN currency_code VARCHAR(10) DEFAULT 'KES'");
+        } catch (\PDOException $e) {
+            // Ignore if column already exists
+        }
+
+        try {
+            $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN locale_code VARCHAR(20) DEFAULT 'en-KE'");
+        } catch (\PDOException $e) {
+            // Ignore if column already exists
+        }
+
+        try {
+            $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN timezone_name VARCHAR(100) DEFAULT 'Africa/Nairobi'");
         } catch (\PDOException $e) {
             // Ignore if column already exists
         }

@@ -28,7 +28,7 @@ require_once __DIR__ . '/../templates/header.php';
                             <div class="input-group">
                                 <span class="input-group-text"><i class="bi bi-person"></i></span>
                                 <input type="text" class="form-control" id="identifier" name="identifier"
-                                       placeholder="e.g. MTR0001, 07XXXXXXXX or name@example.com" required>
+                                       placeholder="e.g. MTR0001, 07XXXXXXXX or name@example.com" autocomplete="username" required>
                             </div>
                             <div class="invalid-feedback">Please enter your account number, phone or email.</div>
                         </div>

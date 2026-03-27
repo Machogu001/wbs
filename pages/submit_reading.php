@@ -86,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
                         $totalToPay = $billAmount;
                         $billDate = date('d-m-Y');
                         $account = $user['account_number'];
-                        $paybill = MpesaConfig::SHORTCODE;
+                        $paybill = MpesaConfig::getShortCode();
                         $payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
 
                         $messageText = "AC: {$account}\n" .

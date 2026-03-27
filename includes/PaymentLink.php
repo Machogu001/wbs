@@ -12,7 +12,7 @@ class PaymentLink
             throw new InvalidArgumentException('Invalid bill id for payment link');
         }
         $data = (string)$billId;
-        $secret = MpesaConfig::PAYMENT_LINK_SECRET;
+        $secret = MpesaConfig::getPaymentLinkSecret();
         $signature = hash_hmac('sha256', $data, $secret);
         $payload = $data . '|' . $signature;
         return self::base64UrlEncode($payload);
@@ -35,7 +35,7 @@ class PaymentLink
         if (!ctype_digit($billId)) {
             return null;
         }
-        $expected = hash_hmac('sha256', $billId, MpesaConfig::PAYMENT_LINK_SECRET);
+        $expected = hash_hmac('sha256', $billId, MpesaConfig::getPaymentLinkSecret());
         if (!hash_equals($expected, $signature)) {
             return null;
         }

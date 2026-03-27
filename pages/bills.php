@@ -88,16 +88,18 @@ if ($db) {
 }
 ?>
 
-<div class="container mt-4">
+<div class="container mt-4 bills-page admin-shell">
 	<div class="row">
 		<div class="col-md-12">
-			<h2>My Bills</h2>
-			<p class="text-muted mb-1">Your billing history and current charges.</p>
-			<p class="small mb-0">
-				<a href="#" data-bs-toggle="modal" data-bs-target="#billingPolicyModal">
-					<i class="bi bi-info-circle"></i> View Water Usage Billing Policy
-				</a>
-			</p>
+			<div class="admin-page-header">
+				<h2 class="mb-1">My Bills</h2>
+				<p class="text-muted mb-1">Your billing history and current charges.</p>
+				<p class="small mb-0">
+					<a href="#" data-bs-toggle="modal" data-bs-target="#billingPolicyModal">
+						<i class="bi bi-info-circle"></i> View Water Usage Billing Policy
+					</a>
+				</p>
+			</div>
 		</div>
 	</div>
 

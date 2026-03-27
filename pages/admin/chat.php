@@ -25,7 +25,7 @@ $threads = $chatService->getThreadsForAdmin(50);
 require_once __DIR__ . '/../../templates/header.php';
 ?>
 
-<div class="container py-4">
+<div class="container py-4 support-chat-page">
     <div class="row">
         <div class="col-12 mb-3">
             <h1 class="h4 mb-0"><i class="bi bi-headset"></i> Support Chat</h1>

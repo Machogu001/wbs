@@ -5,6 +5,7 @@ class User {
     
     public $id;
     public $account_number;
+    public $username;
     public $full_name;
     public $phone_number;
     public $email;
@@ -28,12 +29,16 @@ class User {
         $this->ensureMustChangePasswordColumn();
         $this->ensureLocationColumns();
         $this->ensureTwoFactorColumns();
+        $this->ensureMeterNumberNullable();
+        $this->ensureUsernameColumn();
+        $this->ensureUsernameUniqueIndex();
     }
     
     // Create new user
     public function create() {
         $query = "INSERT INTO " . $this->table . "
                 SET account_number = :account_number,
+                    username = :username,
                     full_name = :full_name,
                     phone_number = :phone_number,
                     email = :email,
@@ -56,6 +61,8 @@ class User {
         
         // Bind parameters
         $stmt->bindParam(":account_number", $this->account_number);
+        $username = $this->username !== null && $this->username !== '' ? $this->username : null;
+        $stmt->bindParam(":username", $username);
         $stmt->bindParam(":full_name", $this->full_name);
         $stmt->bindParam(":phone_number", $this->phone_number);
         $stmt->bindParam(":email", $this->email);
@@ -95,10 +102,23 @@ class User {
         
         return $stmt->rowCount() > 0;
     }
+
+    // Check if username exists
+    public function usernameExists($username) {
+        $query = "SELECT id FROM " . $this->table . "
+                 WHERE username = :username
+                 LIMIT 1";
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":username", $username);
+        $stmt->execute();
+
+        return $stmt->rowCount() > 0;
+    }
     
         // Login user with account number, phone number, or email
         public function login($identifier, $password) {
-         $query = "SELECT id, account_number, full_name, phone_number, 
+                 $query = "SELECT id, account_number, username, full_name, phone_number,
                     email, id_number, tax_pin, address, meter_number,
                     connection_type, password_hash, role, status, must_change_password,
                     two_factor_enabled, two_factor_method
@@ -106,7 +126,8 @@ class User {
                 WHERE status = 'active'
                   AND (phone_number = :identifier 
                     OR account_number = :identifier
-                    OR email = :identifier)
+                                        OR email = :identifier
+                                        OR username = :identifier)
                 LIMIT 1";
         
         $stmt = $this->conn->prepare($query);
@@ -128,7 +149,7 @@ class User {
 
      // Fetch full auth row (including password_hash) by identifier, regardless of status
      public function getAuthRowByIdentifier($identifier) {
-          $query = "SELECT id, account_number, full_name, phone_number,
+          $query = "SELECT id, account_number, username, full_name, phone_number,
                             email, id_number, tax_pin, address, meter_number,
                             connection_type, password_hash, role, status, must_change_password,
                             two_factor_enabled, two_factor_method
@@ -136,6 +157,7 @@ class User {
                  WHERE phone_number = :identifier
                      OR account_number = :identifier
                      OR email = :identifier
+                     OR username = :identifier
                  LIMIT 1";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":identifier", $identifier);
@@ -148,7 +170,8 @@ class User {
         $query = "SELECT id, status FROM " . $this->table . " 
                   WHERE phone_number = :identifier 
                      OR account_number = :identifier
-                     OR email = :identifier
+                            OR email = :identifier
+                            OR username = :identifier
                   LIMIT 1";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":identifier", $identifier);
@@ -272,6 +295,42 @@ class User {
             }
         } catch (\PDOException $e) {
             // Ignore schema errors; login/registration still works without 2FA settings.
+        }
+    }
+
+    private function ensureMeterNumberNullable() {
+        try {
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'meter_number'");
+            $col = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if ($col && isset($col['Null']) && strtoupper((string)$col['Null']) === 'NO') {
+                $this->conn->exec("ALTER TABLE " . $this->table . " MODIFY meter_number VARCHAR(50) NULL");
+            }
+        } catch (\PDOException $e) {
+            // Ignore schema errors; some installations may already have nullable meter numbers.
+        }
+    }
+
+    private function ensureUsernameColumn() {
+        try {
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'username'");
+            $exists = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$exists) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN username VARCHAR(50) NULL AFTER account_number");
+            }
+        } catch (\PDOException $e) {
+            // Ignore schema errors; existing installations may have manual customizations.
+        }
+    }
+
+    private function ensureUsernameUniqueIndex() {
+        try {
+            $stmt = $this->conn->query("SHOW INDEX FROM " . $this->table . " WHERE Key_name = 'uniq_username'");
+            $exists = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$exists) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD UNIQUE KEY uniq_username (username)");
+            }
+        } catch (\PDOException $e) {
+            // Ignore schema errors; if duplicate usernames exist, validation will still prevent new duplicates.
         }
     }
 }

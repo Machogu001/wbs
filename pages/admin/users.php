@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../includes/Mpesa.php';
 require_once __DIR__ . '/../../includes/Payment.php';
 require_once __DIR__ . '/../../includes/Bill.php';
 require_once __DIR__ . '/../../includes/SMS.php';
+require_once __DIR__ . '/../../includes/CountryDialCode.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -25,6 +26,91 @@ $registrationFee = isset($settings['registration_fee']) ? (float)$settings['regi
 
 $successMessage = '';
 $errorMessage = '';
+
+function splitNameParts($fullName)
+{
+	$normalized = trim(preg_replace('/\s+/', ' ', (string)$fullName));
+	if ($normalized === '') {
+		return ['first_name' => '', 'middle_name' => '', 'last_name' => ''];
+	}
+
+	$parts = preg_split('/\s+/', $normalized);
+	if (!$parts) {
+		return ['first_name' => '', 'middle_name' => '', 'last_name' => ''];
+	}
+
+	if (count($parts) === 1) {
+		return ['first_name' => $parts[0], 'middle_name' => '', 'last_name' => ''];
+	}
+
+	$firstName = array_shift($parts);
+	$lastName = array_pop($parts);
+	$middleName = implode(' ', $parts);
+
+	return [
+		'first_name' => $firstName,
+		'middle_name' => $middleName,
+		'last_name' => $lastName
+	];
+}
+
+function splitPhoneForForm($rawPhone, $countryOptions)
+{
+	$phone = preg_replace('/\D+/', '', (string)$rawPhone);
+	if ($phone === '') {
+		return ['country_code' => '254', 'local_number' => ''];
+	}
+
+	$codes = array_keys($countryOptions);
+	usort($codes, function ($a, $b) {
+		return strlen($b) <=> strlen($a);
+	});
+
+	foreach ($codes as $code) {
+		if (strpos($phone, $code) === 0 && strlen($phone) > strlen($code)) {
+			return [
+				'country_code' => $code,
+				'local_number' => substr($phone, strlen($code))
+			];
+		}
+	}
+
+	if (strpos($phone, '0') === 0) {
+		return ['country_code' => '254', 'local_number' => $phone];
+	}
+
+	return ['country_code' => '254', 'local_number' => $phone];
+}
+
+function normalizePhoneFromForm($countryCode, $localNumber)
+{
+	$code = preg_replace('/\D+/', '', (string)$countryCode);
+	$local = preg_replace('/\D+/', '', (string)$localNumber);
+	$local = ltrim($local, '0');
+	if ($code === '' || $local === '') {
+		return '';
+	}
+	return $code . $local;
+}
+
+$countryCodeOptions = [
+	'254' => 'Kenya (+254)',
+	'256' => 'Uganda (+256)',
+	'255' => 'Tanzania (+255)',
+	'1' => 'USA/Canada (+1)',
+	'44' => 'United Kingdom (+44)'
+];
+try {
+	if ($db) {
+		$countryDialCodeService = new CountryDialCode($db);
+		$dbCountryCodeOptions = $countryDialCodeService->listActive();
+		if (!empty($dbCountryCodeOptions)) {
+			$countryCodeOptions = $dbCountryCodeOptions;
+		}
+	}
+} catch (Exception $e) {
+	// Keep fallback options if table creation/loading fails.
+}
 
 // Load flash messages (for redirect-after-POST) if set
 if (isset($_SESSION['flash_message'])) {
@@ -90,8 +176,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				throw new Exception('Invalid user.');
 			}
 
-			$full_name = trim($_POST['full_name'] ?? '');
-			$phone_number = trim($_POST['phone_number'] ?? '');
+			$first_name = trim($_POST['first_name'] ?? '');
+			$middle_name = trim($_POST['middle_name'] ?? '');
+			$last_name = trim($_POST['last_name'] ?? '');
+			$full_name = trim(preg_replace('/\s+/', ' ', $first_name . ' ' . $middle_name . ' ' . $last_name));
+			$phone_country_code = trim((string)($_POST['phone_country_code'] ?? '254'));
+			$phone_number_local = trim((string)($_POST['phone_number_local'] ?? ''));
+			$phone_number = normalizePhoneFromForm($phone_country_code, $phone_number_local);
 			$email = trim($_POST['email'] ?? '');
 			$id_number = trim($_POST['id_number'] ?? '');
 			$address = trim($_POST['address'] ?? '');
@@ -100,10 +191,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$location_label = trim($_POST['location_label'] ?? '');
 			$latitude = trim($_POST['latitude'] ?? '');
 			$longitude = trim($_POST['longitude'] ?? '');
-			$role = isset($_POST['role']) ? strtolower(trim((string)$_POST['role'])) : 'customer';
+			$role = 'customer';
 			$password = (string)($_POST['password'] ?? '');
 
-			if ($full_name === '' || $phone_number === '' || $id_number === '' || $address === '') {
+			if ($first_name === '' || $last_name === '' || $phone_number === '' || $id_number === '' || $address === '') {
 				throw new Exception('Please fill in all required fields.');
 			}
 
@@ -117,11 +208,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			}
 
 			// Build update query
-			// Validate role
-			$allowedRoles = ['admin','reader','finance','support','customer'];
-			if (!in_array($role, $allowedRoles, true)) {
-				$role = 'customer';
-			}
+			// Customers page always stores customer role
+			$role = 'customer';
 
 			$sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, connection_type = :connection_type, location_label = :location_label, latitude = :latitude, longitude = :longitude, role = :role';
 			$updatePassword = ($password !== '');
@@ -166,8 +254,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		} else {
 		// Default: create new user
 		try {
-			$full_name = trim($_POST['full_name'] ?? '');
-			$phone_number = trim($_POST['phone_number'] ?? '');
+			$first_name = trim($_POST['first_name'] ?? '');
+			$middle_name = trim($_POST['middle_name'] ?? '');
+			$last_name = trim($_POST['last_name'] ?? '');
+			$full_name = trim(preg_replace('/\s+/', ' ', $first_name . ' ' . $middle_name . ' ' . $last_name));
+			$phone_country_code = trim((string)($_POST['phone_country_code'] ?? '254'));
+			$phone_number_local = trim((string)($_POST['phone_number_local'] ?? ''));
+			$phone_number = normalizePhoneFromForm($phone_country_code, $phone_number_local);
 			$email = trim($_POST['email'] ?? '');
 			$id_number = trim($_POST['id_number'] ?? '');
 			$address = trim($_POST['address'] ?? '');
@@ -177,13 +270,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				$latitude = trim($_POST['latitude'] ?? '');
 				$longitude = trim($_POST['longitude'] ?? '');
 			$password = (string)($_POST['password'] ?? '');
-			$role = isset($_POST['role']) ? strtolower(trim((string)$_POST['role'])) : 'customer';
+			$role = 'customer';
 			$registration_already_paid = isset($_POST['registration_already_paid']);
 			$send_stk = isset($_POST['send_stk']);
 			$registration_mpesa_code = trim($_POST['registration_mpesa_code'] ?? '');
 
 			// Basic validation
-			if ($full_name === '' || $phone_number === '' || $email === '' || $id_number === '' || $address === '' || $password === '') {
+			if ($first_name === '' || $last_name === '' || $phone_number === '' || $email === '' || $id_number === '' || $address === '' || $password === '') {
 				throw new Exception('Please fill in all required fields.');
 			}
 
@@ -215,11 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$user->latitude = $latitude !== '' ? (float)$latitude : null;
 			$user->longitude = $longitude !== '' ? (float)$longitude : null;
 			$user->password = $password;
-			$allowedRoles = ['admin','reader','finance','support','customer'];
-			if (!in_array($role, $allowedRoles, true)) {
-				$role = 'customer';
-			}
-			$user->role = $role;
+			$user->role = 'customer';
 
 			$billService = new Bill($db);
 			$paymentModel = new Payment($db);
@@ -356,7 +445,7 @@ $perPage = 10;
 
 if ($db) {
 	try {
-		$stmtCount = $db->query('SELECT COUNT(*) AS total FROM users');
+		$stmtCount = $db->query("SELECT COUNT(*) AS total FROM users WHERE role = 'customer'");
 		$rowCount = $stmtCount ? $stmtCount->fetch(PDO::FETCH_ASSOC) : ['total' => 0];
 		$totalUsers = (int)($rowCount['total'] ?? 0);
 		$totalPages = max(1, (int)ceil($totalUsers / $perPage));
@@ -365,7 +454,7 @@ if ($db) {
 		}
 		$offset = ($currentPage - 1) * $perPage;
 
-		$stmtUsers = $db->prepare('SELECT id, account_number, full_name, phone_number, meter_number, status, role FROM users ORDER BY full_name ASC LIMIT :limit OFFSET :offset');
+		$stmtUsers = $db->prepare("SELECT id, account_number, full_name, phone_number, meter_number, status, role FROM users WHERE role = 'customer' ORDER BY full_name ASC LIMIT :limit OFFSET :offset");
 		$stmtUsers->bindValue(':limit', $perPage, PDO::PARAM_INT);
 		$stmtUsers->bindValue(':offset', $offset, PDO::PARAM_INT);
 		$stmtUsers->execute();
@@ -387,6 +476,9 @@ if ($db && isset($_GET['edit_id'])) {
 		try {
 			$userRepo = new User($db);
 			$editUser = $userRepo->getById($editId);
+			if ($editUser && strtolower((string)($editUser['role'] ?? '')) !== 'customer') {
+				$editUser = null;
+			}
 			$isEditMode = (bool)$editUser;
 		} catch (Exception $e) {
 			$editUser = null;
@@ -395,19 +487,35 @@ if ($db && isset($_GET['edit_id'])) {
 	}
 }
 
+$editNameParts = splitNameParts($editUser['full_name'] ?? '');
+$formFirstName = isset($_POST['first_name']) ? trim((string)$_POST['first_name']) : ($editNameParts['first_name'] ?? '');
+$formMiddleName = isset($_POST['middle_name']) ? trim((string)$_POST['middle_name']) : ($editNameParts['middle_name'] ?? '');
+$formLastName = isset($_POST['last_name']) ? trim((string)$_POST['last_name']) : ($editNameParts['last_name'] ?? '');
+$editPhoneParts = splitPhoneForForm((string)($editUser['phone_number'] ?? ''), $countryCodeOptions);
+$formPhoneCountryCode = isset($_POST['phone_country_code']) ? preg_replace('/\D+/', '', (string)$_POST['phone_country_code']) : ($editPhoneParts['country_code'] ?? '254');
+if (!isset($countryCodeOptions[$formPhoneCountryCode])) {
+	$formPhoneCountryCode = '254';
+}
+$formPhoneLocalNumber = isset($_POST['phone_number_local']) ? preg_replace('/\D+/', '', (string)$_POST['phone_number_local']) : ($editPhoneParts['local_number'] ?? '');
+
 $page_title = "Admin - Users";
+$is_admin_page = true;
 require_once __DIR__ . '/../../templates/header.php';
 ?>
 
-<div class="container mt-4">
+<div class="container mt-4 admin-shell admin-users-page" id="usersPageDensityTarget">
 	<div class="row">
 		<div class="col-md-12">
-			<div class="admin-page-header d-flex justify-content-between align-items-center">
-				<div>
-					<h2 class="mb-1">Users</h2>
-					<p class="text-muted mb-0">Create customer accounts directly from the admin panel.</p>
+			<div class="admin-page-header admin-hero-header">
+				<div class="admin-hero-main">
+					<p class="admin-hero-eyebrow mb-2"><i class="bi bi-people"></i> Customer Administration</p>
+					<h2 class="mb-1">Customers</h2>
+					<p class="text-muted mb-0">Create and manage customer accounts.</p>
 				</div>
-				<div>
+				<div class="admin-hero-actions">
+					<a href="/admin/staff-users" class="btn btn-outline-secondary btn-sm">
+						<i class="bi bi-person-badge"></i> Staff Users
+					</a>
 					<a href="/admin/customer-locations" class="btn btn-outline-primary btn-sm">
 						<i class="bi bi-geo-alt"></i> View customer map
 					</a>
@@ -420,15 +528,20 @@ require_once __DIR__ . '/../../templates/header.php';
 		<div class="col-12">
 			<div class="card">
 				<div class="card-header d-flex justify-content-between align-items-center">
-					<h5 class="mb-0">Existing Customers</h5>
-					<small class="text-muted">Total: <?php echo (int)$totalUsers; ?></small>
+					<h5 class="mb-0"><i class="bi bi-people me-1"></i> Existing Customers</h5>
+					<div class="d-flex align-items-center gap-2">
+						<small class="text-muted">Total: <?php echo (int)$totalUsers; ?></small>
+						<button type="button" class="btn btn-sm btn-outline-secondary" data-density-toggle data-density-target="#usersPageDensityTarget" data-density-key="users-table" data-density-compact-text="Compact View" data-density-comfy-text="Comfortable View">
+							<i class="bi bi-arrows-collapse"></i> <span class="js-density-label">Compact View</span>
+						</button>
+					</div>
 				</div>
 				<div class="card-body p-0">
 					<?php if (empty($usersList)): ?>
 						<p class="p-3 mb-0 text-muted">No customers found.</p>
 					<?php else: ?>
 						<div class="table-responsive">
-							<table class="table table-striped mb-0">
+							<table class="table table-striped mb-0 table-density-target">
 								<thead>
 									<tr>
 										<th scope="col">Account</th>
@@ -481,7 +594,7 @@ require_once __DIR__ . '/../../templates/header.php';
 											</td>
 											<td>
 												<div class="d-flex flex-wrap gap-1">
-													<a href="<?php echo htmlspecialchars('/admin/users?page=' . $currentPage . '&edit_id=' . (int)$u['id']); ?>" class="btn btn-sm btn-outline-primary">Edit</a>
+													<a href="<?php echo htmlspecialchars('/admin/users?page=' . $currentPage . '&edit_id=' . (int)$u['id']); ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil-square"></i> Edit</a>
 													<a href="<?php echo htmlspecialchars('/admin/customer-locations?user_id=' . (int)$u['id']); ?>" class="btn btn-sm btn-outline-info" title="View on map">
 														<i class="bi bi-geo-alt"></i>
 													</a>
@@ -498,7 +611,7 @@ require_once __DIR__ . '/../../templates/header.php';
 															<input type="hidden" name="form_type" value="update_status">
 															<input type="hidden" name="user_id" value="<?php echo (int)$u['id']; ?>">
 															<input type="hidden" name="new_status" value="inactive">
-															<button type="submit" class="btn btn-sm btn-outline-secondary">Inactive</button>
+															<button type="submit" class="btn btn-sm btn-outline-secondary">Deactivate</button>
 														</form>
 													<?php endif; ?>
 														<?php if (($u['status'] ?? '') !== 'suspended'): ?>
@@ -512,7 +625,7 @@ require_once __DIR__ . '/../../templates/header.php';
 															<form method="post" action="" class="d-inline" data-confirm-message="Are you sure you want to delete this user? This action cannot be undone.">
 														<input type="hidden" name="form_type" value="delete_user">
 														<input type="hidden" name="user_id" value="<?php echo (int)$u['id']; ?>">
-														<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+														<button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Delete</button>
 													</form>
 												</div>
 											</td>
@@ -587,34 +700,50 @@ require_once __DIR__ . '/../../templates/header.php';
 							<input type="hidden" name="user_id" value="<?php echo (int)$editUser['id']; ?>">
 						<?php endif; ?>
 						<div class="row">
-							<div class="col-md-6 mb-3">
-								<label for="full_name" class="form-label">Full Name *</label>
-								<input type="text" class="form-control" id="full_name" name="full_name" required value="<?php echo htmlspecialchars(isset($_POST['full_name']) ? $_POST['full_name'] : ($editUser['full_name'] ?? '')); ?>">
+							<div class="col-md-4 mb-3">
+								<label for="first_name" class="form-label">First Name *</label>
+								<input type="text" class="form-control" id="first_name" name="first_name" autocomplete="given-name" required value="<?php echo htmlspecialchars($formFirstName); ?>">
+							</div>
+							<div class="col-md-4 mb-3">
+								<label for="middle_name" class="form-label">Middle Name (optional)</label>
+								<input type="text" class="form-control" id="middle_name" name="middle_name" autocomplete="additional-name" value="<?php echo htmlspecialchars($formMiddleName); ?>">
+							</div>
+							<div class="col-md-4 mb-3">
+								<label for="last_name" class="form-label">Last Name *</label>
+								<input type="text" class="form-control" id="last_name" name="last_name" autocomplete="family-name" required value="<?php echo htmlspecialchars($formLastName); ?>">
 							</div>
 							<div class="col-md-6 mb-3">
-								<label for="phone_number" class="form-label">Phone Number *</label>
-								<input type="text" class="form-control" id="phone_number" name="phone_number" required value="<?php echo htmlspecialchars(isset($_POST['phone_number']) ? $_POST['phone_number'] : ($editUser['phone_number'] ?? '')); ?>">
-								<div class="form-text">Use format 07XXXXXXXX or 2547XXXXXXXX.</div>
+								<label for="phone_number_local" class="form-label">Phone Number *</label>
+								<div class="input-group">
+									<span class="input-group-text">+</span>
+									<select class="form-select" id="phone_country_code" name="phone_country_code" style="max-width: 190px;" required>
+										<?php foreach ($countryCodeOptions as $code => $label): ?>
+											<option value="<?php echo htmlspecialchars($code); ?>" <?php echo $formPhoneCountryCode === $code ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option>
+										<?php endforeach; ?>
+									</select>
+									<input type="text" class="form-control" id="phone_number_local" name="phone_number_local" autocomplete="tel-national" inputmode="numeric" placeholder="e.g. 712345678" required value="<?php echo htmlspecialchars($formPhoneLocalNumber); ?>">
+								</div>
+								<div class="form-text">Choose country code, then enter the phone number without spaces or symbols.</div>
 							</div>
 						</div>
 						<div class="row">
 							<div class="col-md-6 mb-3">
 								<label for="email" class="form-label">Email *</label>
-								<input type="email" class="form-control" id="email" name="email" required value="<?php echo htmlspecialchars(isset($_POST['email']) ? $_POST['email'] : ($editUser['email'] ?? '')); ?>">
+								<input type="email" class="form-control" id="email" name="email" autocomplete="email" required value="<?php echo htmlspecialchars(isset($_POST['email']) ? $_POST['email'] : ($editUser['email'] ?? '')); ?>">
 							</div>
 							<div class="col-md-6 mb-3">
 								<label for="id_number" class="form-label">ID Number *</label>
-								<input type="text" class="form-control" id="id_number" name="id_number" required value="<?php echo htmlspecialchars(isset($_POST['id_number']) ? $_POST['id_number'] : ($editUser['id_number'] ?? '')); ?>">
+								<input type="text" class="form-control" id="id_number" name="id_number" autocomplete="off" required value="<?php echo htmlspecialchars(isset($_POST['id_number']) ? $_POST['id_number'] : ($editUser['id_number'] ?? '')); ?>">
 							</div>
 						</div>
 						<div class="row">
 							<div class="col-md-6 mb-3">
 								<label for="address" class="form-label">Address *</label>
-								<input type="text" class="form-control" id="address" name="address" required value="<?php echo htmlspecialchars(isset($_POST['address']) ? $_POST['address'] : ($editUser['address'] ?? '')); ?>">
+								<input type="text" class="form-control" id="address" name="address" autocomplete="street-address" required value="<?php echo htmlspecialchars(isset($_POST['address']) ? $_POST['address'] : ($editUser['address'] ?? '')); ?>">
 							</div>
 							<div class="col-md-6 mb-3">
 								<label for="tax_pin" class="form-label">KRA PIN (optional)</label>
-								<input type="text" class="form-control" id="tax_pin" name="tax_pin" value="<?php echo htmlspecialchars(isset($_POST['tax_pin']) ? $_POST['tax_pin'] : ($editUser['tax_pin'] ?? '')); ?>">
+								<input type="text" class="form-control" id="tax_pin" name="tax_pin" autocomplete="off" value="<?php echo htmlspecialchars(isset($_POST['tax_pin']) ? $_POST['tax_pin'] : ($editUser['tax_pin'] ?? '')); ?>">
 							</div>
 						</div>
 						<div class="row">
@@ -628,7 +757,7 @@ require_once __DIR__ . '/../../templates/header.php';
 								<input type="hidden" id="latitude" name="latitude" value="<?php echo htmlspecialchars(isset($_POST['latitude']) ? $_POST['latitude'] : ($editUser['latitude'] ?? '')); ?>">
 								<input type="hidden" id="longitude" name="longitude" value="<?php echo htmlspecialchars(isset($_POST['longitude']) ? $_POST['longitude'] : ($editUser['longitude'] ?? '')); ?>">
 								<small class="text-muted d-block mb-1">Exact GPS coordinates are used internally for maps and reports; they are never shown to customers.</small>
-								<input type="text" class="form-control form-control-sm" id="gps_dms_input" placeholder="e.g. 1°15'51.6&quot;S 37°11'15.2&quot;E">
+								<input type="text" class="form-control form-control-sm" id="gps_dms_input" autocomplete="off" placeholder="e.g. 1°15'51.6&quot;S 37°11'15.2&quot;E">
 								<div class="form-text">Advanced: paste latitude/longitude in DMS format and the map plus GPS fields will update automatically.</div>
 							</div>
 						</div>
@@ -658,26 +787,11 @@ require_once __DIR__ . '/../../templates/header.php';
 							</div>
 							<div class="col-md-6 mb-3">
 								<label for="password" class="form-label"><?php echo $isEditMode ? 'Password (leave blank to keep current)' : 'Password *'; ?></label>
-								<input type="password" class="form-control" id="password" name="password" <?php echo $isEditMode ? '' : 'required'; ?>>
+								<input type="password" class="form-control" id="password" name="password" autocomplete="new-password" <?php echo $isEditMode ? '' : 'required'; ?>>
 								<div class="form-text"><?php echo $isEditMode ? 'Only set a value if you want to change the password.' : 'The customer can change this password after logging in.'; ?></div>
 							</div>
 						</div>
-						<div class="row">
-							<div class="col-md-6 mb-3">
-								<label for="role" class="form-label">Role</label>
-								<?php
-									$roleValue = isset($_POST['role']) ? strtolower((string)$_POST['role']) : strtolower((string)($editUser['role'] ?? 'customer'));
-								?>
-								<select class="form-select" id="role" name="role">
-									<option value="customer" <?php echo $roleValue === 'customer' ? 'selected' : ''; ?>>Customer</option>
-									<option value="admin" <?php echo $roleValue === 'admin' ? 'selected' : ''; ?>>Admin (full access)</option>
-									<option value="reader" <?php echo $roleValue === 'reader' ? 'selected' : ''; ?>>Reader (meter readings)</option>
-									<option value="finance" <?php echo $roleValue === 'finance' ? 'selected' : ''; ?>>Finance (payments & reports)</option>
-									<option value="support" <?php echo $roleValue === 'support' ? 'selected' : ''; ?>>Support (complaints & helpdesk)</option>
-								</select>
-								<div class="form-text">Determines what this user can access in the system.</div>
-							</div>
-						</div>
+						<input type="hidden" name="role" value="customer">
 
 						<?php if ($registrationFee > 0 && !$isEditMode): ?>
 							<div class="mb-3">
@@ -696,7 +810,7 @@ require_once __DIR__ . '/../../templates/header.php';
 								</div>
 								<div class="mt-2">
 									<label for="registration_mpesa_code" class="form-label">M-Pesa Transaction Code (if paid via M-Pesa)</label>
-									<input type="text" class="form-control" id="registration_mpesa_code" name="registration_mpesa_code" value="<?php echo htmlspecialchars($_POST['registration_mpesa_code'] ?? ''); ?>" placeholder="e.g. QEU1XYZ123">
+									<input type="text" class="form-control" id="registration_mpesa_code" name="registration_mpesa_code" autocomplete="off" value="<?php echo htmlspecialchars($_POST['registration_mpesa_code'] ?? ''); ?>" placeholder="e.g. QEU1XYZ123">
 									<div class="form-text">Optional. Enter the M-Pesa transaction code for reconciliation when the registration fee was paid via M-Pesa.</div>
 								</div>
 								<div class="form-text mt-1">If neither option is selected, you will be asked to choose one.</div>

@@ -30,10 +30,13 @@ if ($db) {
 }
 ?>
 
-<div class="container-fluid mt-4">
+<div class="container-fluid mt-4 pay-bill-page admin-shell">
     <div class="row">
         <div class="col-md-12">
-            <h2>Pay Water Bill</h2>
+            <div class="admin-page-header">
+                <h2 class="mb-1">Pay Water Bill</h2>
+                <p class="text-muted mb-0">Select an invoice and complete payment securely through M-Pesa.</p>
+            </div>
         </div>
     </div>
     

@@ -8,90 +8,239 @@ require_once __DIR__ . '/../../includes/Mpesa.php';
 require_once __DIR__ . '/../../includes/Payment.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 
-try {
-    $database = new Database();
-    $db = $database->getConnection();
-    
-    if(!$db) {
-        throw new Exception("Database connection failed");
+function nextAccountNumber(PDO $db, string $prefix): string {
+    $stmt = $db->prepare("SELECT account_number FROM users WHERE account_number LIKE :prefix ORDER BY id DESC LIMIT 1");
+    $like = $prefix . '%';
+    $stmt->bindParam(':prefix', $like);
+    $stmt->execute();
+    $last = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $next = 1;
+    if ($last && !empty($last['account_number']) && preg_match('/^' . preg_quote($prefix, '/') . '(\\d+)$/', $last['account_number'], $m)) {
+        $next = (int)$m[1] + 1;
     }
-    
-    $data = json_decode(file_get_contents("php://input"));
-    
-    if(!$data) {
-        throw new Exception("Invalid JSON input");
+
+    return $prefix . str_pad((string)$next, 4, '0', STR_PAD_LEFT);
+}
+
+function normalizePhoneFromPayload($data): string {
+    $rawCountry = isset($data->phone_country_code) ? (string)$data->phone_country_code : '';
+    $rawLocal = isset($data->phone_number_local) ? (string)$data->phone_number_local : '';
+
+    $country = preg_replace('/\D+/', '', $rawCountry);
+    $local = preg_replace('/\D+/', '', $rawLocal);
+
+    if ($country !== '' && $local !== '') {
+        // If user enters full international format in the local field, strip the repeated country code.
+        if (strpos($local, $country) === 0 && strlen($local) > strlen($country)) {
+            $local = substr($local, strlen($country));
+        }
+
+        $local = ltrim($local, '0');
+        if ($local === '') {
+            return '';
+        }
+
+        return $country . $local;
     }
-    
-    // Validate required fields (meter_number will be auto-generated)
-    $required = ['full_name', 'phone_number', 'email', 'password', 'id_number', 'address'];
-    foreach($required as $field) {
-        if(empty($data->$field)) {
-            throw new Exception("Missing required field: $field");
+
+    // Backward compatibility with old payloads using only phone_number.
+    $legacy = preg_replace('/\D+/', '', (string)($data->phone_number ?? ''));
+    if ($legacy === '') {
+        return '';
+    }
+
+    if ($country !== '') {
+        if (strpos($legacy, $country) === 0) {
+            return $legacy;
+        }
+        $legacyLocal = $legacy;
+        if (strpos($legacyLocal, $country) === 0 && strlen($legacyLocal) > strlen($country)) {
+            $legacyLocal = substr($legacyLocal, strlen($country));
+        }
+        $legacyLocal = ltrim($legacyLocal, '0');
+        if ($legacyLocal !== '') {
+            return $country . $legacyLocal;
         }
     }
 
-    if (empty($data->first_name) || empty($data->last_name)) {
+    return trim($legacy);
+}
+
+try {
+    $database = new Database();
+    $db = $database->getConnection();
+
+    if (!$db) {
+        throw new Exception("Database connection failed");
+    }
+
+    $data = json_decode(file_get_contents("php://input"));
+    if (!$data) {
+        throw new Exception("Invalid JSON input");
+    }
+
+    $registrationType = strtolower(trim((string)($data->registration_type ?? 'client')));
+    if (!in_array($registrationType, ['client', 'customer', 'staff'], true)) {
+        $registrationType = 'client';
+    }
+
+    $firstName = trim((string)($data->first_name ?? ''));
+    $middleName = trim((string)($data->middle_name ?? ''));
+    $lastName = trim((string)($data->last_name ?? ''));
+
+    $fullNameFromParts = trim(preg_replace('/\s+/', ' ', $firstName . ' ' . $middleName . ' ' . $lastName));
+    $fullName = trim((string)($data->full_name ?? $fullNameFromParts));
+
+    if ($fullName === '') {
+        $fullName = $fullNameFromParts;
+    }
+
+    $phoneNumber = normalizePhoneFromPayload($data);
+    $idNumber = trim((string)($data->id_number ?? ''));
+    $staffUsername = trim((string)($data->username ?? ''));
+
+    if ($firstName === '' || $lastName === '') {
         throw new Exception("First name and last name are required");
     }
-    
+    if ($phoneNumber === '') {
+        throw new Exception("Phone number is required");
+    }
+
     $user = new User($db);
-    
-    // Check if phone already exists
-    if($user->phoneExists($data->phone_number)) {
+    if ($user->phoneExists($phoneNumber)) {
         throw new Exception("Phone number already registered");
     }
-    
-    // Generate sequential account number in format MTR0001, MTR0002, ...
-    // Find the maximum existing numeric suffix and increment it
-    $stmt = $db->query("SELECT account_number FROM users WHERE account_number LIKE 'MTR%' ORDER BY id DESC LIMIT 1");
-    $last = $stmt->fetch(PDO::FETCH_ASSOC);
-    $nextNumber = 1;
-    if ($last && !empty($last['account_number']) && preg_match('/^MTR(\d+)$/', $last['account_number'], $m)) {
-        $nextNumber = (int)$m[1] + 1;
+
+    $settingsService = new BillingSettings($db);
+    $settings = $settingsService->getSettings();
+    $registrationFee = isset($settings['registration_fee']) ? (float)$settings['registration_fee'] : 0.00;
+
+    // -------------------------------------------------------------
+    // STAFF REGISTRATION: no meter number, no registration fee flow.
+    // -------------------------------------------------------------
+    if ($registrationType === 'staff') {
+        if ($staffUsername === '') {
+            throw new Exception("Username is required for office staff");
+        }
+
+        if (!preg_match('/^[A-Za-z0-9._-]{3,30}$/', $staffUsername)) {
+            throw new Exception("Username must be 3-30 characters and contain only letters, numbers, dot, underscore or hyphen");
+        }
+
+        if ($user->usernameExists($staffUsername)) {
+            throw new Exception("Username already exists. Please choose another username");
+        }
+
+        $accountNumber = nextAccountNumber($db, 'STF');
+        $tempPassword = strtoupper(substr(bin2hex(random_bytes(6)), 0, 10));
+
+        $user->account_number = $accountNumber;
+        $user->username = $staffUsername;
+        $user->full_name = $fullName;
+        $user->phone_number = $phoneNumber;
+        $user->email = null;
+        $user->id_number = $idNumber !== '' ? $idNumber : null;
+        $user->address = null;
+        $user->tax_pin = null;
+        $user->meter_number = null;
+        $user->connection_type = 'domestic';
+        $user->location_label = null;
+        $user->latitude = null;
+        $user->longitude = null;
+        $user->password = $tempPassword;
+        // Default office staff role
+        $user->role = 'reader';
+        $user->status = 'active';
+
+        if (!$user->create()) {
+            throw new Exception("Unable to register staff user");
+        }
+
+        $sms = new SMS();
+        $companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
+        $loginUrl = 'https://wbs.bremac.co.ke/';
+        $messageText = "Dear " . $user->full_name . ",\n" .
+            "Your office staff account has been created successfully.\n" .
+            "Username: " . $user->username . "\n" .
+            "Account No: " . $user->account_number . "\n" .
+            "Temporary Password: " . $tempPassword . "\n" .
+            "Please login and change your password at " . $loginUrl . "\n" .
+            $companyName;
+        $sms->send($user->phone_number, $messageText);
+
+        http_response_code(201);
+        echo json_encode([
+            'status' => 'success',
+            'message' => 'Staff user registered successfully',
+            'data' => [
+                'registration_type' => 'staff',
+                'account_number' => $accountNumber,
+                'username' => $user->username,
+                'full_name' => $user->full_name,
+                'phone_number' => $user->phone_number,
+                'requires_payment' => false,
+                'temp_password' => $tempPassword,
+            ]
+        ]);
+        exit;
     }
-    $account_number = 'MTR' . str_pad((string)$nextNumber, 4, '0', STR_PAD_LEFT);
-    
-    // Set user properties
-    $user->account_number = $account_number;
-    $user->full_name = trim($data->full_name);
-    $user->phone_number = trim($data->phone_number);
-    $user->email = isset($data->email) ? trim($data->email) : '';
-    $user->id_number = trim($data->id_number);
-    $user->address = trim($data->address);
-    $user->tax_pin = isset($data->tax_pin) ? trim($data->tax_pin) : null;
-    // Meter number matches account number
-    $user->meter_number = $account_number;
-    $user->connection_type = isset($data->connection_type) ? $data->connection_type : 'domestic';
-    // Optional human-readable location label (e.g. Plus Code or landmark)
-    $user->location_label = isset($data->location_label) ? trim($data->location_label) : null;
-    // Optional GPS location (latitude/longitude)
+
+    if ($idNumber === '') {
+        throw new Exception("ID number is required for client registration");
+    }
+
+    // -------------------------------------------------------------
+    // CLIENT REGISTRATION: requires customer details and meter number.
+    // -------------------------------------------------------------
+    $email = trim((string)($data->email ?? ''));
+    $address = trim((string)($data->address ?? ''));
+    $password = (string)($data->password ?? '');
+
+    $requiredClient = [
+        'email' => $email,
+        'address' => $address,
+        'password' => $password,
+    ];
+    foreach ($requiredClient as $field => $value) {
+        if ($value === '') {
+            throw new Exception("Missing required field for client registration: $field");
+        }
+    }
+
+    $accountNumber = nextAccountNumber($db, 'MTR');
+
+    $user->account_number = $accountNumber;
+    $user->username = null;
+    $user->full_name = $fullName;
+    $user->phone_number = $phoneNumber;
+    $user->email = $email;
+    $user->id_number = $idNumber;
+    $user->address = $address;
+    $user->tax_pin = isset($data->tax_pin) ? trim((string)$data->tax_pin) : null;
+    $user->meter_number = $accountNumber;
+    $user->connection_type = isset($data->connection_type) ? (string)$data->connection_type : 'domestic';
+    $user->location_label = isset($data->location_label) ? trim((string)$data->location_label) : null;
     if (isset($data->latitude) && $data->latitude !== '') {
         $user->latitude = (float)$data->latitude;
     }
     if (isset($data->longitude) && $data->longitude !== '') {
         $user->longitude = (float)$data->longitude;
     }
-    $user->password = $data->password;
+    $user->password = $password;
     $user->role = 'customer';
 
-    // Read registration fee setting
-    $settingsService = new BillingSettings($db);
-    $settings = $settingsService->getSettings();
-    $registrationFee = isset($settings['registration_fee']) ? (float)$settings['registration_fee'] : 0.00;
-
-    // If a registration fee is configured, require STK push before activating account
     if ($registrationFee > 0) {
-        // Validate and normalize phone similar to bill payments
-        if(!preg_match('/^(?:254|\+254|0)?((?:7|1)\d{8})$/', $data->phone_number, $matches)) {
+        if (!preg_match('/^(?:254|\+254|0)?((?:7|1)\d{8})$/', $phoneNumber, $matches)) {
             throw new Exception("Invalid phone number format for M-Pesa payment");
         }
-        $formatted_phone = '254' . $matches[1];
+        $formattedPhone = '254' . $matches[1];
 
         $mpesa = new Mpesa();
         $response = $mpesa->stkPush(
-            $formatted_phone,
+            $formattedPhone,
             $registrationFee,
-            $account_number,
+            $accountNumber,
             "Registration Fee"
         );
 
@@ -110,54 +259,46 @@ try {
             throw new Exception('Payment initiation failed: ' . $response['error'] . $details);
         }
 
-        // Create user in an inactive state until registration fee is paid
-        // Note: users.status enum allows only 'active', 'inactive', 'suspended'
-        // so we use 'inactive' here to represent a pending registration.
         $user->status = 'inactive';
-        if(!$user->create()) {
+        if (!$user->create()) {
             throw new Exception("Unable to register user");
         }
 
-        // Create registration fee bill
         $billService = new Bill($db);
         $dueDate = date('Y-m-d', strtotime('+14 days'));
         $billId = $billService->createRegistrationFeeBill($user->id, $user->account_number, $registrationFee, $dueDate, 'pending');
 
-        // Save payment record tied to the registration fee bill
         $payment = new Payment($db);
         $payment->bill_id = $billId;
         $payment->user_id = $user->id;
-        $payment->phone_number = $formatted_phone;
+        $payment->phone_number = $formattedPhone;
         $payment->amount = $registrationFee;
         $payment->merchant_request_id = $response['MerchantRequestID'] ?? null;
         $payment->checkout_request_id = $response['CheckoutRequestID'] ?? null;
         $payment->status = 'pending';
-        // Link this payment explicitly to registration via registration_id
         $payment->registration_id = $user->id;
         $payment->create();
 
         http_response_code(201);
-        echo json_encode(array(
-            "status" => "success",
-            "message" => "Registration initiated. An M-Pesa prompt has been sent for the registration fee. Your account will be activated after payment is received.",
-            "data" => array(
-                "account_number" => $account_number,
-                "full_name" => $user->full_name,
-                "phone_number" => $user->phone_number,
-                "requires_payment" => true,
-                "amount" => $registrationFee,
-                "checkout_request_id" => $payment->checkout_request_id
-            )
-        ));
+        echo json_encode([
+            'status' => 'success',
+            'message' => 'Client registration initiated. Complete M-Pesa payment to activate account.',
+            'data' => [
+                'registration_type' => 'client',
+                'account_number' => $accountNumber,
+                'full_name' => $user->full_name,
+                'phone_number' => $user->phone_number,
+                'requires_payment' => true,
+                'amount' => $registrationFee,
+                'checkout_request_id' => $payment->checkout_request_id,
+            ]
+        ]);
     } else {
-        // No registration fee configured: behave as before
         $user->status = 'active';
-        if(!$user->create()) {
+        if (!$user->create()) {
             throw new Exception("Unable to register user");
         }
 
-        // Send SMS with account details on successful registration (no fee case)
-        $settings = $settingsService->getSettings();
         $companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
         $sms = new SMS();
         $loginUrl = 'https://wbs.bremac.co.ke/';
@@ -165,40 +306,35 @@ try {
             "Your water account has been created successfully.\n" .
             "Account No: " . $user->account_number . "\n" .
             "Meter No: " . $user->meter_number . "\n" .
-            "You can now log in at " . $loginUrl . " using your account number, phone or email to view your bills and make payments.\n" .
+            "You can now log in at " . $loginUrl . " using your account number, phone, email or username to view your bills and make payments.\n" .
             $companyName;
-        // Ignore SMS failures silently
         $sms->send($user->phone_number, $messageText);
 
-        // Also send an email with the same content if email is provided
         if (!empty($user->email)) {
             require_once __DIR__ . '/../../includes/Email.php';
-            $email = new Email();
-            $email->send(
-                $user->email,
-                'Your new water account details',
-                $messageText
-            );
+            $emailSvc = new Email();
+            $emailSvc->send($user->email, 'Your new water account details', $messageText);
         }
 
         http_response_code(201);
-        echo json_encode(array(
-            "status" => "success",
-            "message" => "User registered successfully",
-            "data" => array(
-                "account_number" => $account_number,
-                "full_name" => $user->full_name,
-                "phone_number" => $user->phone_number,
-                "requires_payment" => false
-            )
-        ));
+        echo json_encode([
+            'status' => 'success',
+            'message' => 'Client registered successfully',
+            'data' => [
+                'registration_type' => 'client',
+                'account_number' => $accountNumber,
+                'full_name' => $user->full_name,
+                'phone_number' => $user->phone_number,
+                'requires_payment' => false,
+            ]
+        ]);
     }
-    
-} catch(Exception $e) {
+
+} catch (Exception $e) {
     http_response_code(400);
-    echo json_encode(array(
-        "status" => "error",
-        "message" => $e->getMessage()
-    ));
+    echo json_encode([
+        'status' => 'error',
+        'message' => $e->getMessage()
+    ]);
 }
 ?>

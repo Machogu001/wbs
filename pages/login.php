@@ -21,10 +21,10 @@ if ($logged_out) {
 }
 ?>
 
-<div class="container mt-5">
+<div class="container mt-5 auth-login-page">
     <div class="row justify-content-center">
         <div class="col-md-6">
-            <div class="card">
+            <div class="card auth-main-card">
                 <div class="card-header bg-primary text-white">
                     <h3 class="text-center mb-0"><i class="bi bi-box-arrow-in-right"></i> Login</h3>
                 </div>
@@ -33,7 +33,7 @@ if ($logged_out) {
                         <script>
                         window.addEventListener('load', function() {
                             if (window.showToast) {
-                                showToast('Registration successful! Please login with your account number, phone or email.','success');
+                                showToast('Registration successful! Please login with your username, account number, phone or email.','success');
                             }
                         });
                         </script>
@@ -53,13 +53,13 @@ if ($logged_out) {
                     <form id="loginForm" novalidate>
                         <div id="loginCredentialsSection">
                             <div class="mb-3">
-                                <label for="identifier" class="form-label">Account Number, Phone or Email *</label>
+                                <label for="identifier" class="form-label">Username, Account Number, Phone or Email *</label>
                                 <div class="input-group">
                                     <span class="input-group-text"><i class="bi bi-person"></i></span>
                                     <input type="text" class="form-control" id="identifier" name="identifier" 
-                                           placeholder="e.g. MTR0001, 07XXXXXXXX or name@example.com" required>
+                                           placeholder="e.g. MTR0001, 07XXXXXXXX or name@example.com" autocomplete="username" required>
                                 </div>
-                                <div class="invalid-feedback">Please enter your account number, phone or email.</div>
+                                <div class="invalid-feedback">Please enter your username, account number, phone or email.</div>
                             </div>
                             
                             <div class="mb-3">
@@ -310,6 +310,7 @@ $(document).ready(function() {
     });
 
     $(document).on('click', '#backToCredentialsBtn', function() {
+        if (window.stopWebOtpListener) stopWebOtpListener();
         $('#loginTwoFactorSection').addClass('d-none');
         $('#loginCredentialsSection').removeClass('d-none');
     });
@@ -334,12 +335,15 @@ $(document).ready(function() {
             data: JSON.stringify({ method: 'sms' }),
             success: function(resp) {
                 if (resp.status === 'success') {
-                    twoFactorCurrentMethod = 'sms';
+                    var actualMethod = (resp.data && resp.data.method) ? resp.data.method : 'sms';
+                    var label = actualMethod === 'email' ? 'email' : 'phone';
+                    twoFactorCurrentMethod = actualMethod;
                     if (window.showToast) {
-                        showToast('Verification code sent to your phone.','info');
+                        showToast(resp.message || ('Verification code sent to your ' + label + '.'),'info');
                     }
-                    showTwoFactorPrompt('phone');
+                    showTwoFactorPrompt(actualMethod === 'email' ? 'email' : 'phone');
                     startTwoFactorCooldownMain(60);
+                    if (actualMethod === 'sms' && window.startWebOtpListener) startWebOtpListener('#two_factor_code');
                 } else if (resp.status === 'cooldown') {
                     var remaining = resp.data && resp.data.remaining ? resp.data.remaining : 0;
                     if (remaining > 0) {
@@ -372,12 +376,15 @@ $(document).ready(function() {
             data: JSON.stringify({ method: 'email' }),
             success: function(resp) {
                 if (resp.status === 'success') {
-                    twoFactorCurrentMethod = 'email';
+                    var actualMethod = (resp.data && resp.data.method) ? resp.data.method : 'email';
+                    var label = actualMethod === 'email' ? 'email' : 'phone';
+                    twoFactorCurrentMethod = actualMethod;
                     if (window.showToast) {
-                        showToast('Verification code sent to your email.','info');
+                        showToast(resp.message || ('Verification code sent to your ' + label + '.'),'info');
                     }
-                    showTwoFactorPrompt('email');
+                    showTwoFactorPrompt(actualMethod === 'email' ? 'email' : 'phone');
                     startTwoFactorCooldownMain(60);
+                    if (actualMethod === 'sms' && window.startWebOtpListener) startWebOtpListener('#two_factor_code');
                 } else if (resp.status === 'cooldown') {
                     var remaining = resp.data && resp.data.remaining ? resp.data.remaining : 0;
                     if (remaining > 0) {
@@ -435,6 +442,8 @@ $(document).ready(function() {
                     updateTwoFactorMethodSwitch();
                     // Start initial resend cooldown
                     startTwoFactorCooldownMain(60);
+                    // WebOTP: auto-fill SMS code on phones/tablets
+                    if (window.startWebOtpListener) startWebOtpListener('#two_factor_code');
                 } else if (response.status === 'success') {
                     handlePostLoginSuccess(response);
                 } else {

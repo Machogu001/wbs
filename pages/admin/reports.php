@@ -482,35 +482,53 @@ if ($report_scope === 'all' || $report_scope === 'billing') {
 	$bills_grand_total = isset($totalBillsRow['total_amount']) ? (float)$totalBillsRow['total_amount'] : 0.0;
 }
 
+$is_admin_page = true;
 require_once __DIR__ . '/../../templates/header.php';
 ?>
 
-<div class="container mt-4 mb-4">
-	<div class="financial-dashboard-header mb-4">
+<div class="container mt-4 mb-4 admin-shell admin-reports-page" id="reportsDensityTarget">
+	<div class="financial-dashboard-header mb-4 admin-hero-header admin-hero-header--reports">
 		<div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
-			<div>
+			<div class="financial-dashboard-header-main admin-hero-main">
+				<div class="financial-dashboard-eyebrow mb-2">
+					<span class="badge rounded-pill financial-live-pill" style="color:#ffffff !important; background:#0b3a63 !important; border:1px solid #082a48 !important; font-weight:700 !important; text-shadow:0 1px 0 rgba(0,0,0,.25);">Live Reporting</span>
+				</div>
 				<h2 class="financial-dashboard-header-title mb-1 d-flex align-items-center gap-2">
 					<i class="bi bi-graph-up-arrow text-primary"></i>
 					<span>Financial Dashboard</span>
 				</h2>
-				<p class="financial-dashboard-header-subtitle mb-2">Key financial KPIs, aging, and detailed payment/billing reports.</p>
+				<p class="financial-dashboard-header-subtitle mb-2">Key financial KPIs, aging, and detailed payment and billing reports.</p>
 				<p class="financial-dashboard-tagline mb-0">
-					<strong>Water Billing System</strong> &middot; Efficient water bill management with M-Pesa integration.
+					Water Billing System for fast collections tracking and M-Pesa reconciliation.
 				</p>
 			</div>
-			<div class="text-end financial-dashboard-summary">
-				<div><span class="text-uppercase text-muted small">Company</span><br><strong><?php echo htmlspecialchars($settings['company_name'] ?? ''); ?></strong></div>
-				<div class="mt-2"><span class="text-uppercase text-muted small">Reporting Currency</span><br><span><?php echo htmlspecialchars($currency); ?></span></div>
-				<div class="mt-2"><span class="text-uppercase text-muted small">Period</span><br><span><?php echo htmlspecialchars($from_display); ?> &ndash; <?php echo htmlspecialchars($to_display); ?></span></div>
+			<div class="financial-dashboard-summary-grid admin-hero-actions" aria-label="Reporting summary">
+				<div class="financial-dashboard-summary-item">
+					<div class="financial-dashboard-summary-label">Company</div>
+					<div class="financial-dashboard-summary-value"><?php echo htmlspecialchars($settings['company_name'] ?? ''); ?></div>
+				</div>
+				<div class="financial-dashboard-summary-item">
+					<div class="financial-dashboard-summary-label">Reporting Currency</div>
+					<div class="financial-dashboard-summary-value"><?php echo htmlspecialchars($currency); ?></div>
+				</div>
+				<div class="financial-dashboard-summary-item financial-dashboard-summary-item-period">
+					<div class="financial-dashboard-summary-label">Period</div>
+					<div class="financial-dashboard-summary-value financial-period-range"><?php echo htmlspecialchars($from_display); ?> &ndash; <?php echo htmlspecialchars($to_display); ?></div>
+				</div>
 			</div>
 		</div>
 	</div>
 
-	<div class="card mb-3">
+	<div class="card mb-3 financial-filters-card">
 		<div class="card-header d-flex justify-content-between align-items-center">
 			<div>
 				<div class="financial-section-title mb-1">Filters</div>
 				<small class="text-muted">Adjust period, scope, and search to update the dashboard below.</small>
+			</div>
+			<div>
+				<button type="button" class="btn btn-sm btn-outline-secondary" data-density-toggle data-density-target="#reportsDensityTarget" data-density-key="reports-tables" data-density-compact-text="Compact View" data-density-comfy-text="Comfortable View">
+					<i class="bi bi-arrows-collapse"></i> <span class="js-density-label">Compact View</span>
+				</button>
 			</div>
 		</div>
 		<div class="card-body">
@@ -551,6 +569,29 @@ require_once __DIR__ . '/../../templates/header.php';
 					<a href="/reports" class="btn btn-outline-secondary btn-sm">Reset</a>
 				</div>
 			</form>
+		</div>
+	</div>
+
+	<?php
+		$totalBilledAmount = (float)($billedRow['total_billed'] ?? 0);
+		$totalCollectedAmount = (float)($collectedRow['total_collected'] ?? 0);
+		$collectionRate = $totalBilledAmount > 0 ? min(100, round(($totalCollectedAmount / $totalBilledAmount) * 100, 1)) : 0.0;
+	?>
+	<div class="card mb-3 financial-snapshot-card">
+		<div class="card-body py-3">
+			<div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+				<div>
+					<div class="financial-section-title mb-1">Performance Snapshot</div>
+					<div class="small text-muted">Collection efficiency for the selected reporting range.</div>
+				</div>
+				<div class="financial-collection-rate">
+					<span class="small text-muted me-2">Collection Rate</span>
+					<strong><?php echo number_format($collectionRate, 1); ?>%</strong>
+				</div>
+			</div>
+			<div class="progress mt-3 financial-collection-progress" role="progressbar" aria-label="Collection rate" aria-valuenow="<?php echo (int)$collectionRate; ?>" aria-valuemin="0" aria-valuemax="100">
+				<div class="progress-bar" style="width: <?php echo number_format($collectionRate, 1, '.', ''); ?>%"></div>
+			</div>
 		</div>
 	</div>
 
@@ -626,7 +667,7 @@ require_once __DIR__ . '/../../templates/header.php';
 						</div>
 					</div>
 				</div>
-				<div class="card shadow-sm">
+				<div class="card shadow-sm usage-exports-card">
 					<div class="card-header d-flex justify-content-between align-items-center">
 						<h6 class="card-title mb-0"><i class="bi bi-droplet-half me-1"></i> Usage Exports</h6>
 					</div>
@@ -634,10 +675,10 @@ require_once __DIR__ . '/../../templates/header.php';
 						<?php $usageExportCsvUrl = '/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage']))); ?>
 						<?php $usageExportPdfUrl = '/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage_pdf']))); ?>
 						<a href="<?php echo $usageExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm">
-							<i class="bi bi-download"></i> Usage CSV
+							<i class="bi bi-download"></i> Download Usage CSV
 						</a>
 						<a href="<?php echo $usageExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm">
-							<i class="bi bi-file-earmark-pdf"></i> Usage PDF
+							<i class="bi bi-file-earmark-pdf"></i> Download Usage PDF
 						</a>
 					</div>
 				</div>
@@ -651,7 +692,7 @@ require_once __DIR__ . '/../../templates/header.php';
 					</div>
 					<div class="card-body">
 						<div class="table-responsive">
-							<table class="table table-sm mb-0 align-middle">
+							<table class="table table-sm mb-0 align-middle table-density-target">
 								<thead class="table-light">
 									<tr>
 										<th>Bucket</th>
@@ -689,11 +730,12 @@ require_once __DIR__ . '/../../templates/header.php';
 		</div>
 
 	<h5 class="mt-4 mb-2 financial-section-title">Detailed Reports</h5>
+	<p class="text-muted small mb-3">Review transaction-level details and download export-ready files.</p>
 	<div class="row g-3">
 		<?php if ($report_scope === 'all' || $report_scope === 'payments'): ?>
 		<div class="col-12" id="paymentsReportSection">
-			<div class="card h-100">
-				<div class="card-header d-flex justify-content-between align-items-center">
+			<div class="card h-100 report-table-card">
+				<div class="card-header d-flex justify-content-between align-items-center report-card-header">
 					<div>
 						<h5 class="card-title mb-0">Payment Report</h5>
 						<small class="text-muted">All payments for the selected period and filters.</small>
@@ -702,16 +744,16 @@ require_once __DIR__ . '/../../templates/header.php';
 						<?php $paymentsExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'payments']))); ?>
 						<?php $paymentsExportPdfUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'payments_pdf']))); ?>
 						<a href="<?php echo $paymentsExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm me-1">
-							<i class="bi bi-download"></i> CSV
+							<i class="bi bi-download"></i> Download CSV
 						</a>
 						<a href="<?php echo $paymentsExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm">
-							<i class="bi bi-file-earmark-pdf"></i> PDF
+							<i class="bi bi-file-earmark-pdf"></i> Download PDF
 						</a>
 					</div>
 				</div>
 				<div class="card-body p-0">
 					<div class="table-responsive">
-						<table class="table table-striped table-sm mb-0 align-middle">
+						<table class="table table-striped table-sm mb-0 align-middle table-density-target">
 							<thead class="table-light">
 								<tr>
 									<th>Date</th>
@@ -730,12 +772,12 @@ require_once __DIR__ . '/../../templates/header.php';
 							<?php else: ?>
 								<?php foreach ($payments as $p): ?>
 									<tr>
-										<td><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime($p['transaction_date'] ?? $p['created_at']))); ?></td>
-										<td><?php echo htmlspecialchars($p['account_number'] ?? '-'); ?></td>
-										<td><?php echo htmlspecialchars($p['full_name'] ?? ''); ?></td>
-										<td class="text-end"><?php echo number_format((float)$p['amount'], 2); ?></td>
-										<td><?php echo htmlspecialchars($p['mpesa_receipt'] ?? '-'); ?></td>
-										<td>
+										<td data-label="Date"><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime($p['transaction_date'] ?? $p['created_at']))); ?></td>
+										<td data-label="Account"><?php echo htmlspecialchars($p['account_number'] ?? '-'); ?></td>
+										<td data-label="Customer"><?php echo htmlspecialchars($p['full_name'] ?? ''); ?></td>
+										<td data-label="Amount (<?php echo htmlspecialchars($currency); ?>)" class="text-end"><?php echo number_format((float)$p['amount'], 2); ?></td>
+										<td data-label="MPESA Ref"><?php echo htmlspecialchars($p['mpesa_receipt'] ?? '-'); ?></td>
+										<td data-label="Status">
 											<span class="badge bg-<?php echo $p['status'] === 'completed' ? 'success' : ($p['status'] === 'failed' ? 'danger' : 'warning'); ?>">
 												<?php echo htmlspecialchars(ucfirst($p['status'])); ?>
 											</span>
@@ -746,7 +788,7 @@ require_once __DIR__ . '/../../templates/header.php';
 							</tbody>
 						</table>
 					</div>
-					<div class="px-3 py-2 border-top small text-end">
+					<div class="px-3 py-2 border-top small text-end report-grand-total">
 						<strong>Grand Total (<?php echo htmlspecialchars($currency); ?>):</strong>
 						<?php echo number_format($payments_grand_total, 2); ?>
 					</div>
@@ -796,8 +838,8 @@ require_once __DIR__ . '/../../templates/header.php';
 		<?php endif; ?>
 		<?php if ($report_scope === 'all' || $report_scope === 'billing'): ?>
 		<div class="col-12" id="billsReportSection">
-			<div class="card h-100">
-				<div class="card-header d-flex justify-content-between align-items-center">
+			<div class="card h-100 report-table-card">
+				<div class="card-header d-flex justify-content-between align-items-center report-card-header">
 					<div>
 						<h5 class="card-title mb-0">Billing Report</h5>
 						<small class="text-muted">Bills issued for the selected period and filters.</small>
@@ -806,16 +848,16 @@ require_once __DIR__ . '/../../templates/header.php';
 						<?php $billsExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'bills']))); ?>
 						<?php $billsExportPdfUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'bills_pdf']))); ?>
 						<a href="<?php echo $billsExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm me-1">
-							<i class="bi bi-download"></i> CSV
+							<i class="bi bi-download"></i> Download CSV
 						</a>
 						<a href="<?php echo $billsExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm">
-							<i class="bi bi-file-earmark-pdf"></i> PDF
+							<i class="bi bi-file-earmark-pdf"></i> Download PDF
 						</a>
 					</div>
 				</div>
 				<div class="card-body p-0">
 					<div class="table-responsive">
-						<table class="table table-striped table-sm mb-0 align-middle">
+						<table class="table table-striped table-sm mb-0 align-middle table-density-target">
 							<thead class="table-light">
 								<tr>
 									<th>Billing Month</th>
@@ -834,12 +876,12 @@ require_once __DIR__ . '/../../templates/header.php';
 							<?php else: ?>
 								<?php foreach ($bills as $bill): ?>
 									<tr>
-										<td><?php echo htmlspecialchars(date('M Y', strtotime($bill['billing_month']))); ?></td>
-										<td><?php echo htmlspecialchars($bill['account_number'] ?? '-'); ?></td>
-										<td><?php echo htmlspecialchars($bill['full_name'] ?? ''); ?></td>
-										<td class="text-end"><?php echo number_format((float)$bill['amount'], 2); ?></td>
-										<td><?php echo htmlspecialchars($bill['due_date']); ?></td>
-										<td>
+										<td data-label="Billing Month"><?php echo htmlspecialchars(date('M Y', strtotime($bill['billing_month']))); ?></td>
+										<td data-label="Account"><?php echo htmlspecialchars($bill['account_number'] ?? '-'); ?></td>
+										<td data-label="Customer"><?php echo htmlspecialchars($bill['full_name'] ?? ''); ?></td>
+										<td data-label="Amount (<?php echo htmlspecialchars($currency); ?>)" class="text-end"><?php echo number_format((float)$bill['amount'], 2); ?></td>
+										<td data-label="Due Date"><?php echo htmlspecialchars($bill['due_date']); ?></td>
+										<td data-label="Status">
 											<span class="badge bg-<?php echo $bill['status'] === 'paid' ? 'success' : (in_array($bill['status'], ['pending','overdue'], true) ? 'warning' : 'secondary'); ?>">
 												<?php echo htmlspecialchars(ucfirst($bill['status'])); ?>
 											</span>
@@ -850,7 +892,7 @@ require_once __DIR__ . '/../../templates/header.php';
 							</tbody>
 						</table>
 					</div>
-					<div class="px-3 py-2 border-top small text-end">
+					<div class="px-3 py-2 border-top small text-end report-grand-total">
 						<strong>Grand Total (<?php echo htmlspecialchars($currency); ?>):</strong>
 						<?php echo number_format($bills_grand_total, 2); ?>
 					</div>

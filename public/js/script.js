@@ -1,6 +1,174 @@
 // Main JavaScript file for Water Billing System
 
 $(document).ready(function() {
+    (function initGlobalClientErrorReporter() {
+        if (window.__wbsClientErrorReporterInit) {
+            return;
+        }
+        window.__wbsClientErrorReporterInit = true;
+
+        var endpoint = '/api/system/client_error';
+        var ignoredSourcePrefixes = ['chrome-extension://', 'moz-extension://', 'safari-extension://', 'extensions::'];
+        var ignoredSourcePatterns = [/CloseDisplay\.js/i];
+        var seen = {};
+        var sentCount = 0;
+        var maxReportsPerPage = 5;
+
+        function sanitize(value, maxLen) {
+            if (value == null) return '';
+            var text = String(value);
+            if (text.length > maxLen) {
+                return text.slice(0, maxLen);
+            }
+            return text;
+        }
+
+        function shouldIgnore(source, message) {
+            var src = String(source || '');
+            var msg = String(message || '');
+
+            for (var i = 0; i < ignoredSourcePrefixes.length; i++) {
+                if (src.indexOf(ignoredSourcePrefixes[i]) === 0) {
+                    return true;
+                }
+            }
+
+            for (var j = 0; j < ignoredSourcePatterns.length; j++) {
+                if (ignoredSourcePatterns[j].test(src) || ignoredSourcePatterns[j].test(msg)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        function send(payload) {
+            if (sentCount >= maxReportsPerPage) {
+                return;
+            }
+
+            var key = [payload.type, payload.message, payload.source, payload.line, payload.column].join('|');
+            if (seen[key]) {
+                return;
+            }
+            seen[key] = true;
+            sentCount++;
+
+            var body = JSON.stringify(payload);
+
+            try {
+                if (navigator.sendBeacon) {
+                    var blob = new Blob([body], { type: 'application/json' });
+                    navigator.sendBeacon(endpoint, blob);
+                    return;
+                }
+            } catch (e) {
+                // Fall through to fetch.
+            }
+
+            try {
+                fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    keepalive: true,
+                    body: body
+                }).catch(function() {});
+            } catch (e2) {
+                // Ignore client logging failures.
+            }
+        }
+
+        window.addEventListener('error', function(event) {
+            var source = sanitize(event.filename || '', 300);
+            var message = sanitize(event.message || 'Unknown JS error', 500);
+
+            if (shouldIgnore(source, message)) {
+                return;
+            }
+
+            send({
+                type: 'error',
+                message: message,
+                source: source,
+                line: Number(event.lineno || 0),
+                column: Number(event.colno || 0),
+                stack: sanitize(event.error && event.error.stack ? event.error.stack : '', 2000),
+                page: sanitize(window.location.pathname || '', 300),
+                userAgent: sanitize(navigator.userAgent || '', 500)
+            });
+        });
+
+        window.addEventListener('unhandledrejection', function(event) {
+            var reason = event.reason;
+            var message = '';
+            var stack = '';
+
+            if (reason && typeof reason === 'object') {
+                message = reason.message || String(reason);
+                stack = reason.stack || '';
+            } else {
+                message = String(reason || 'Unhandled promise rejection');
+            }
+
+            message = sanitize(message, 500);
+            if (shouldIgnore('', message)) {
+                return;
+            }
+
+            send({
+                type: 'unhandledrejection',
+                message: message,
+                source: '',
+                line: 0,
+                column: 0,
+                stack: sanitize(stack, 2000),
+                page: sanitize(window.location.pathname || '', 300),
+                userAgent: sanitize(navigator.userAgent || '', 500)
+            });
+        });
+    })();
+
+    function resolveAlertTypeFromClass(el) {
+        if (!el || !el.classList) return 'info';
+        if (el.classList.contains('alert-danger')) return 'danger';
+        if (el.classList.contains('alert-warning')) return 'warning';
+        if (el.classList.contains('alert-info')) return 'info';
+        if (el.classList.contains('alert-success')) return 'success';
+        return 'info';
+    }
+
+    // Convert inline alerts to Sweet toasts so notifications are not shown inline.
+    function convertInlineAlertsToToasts() {
+        var alerts = document.querySelectorAll('main .alert');
+        if (!alerts || !alerts.length) return;
+
+        Array.prototype.forEach.call(alerts, function(el) {
+            if (!el || !el.parentNode) return;
+            if (el.classList.contains('alert-permanent') || el.classList.contains('alert-inline-allow') || el.classList.contains('d-none')) {
+                return;
+            }
+            if (el.getClientRects().length === 0) {
+                return;
+            }
+
+            var message = (el.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!message) {
+                el.parentNode.removeChild(el);
+                return;
+            }
+
+            var type = resolveAlertTypeFromClass(el);
+            if (window.WbsAdminUi && typeof window.WbsAdminUi.showFlashToast === 'function') {
+                window.WbsAdminUi.showFlashToast(message, type);
+            } else if (typeof window.showToast === 'function') {
+                window.showToast(message, type);
+            }
+
+            el.parentNode.removeChild(el);
+        });
+    }
+
     // Auto-format phone numbers
     $('input[type="tel"]').on('input', function() {
         let value = $(this).val().replace(/\D/g, '');
@@ -32,21 +200,50 @@ $(document).ready(function() {
         }
     });
     
-    // Auto-hide alerts after 5 seconds
+    // Auto-hide alerts after 5 seconds.
+    // Keep timed callback tiny; do real work in idle/rAF to avoid long-task violations.
+    function runAutoHideAlerts() {
+        var autoHideAlerts = Array.prototype.filter.call(document.getElementsByClassName('alert'), function(el) {
+            if (el.classList.contains('alert-permanent') || el.classList.contains('d-none')) return false;
+            return el.getClientRects().length > 0;
+        });
+
+        if (!autoHideAlerts.length) return;
+
+        requestAnimationFrame(function() {
+            autoHideAlerts.forEach(function(el) {
+                if (!el || !el.parentNode) return;
+                el.classList.add('alert-fading');
+                el.addEventListener('transitionend', function handler() {
+                    el.removeEventListener('transitionend', handler);
+                    if (el.parentNode) el.parentNode.removeChild(el);
+                }, { once: true });
+            });
+        });
+    }
+
     setTimeout(function() {
-        $('.alert:not(.alert-permanent)').fadeOut('slow');
+        if (typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(runAutoHideAlerts, { timeout: 800 });
+        } else {
+            requestAnimationFrame(runAutoHideAlerts);
+        }
     }, 5000);
+
+    // Run after DOM is ready so server-rendered inline notifications become toasts.
+    convertInlineAlertsToToasts();
 
     // Initialize dashboard charts if data and Chart.js are available
     if (window.DASHBOARD_CHART_DATA && typeof Chart !== 'undefined') {
         initializeDashboardCharts(window.DASHBOARD_CHART_DATA);
     }
 
-    // Enable Bootstrap 5 tooltips globally where data-bs-toggle="tooltip" is used
+    // Defer Bootstrap tooltip init to avoid blocking the ready handler
     if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.forEach(function (tooltipTriggerEl) {
-            new bootstrap.Tooltip(tooltipTriggerEl);
+        requestAnimationFrame(function() {
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+                new bootstrap.Tooltip(el);
+            });
         });
     }
 
@@ -677,3 +874,303 @@ function initializeDashboardCharts(data) {
         });
     }
 }
+
+// Shared admin UX helpers for SweetAlert-backed toasts and confirm actions.
+(function() {
+    function mapAlertType(type) {
+        if (type === 'danger') return 'error';
+        if (type === 'warning') return 'warning';
+        if (type === 'info') return 'info';
+        return 'success';
+    }
+
+    function showFlashToast(message, type) {
+        if (!message) {
+            return;
+        }
+
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: mapAlertType(type),
+                title: message,
+                showConfirmButton: false,
+                timer: 3600,
+                timerProgressBar: true
+            });
+            return;
+        }
+
+        if (typeof window.showToast === 'function') {
+            window.showToast(message, type || 'success');
+        }
+    }
+
+    function submitButtonAction(button) {
+        var form = null;
+        if (button) {
+            var formId = button.getAttribute('form');
+            form = formId ? document.getElementById(formId) : button.closest('form');
+        }
+        if (!form) {
+            return;
+        }
+
+        if (button.name) {
+            var existingTemp = form.querySelector('input[data-temp-action="1"]');
+            if (existingTemp) {
+                existingTemp.remove();
+            }
+
+            var hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = button.name;
+            hidden.value = button.value;
+            hidden.setAttribute('data-temp-action', '1');
+            form.appendChild(hidden);
+        }
+
+        form.submit();
+    }
+
+    function resolveConfirmMessage(button) {
+        var explicitMessage = button.getAttribute('data-confirm-message');
+        if (explicitMessage) {
+            return explicitMessage;
+        }
+
+        var template = button.getAttribute('data-confirm-template');
+        if (!template) {
+            return 'Proceed with this action?';
+        }
+
+        var formId = button.getAttribute('form');
+        var form = formId ? document.getElementById(formId) : button.closest('form');
+        var statusField = form ? form.querySelector('select[name="status"]') : null;
+        var statusLabel = statusField && statusField.options[statusField.selectedIndex]
+            ? statusField.options[statusField.selectedIndex].text
+            : 'the selected status';
+
+        return template.replace('{status}', statusLabel);
+    }
+
+    function bindConfirmButtons(root) {
+        var scope = root || document;
+        var buttons = scope.querySelectorAll('button[data-confirm-message], button[data-confirm-template]');
+
+        Array.prototype.forEach.call(buttons, function(button) {
+            if (button.getAttribute('data-confirm-bound') === '1') {
+                return;
+            }
+
+            button.setAttribute('data-confirm-bound', '1');
+            button.addEventListener('click', function(event) {
+                event.preventDefault();
+                var message = resolveConfirmMessage(button);
+
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        title: 'Please Confirm',
+                        text: message,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, continue',
+                        cancelButtonText: 'Cancel'
+                    }).then(function(result) {
+                        if (result.isConfirmed) {
+                            submitButtonAction(button);
+                        }
+                    });
+                    return;
+                }
+
+                if (window.confirm(message)) {
+                    submitButtonAction(button);
+                }
+            });
+        });
+    }
+
+    function densityStorageKey(button, targetSelector) {
+        var key = button.getAttribute('data-density-key');
+        if (key) {
+            return 'wbs_density_' + key;
+        }
+        var path = (window.location && window.location.pathname) ? window.location.pathname : 'global';
+        return 'wbs_density_' + path + '_' + targetSelector;
+    }
+
+    function shouldUseAutoCompact() {
+        if (!window.matchMedia) {
+            return false;
+        }
+        return window.matchMedia('(max-width: 991.98px)').matches;
+    }
+
+    function applyDensityMode(target, mode) {
+        var resolvedMode = mode;
+        if (mode === 'auto') {
+            resolvedMode = shouldUseAutoCompact() ? 'compact' : 'comfortable';
+        }
+
+        if (resolvedMode === 'compact') {
+            target.classList.add('ui-density-compact');
+        } else {
+            target.classList.remove('ui-density-compact');
+        }
+    }
+
+    function updateDensityButtonLabel(button, mode, isCompact) {
+        var labelNode = button.querySelector('.js-density-label');
+        if (!labelNode) {
+            return;
+        }
+
+        var autoEnabled = button.getAttribute('data-density-auto-enabled') === '1';
+        var autoText = button.getAttribute('data-density-auto-text') || 'Auto Mode';
+        var compactText = button.getAttribute('data-density-compact-text') || 'Compact View';
+        var comfyText = button.getAttribute('data-density-comfy-text') || 'Comfortable View';
+
+        if (autoEnabled) {
+            if (mode === 'auto') {
+                labelNode.textContent = autoText;
+            } else if (mode === 'compact') {
+                labelNode.textContent = compactText;
+            } else {
+                labelNode.textContent = comfyText;
+            }
+            return;
+        }
+
+        labelNode.textContent = isCompact ? comfyText : compactText;
+    }
+
+    function applyButtonDensityState(button, target, mode) {
+        button.setAttribute('data-density-current-mode', mode);
+        applyDensityMode(target, mode);
+        updateDensityButtonLabel(button, mode, target.classList.contains('ui-density-compact'));
+    }
+
+    function bindDensityToggles(root) {
+        var scope = root || document;
+        var buttons = scope.querySelectorAll('[data-density-toggle]');
+
+        Array.prototype.forEach.call(buttons, function(button) {
+            if (button.getAttribute('data-density-bound') === '1') {
+                return;
+            }
+
+            var targetSelector = button.getAttribute('data-density-target');
+            if (!targetSelector) {
+                return;
+            }
+            var target = document.querySelector(targetSelector);
+            if (!target) {
+                return;
+            }
+
+            button.setAttribute('data-density-bound', '1');
+            var key = densityStorageKey(button, targetSelector);
+            var autoEnabled = button.getAttribute('data-density-auto-enabled') === '1';
+            var defaultMode = button.getAttribute('data-density-default') || (autoEnabled ? 'auto' : 'comfortable');
+            var saved = '';
+            try {
+                saved = window.localStorage ? (localStorage.getItem(key) || '') : '';
+            } catch (e) {
+                saved = '';
+            }
+
+            var mode = saved;
+            if (mode === '') {
+                mode = defaultMode;
+            }
+            if (!autoEnabled && mode !== 'compact' && mode !== 'comfortable') {
+                mode = 'comfortable';
+            }
+            if (autoEnabled && mode !== 'compact' && mode !== 'comfortable' && mode !== 'auto') {
+                mode = 'auto';
+            }
+
+            applyButtonDensityState(button, target, mode);
+
+            button.addEventListener('click', function() {
+                var currentMode = button.getAttribute('data-density-current-mode') || (autoEnabled ? 'auto' : 'comfortable');
+                var nextMode;
+
+                if (autoEnabled) {
+                    if (currentMode === 'auto') {
+                        nextMode = 'compact';
+                    } else if (currentMode === 'compact') {
+                        nextMode = 'comfortable';
+                    } else {
+                        nextMode = 'auto';
+                    }
+                } else {
+                    nextMode = currentMode === 'compact' ? 'comfortable' : 'compact';
+                }
+
+                applyButtonDensityState(button, target, nextMode);
+                try {
+                    if (window.localStorage) {
+                        localStorage.setItem(key, nextMode);
+                    }
+                } catch (e) {
+                    // Ignore storage errors.
+                }
+            });
+        });
+    }
+
+    function refreshAutoDensityToggles() {
+        var autoButtons = document.querySelectorAll('[data-density-toggle][data-density-auto-enabled="1"]');
+        Array.prototype.forEach.call(autoButtons, function(button) {
+            var mode = button.getAttribute('data-density-current-mode');
+            if (mode !== 'auto') {
+                return;
+            }
+            var targetSelector = button.getAttribute('data-density-target');
+            if (!targetSelector) {
+                return;
+            }
+            var target = document.querySelector(targetSelector);
+            if (!target) {
+                return;
+            }
+            applyButtonDensityState(button, target, 'auto');
+        });
+    }
+
+    window.WbsAdminUi = {
+        mapAlertType: mapAlertType,
+        showFlashToast: showFlashToast,
+        submitButtonAction: submitButtonAction,
+        bindDensityToggles: bindDensityToggles,
+        bindConfirmButtons: bindConfirmButtons,
+        init: function(options) {
+            var config = options || {};
+            bindConfirmButtons(config.root || document);
+            bindDensityToggles(config.root || document);
+            showFlashToast(config.flashMessage || '', config.flashType || 'success');
+        }
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            bindDensityToggles(document);
+            refreshAutoDensityToggles();
+        });
+    } else {
+        bindDensityToggles(document);
+        refreshAutoDensityToggles();
+    }
+
+    if (window.matchMedia) {
+        var mq = window.matchMedia('(max-width: 991.98px)');
+        if (typeof mq.addEventListener === 'function') {
+            mq.addEventListener('change', refreshAutoDensityToggles);
+        } else if (typeof mq.addListener === 'function') {
+            mq.addListener(refreshAutoDensityToggles);
+        }
+    }
+})();

@@ -138,31 +138,54 @@ function sendTwoFactorCode(array $userRow, string $identifier, string $clientIp)
 
     $code = (string)random_int(100000, 999999);
     $appName = getenv('APP_NAME') ?: 'Water Billing System';
-    $messageText = "{$code} is your {$appName} login verification code. It expires in 5 minutes.";
+    // WebOTP binding line — Android Chrome reads this line to auto-fill the code
+    $otpDomain = preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? (getenv('APP_DOMAIN') ?: ''));
+    $otpSuffix = $otpDomain !== '' ? "\n\n@{$otpDomain} #{$code}" : '';
+    $messageText = "{$code} is your {$appName} login verification code. It expires in 5 minutes.{$otpSuffix}";
 
     $sent = false;
     $lastError = '';
+    $attemptedMethods = [];
 
-    if ($method === 'sms') {
-        $sms = new SMS();
-        $result = $sms->send($phone, $messageText);
-        $sent = !empty($result['success']);
-        if (!$sent) {
+    $sendByMethod = function(string $m) use (&$lastError, $phone, $emailAddr, $messageText): bool {
+        if ($m === 'sms') {
+            $sms = new SMS();
+            $result = $sms->send($phone, $messageText);
+            if (!empty($result['success'])) {
+                return true;
+            }
             $lastError = (string)($result['message'] ?? 'SMS send failed');
+            return false;
         }
-    } else {
+
         $email = new Email();
         $result = $email->send($emailAddr, 'Your login verification code', $messageText);
-        $sent = !empty($result['success']);
-        if (!$sent) {
-            $lastError = (string)($result['message'] ?? 'Email send failed');
+        if (!empty($result['success'])) {
+            return true;
+        }
+        $lastError = (string)($result['message'] ?? 'Email send failed');
+        return false;
+    };
+
+    $attemptedMethods[] = $method;
+    $sent = $sendByMethod($method);
+
+    if (!$sent) {
+        $alternate = $method === 'sms' ? 'email' : 'sms';
+        $canAlternate = in_array($alternate, $availableMethods, true);
+        if ($canAlternate) {
+            $attemptedMethods[] = $alternate;
+            if ($sendByMethod($alternate)) {
+                $sent = true;
+                $method = $alternate;
+            }
         }
     }
 
     if (!$sent) {
         return [
             'success' => false,
-            'message' => 'Failed to send verification code: ' . $lastError,
+            'message' => 'Failed to send verification code via ' . implode(' then ', $attemptedMethods) . ': ' . $lastError,
         ];
     }
 
@@ -185,6 +208,7 @@ function sendTwoFactorCode(array $userRow, string $identifier, string $clientIp)
         'success' => true,
         'method' => $method,
         'available_methods' => $availableMethods,
+        'fallback_used' => count($attemptedMethods) > 1,
     ];
 }
 
@@ -204,7 +228,7 @@ try {
 
     // Validate required fields
     if(empty($data->identifier) || empty($data->password)) {
-        throw new Exception("Account number, phone or email and password are required");
+        throw new Exception("Username, account number, phone or email and password are required");
     }
 
     $identifier = (string)$data->identifier;

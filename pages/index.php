@@ -14,6 +14,37 @@ if ($loggedOut) {
 // Load settings for registration fee display inside landing registration modal
 $registrationFee = 0.00;
 $currencyCode = 'KES';
+$isLoggedIn = !empty($_SESSION['user_id']);
+$currentRole = strtolower((string)($_SESSION['user_data']['role'] ?? 'guest'));
+$isAdmin = $currentRole === 'admin';
+$isStaff = in_array($currentRole, ['reader', 'finance', 'support'], true);
+
+$paymentsDrillUrl = ($isAdmin || $isStaff) ? '/admin/payments' : '/pay';
+$paymentsDrillLabel = ($isAdmin || $isStaff) ? 'Click to open' : 'Pay Bill';
+
+$notificationsDrillUrl = ($isAdmin || $isStaff) ? '/admin/messaging' : ($isLoggedIn ? '/dashboard' : '/register');
+$notificationsDrillLabel = ($isAdmin || $isStaff) ? 'Click to open' : ($isLoggedIn ? 'Alerts on Dashboard' : 'Register for Alerts');
+
+$historyDrillUrl = ($isAdmin || $isStaff) ? '/reports' : '/bills';
+$historyDrillLabel = ($isAdmin || $isStaff) ? 'Click to open' : 'Bills & History';
+
+$paymentsDrillDataAttrs = '';
+$notificationsDrillDataAttrs = '';
+$historyDrillDataAttrs = '';
+if (!$isLoggedIn) {
+    // Guests get direct modals for conversion, with href as fallback if JS is unavailable.
+    $paymentsDrillUrl = '/login';
+    $paymentsDrillLabel = 'Login to Pay';
+    $paymentsDrillDataAttrs = ' data-bs-toggle="modal" data-bs-target="#loginModal" data-guest-toast="Please login to pay your bills."';
+
+    $notificationsDrillUrl = '/register';
+    $notificationsDrillLabel = 'Create an Account';
+    $notificationsDrillDataAttrs = ' data-bs-toggle="modal" data-bs-target="#registerModal" data-guest-toast="Create an account to receive bill and payment alerts."';
+
+    $historyDrillUrl = '/login';
+    $historyDrillLabel = 'Login for History';
+    $historyDrillDataAttrs = ' data-bs-toggle="modal" data-bs-target="#loginModal" data-guest-toast="Please login to view usage and payment history."';
+}
 try {
     if (file_exists(__DIR__ . '/../config/database.php')) {
         require_once __DIR__ . '/../config/database.php';
@@ -42,6 +73,22 @@ if ($loggedOut): ?>
         if (window.showToast) {
             showToast('Logged out successfully.','success');
         }
+    });
+    </script>
+<?php endif; ?>
+
+<?php if (!$isLoggedIn): ?>
+    <script>
+    window.addEventListener('DOMContentLoaded', function() {
+        var gatedCards = document.querySelectorAll('.landing-drill-card[data-guest-toast]');
+        gatedCards.forEach(function(card) {
+            card.addEventListener('click', function() {
+                var msg = this.getAttribute('data-guest-toast');
+                if (msg && window.showToast) {
+                    showToast(msg, 'info');
+                }
+            });
+        });
     });
     </script>
 <?php endif; ?>
@@ -180,7 +227,7 @@ if ($loggedOut): ?>
 
         <div class="row g-4">
             <div class="col-md-4">
-                <div class="card h-100 border-0 shadow-sm">
+                <a href="<?php echo htmlspecialchars($paymentsDrillUrl); ?>" class="card h-100 border-0 shadow-sm landing-drill-card text-decoration-none" aria-label="Open payments details"<?php echo $paymentsDrillDataAttrs; ?>>
                     <div class="card-body">
                         <div class="mb-3 text-primary"><i class="bi bi-credit-card-2-front fs-3"></i></div>
                         <h5 class="card-title fw-semibold landing-feature-title color-cycle" style="color:#0ea5e9;">Integrated Payments</h5>
@@ -188,11 +235,12 @@ if ($loggedOut): ?>
                             Customers pay directly via M-Pesa with automatic confirmation, receipting
                             and posting to their accounts.
                         </p>
+                        <p class="small mt-3 mb-0 fw-semibold text-primary"><?php echo htmlspecialchars($paymentsDrillLabel); ?> <i class="bi bi-arrow-right"></i></p>
                     </div>
-                </div>
+                </a>
             </div>
             <div class="col-md-4">
-                <div class="card h-100 border-0 shadow-sm">
+                <a href="<?php echo htmlspecialchars($notificationsDrillUrl); ?>" class="card h-100 border-0 shadow-sm landing-drill-card text-decoration-none" aria-label="Open notifications details"<?php echo $notificationsDrillDataAttrs; ?>>
                     <div class="card-body">
                         <div class="mb-3 text-primary"><i class="bi bi-chat-dots fs-3"></i></div>
                         <h5 class="card-title fw-semibold landing-feature-title color-cycle" style="color:#0ea5e9;">Smart Notifications</h5>
@@ -200,11 +248,12 @@ if ($loggedOut): ?>
                             Bills, payment alerts and OTPs go out instantly over SMS and Email to keep
                             customers informed.
                         </p>
+                        <p class="small mt-3 mb-0 fw-semibold text-primary"><?php echo htmlspecialchars($notificationsDrillLabel); ?> <i class="bi bi-arrow-right"></i></p>
                     </div>
-                </div>
+                </a>
             </div>
             <div class="col-md-4">
-                <div class="card h-100 border-0 shadow-sm">
+                <a href="<?php echo htmlspecialchars($historyDrillUrl); ?>" class="card h-100 border-0 shadow-sm landing-drill-card text-decoration-none" aria-label="Open usage and history details"<?php echo $historyDrillDataAttrs; ?>>
                     <div class="card-body">
                         <div class="mb-3 text-primary"><i class="bi bi-bar-chart-line fs-3"></i></div>
                         <h5 class="card-title fw-semibold landing-feature-title color-cycle" style="color:#0ea5e9;">Usage & History</h5>
@@ -212,8 +261,9 @@ if ($loggedOut): ?>
                             Customers and admins can track consumption, previous bills and payments from
                             a single dashboard.
                         </p>
+                        <p class="small mt-3 mb-0 fw-semibold text-primary"><?php echo htmlspecialchars($historyDrillLabel); ?> <i class="bi bi-arrow-right"></i></p>
                     </div>
-                </div>
+                </a>
             </div>
         </div>
     </div>

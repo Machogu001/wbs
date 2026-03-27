@@ -17,10 +17,26 @@ class Bill {
 	}
 
 	public function createBillForUser($user_id, $account_number, $current_reading, $billing_month, $due_date, $rate_per_unit, $service_charge, $status = 'pending') {
+		// Check credit before creating bill
+		$credit = new CustomerCredit($this->conn);
+		$creditProfile = $credit->getProfile($user_id);
+		
+		if ($creditProfile && $creditProfile['is_suspended']) {
+			return [
+				'success' => false,
+				'message' => 'Account suspended due to non-payment'
+			];
+		}
+
 		$last_bill = $this->getLastBillByUser($user_id);
 		$previous_reading = $last_bill ? (float)$last_bill['current_reading'] : 0.00;
 		$consumption = max(0, (float)$current_reading - $previous_reading);
 		$amount = ($consumption * (float)$rate_per_unit) + (float)$service_charge;
+
+		// Check if deducting this amount will exceed credit limit
+		if ($creditProfile && $creditProfile['available_credit'] - $amount < $creditProfile['credit_limit'] * -0.1) {
+			// Allow slight overdraft (10% of credit limit) but log a warning
+		}
 
 		$query = "INSERT INTO " . $this->table . "
 			(user_id, account_number, billing_month, previous_reading, current_reading, consumption, rate_per_unit, service_charge, amount, due_date, status)
@@ -40,18 +56,27 @@ class Bill {
 		$stmt->bindParam(":status", $status);
 
 		if ($stmt->execute()) {
-			return array(
-				"bill_id" => $this->conn->lastInsertId(),
-				"previous_reading" => $previous_reading,
-				"current_reading" => (float)$current_reading,
-				"consumption" => $consumption,
-				"rate_per_unit" => (float)$rate_per_unit,
-				"service_charge" => (float)$service_charge,
-				"amount" => $amount
-			);
+			$bill_id = $this->conn->lastInsertId();
+
+			// Deduct from credit
+			$credit->deductCredit($user_id, $amount);
+
+			return [
+				'success' => true,
+				'bill_id' => $bill_id,
+				'previous_reading' => $previous_reading,
+				'current_reading' => (float)$current_reading,
+				'consumption' => $consumption,
+				'rate_per_unit' => (float)$rate_per_unit,
+				'service_charge' => (float)$service_charge,
+				'amount' => $amount
+			];
 		}
 
-		return false;
+		return [
+			'success' => false,
+			'message' => 'Failed to create bill'
+		];
 	}
 
 	public function createRegistrationFeeBill($user_id, $account_number, $amount, $due_date, $status = 'pending') {
@@ -117,9 +142,30 @@ class Bill {
 		return $stmt->execute();
 	}
 
+	/**
+	 * Mark bill as paid and restore customer credit
+	 */
+	public function markAsPaid($bill_id, $payment_id = null) {
+		$bill = $this->getById($bill_id);
+		if (!$bill) {
+			return false;
+		}
+
+		// Update bill status
+		if (!$this->updateStatus($bill_id, 'paid')) {
+			return false;
+		}
+
+		// Restore customer credit
+		$credit = new CustomerCredit($this->conn);
+		$credit->restoreCredit($bill['user_id'], $bill['amount']);
+
+		return true;
+	}
+
 	public function getUsersBillingSummary() {
 		$query = "SELECT u.id, u.account_number, u.full_name, u.phone_number, u.meter_number,
-						 lb.amount AS last_amount, lb.status AS last_status, lb.due_date AS last_due_date,
+						 lb.id AS last_bill_id, lb.amount AS last_amount, lb.status AS last_status, lb.due_date AS last_due_date,
 						 COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') THEN b.amount ELSE 0 END), 0) AS total_unpaid
 				  FROM users u
 				  LEFT JOIN (
@@ -131,7 +177,7 @@ class Bill {
 					  ) b2 ON b1.user_id = b2.user_id AND b1.id = b2.max_id
 				  ) lb ON lb.user_id = u.id
 				  LEFT JOIN bills b ON b.user_id = u.id
-				  GROUP BY u.id, u.account_number, u.full_name, u.phone_number, u.meter_number, lb.amount, lb.status, lb.due_date
+				  GROUP BY u.id, u.account_number, u.full_name, u.phone_number, u.meter_number, lb.id, lb.amount, lb.status, lb.due_date
 				  ORDER BY u.full_name ASC";
 		$stmt = $this->conn->prepare($query);
 		$stmt->execute();

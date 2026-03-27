@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 						$totalToPay = $billAmount;
 						$billDate = date('d-m-Y');
 						$account = $user['account_number'];
-						$paybill = MpesaConfig::SHORTCODE;
+						$paybill = MpesaConfig::getShortCode();
 						$payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
 
 						$messageText = "AC: {$account}\n" .
@@ -285,12 +285,13 @@ if (isset($_SESSION['flash_message'])) {
 									<th>Last Status</th>
 									<th>Due Date</th>
 									<th>Total Unpaid (KES)</th>
+									<th>Action</th>
 								</tr>
 							</thead>
 							<tbody>
 								<?php if(empty($clients_summary)): ?>
 									<tr>
-										<td colspan="7" class="text-center text-muted">No clients found.</td>
+										<td colspan="8" class="text-center text-muted">No clients found.</td>
 									</tr>
 								<?php else: ?>
 									<?php foreach($clients_summary as $client): ?>
@@ -312,6 +313,23 @@ if (isset($_SESSION['flash_message'])) {
 												<?php echo $client['last_due_date'] ? htmlspecialchars(date('d-m-Y', strtotime($client['last_due_date']))) : 'N/A'; ?>
 											</td>
 											<td><?php echo number_format($client['total_unpaid'], 2); ?></td>
+											<td>
+												<?php if (!empty($client['last_bill_id']) && (int)$client['last_bill_id'] > 0): ?>
+													<?php $clientPayUrl = PaymentLink::generateLink((int)$client['last_bill_id']); ?>
+													<div class="d-flex gap-2 flex-wrap">
+														<button type="button"
+															class="btn btn-sm btn-outline-primary js-copy-pay-link"
+															data-pay-url="<?php echo htmlspecialchars($clientPayUrl, ENT_QUOTES, 'UTF-8'); ?>">
+															<i class="bi bi-link-45deg me-1"></i>Copy Link
+														</button>
+														<a href="<?php echo htmlspecialchars($clientPayUrl); ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+															<i class="bi bi-box-arrow-up-right me-1"></i>Open
+														</a>
+													</div>
+												<?php else: ?>
+													<span class="text-muted small">—</span>
+												<?php endif; ?>
+											</td>
 										</tr>
 									<?php endforeach; ?>
 								<?php endif; ?>
@@ -371,6 +389,55 @@ if (isset($_SESSION['flash_message'])) {
 				} else if (val === 'unpaid') {
 					row.style.display = unpaid ? '' : 'none';
 				}
+			});
+		});
+	}
+
+	const copyButtons = document.querySelectorAll('.js-copy-pay-link');
+	if (copyButtons.length) {
+		const copyText = function(text) {
+			if (navigator.clipboard && window.isSecureContext) {
+				return navigator.clipboard.writeText(text);
+			}
+
+			return new Promise(function(resolve, reject) {
+				try {
+					const tmp = document.createElement('textarea');
+					tmp.value = text;
+					tmp.setAttribute('readonly', '');
+					tmp.style.position = 'absolute';
+					tmp.style.left = '-9999px';
+					document.body.appendChild(tmp);
+					tmp.select();
+					const ok = document.execCommand('copy');
+					document.body.removeChild(tmp);
+					if (ok) {
+						resolve();
+					} else {
+						reject(new Error('copy command failed'));
+					}
+				} catch (err) {
+					reject(err);
+				}
+			});
+		};
+
+		copyButtons.forEach(btn => {
+			btn.addEventListener('click', function() {
+				const url = this.getAttribute('data-pay-url');
+				if (!url) return;
+
+				copyText(url)
+					.then(() => {
+						if (window.showToast) {
+							showToast('Payment link copied to clipboard.', 'success');
+						}
+					})
+					.catch(() => {
+						if (window.showToast) {
+							showToast('Unable to copy link automatically. Please use Open and copy from the browser address bar.', 'warning');
+						}
+					});
 			});
 		});
 	}

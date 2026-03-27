@@ -10,11 +10,11 @@ class Mpesa {
     private $baseUrl;
     
     public function __construct() {
-        $this->consumerKey = MpesaConfig::CONSUMER_KEY;
-        $this->consumerSecret = MpesaConfig::CONSUMER_SECRET;
-        $this->shortCode = MpesaConfig::SHORTCODE;
-        $this->passKey = MpesaConfig::PASSKEY;
-        $this->callbackUrl = MpesaConfig::CALLBACK_URL;
+        $this->consumerKey = MpesaConfig::getConsumerKey();
+        $this->consumerSecret = MpesaConfig::getConsumerSecret();
+        $this->shortCode = MpesaConfig::getShortCode();
+        $this->passKey = MpesaConfig::getPassKey();
+        $this->callbackUrl = MpesaConfig::getCallbackUrl();
         $this->baseUrl = MpesaConfig::getBaseUrl();
     }
     

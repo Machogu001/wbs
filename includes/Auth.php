@@ -150,6 +150,7 @@ class Auth {
             'finance' => [
                 'view_payments',
                 'view_reports',
+                'manage_settings',
             ],
             'support' => [
                 'handle_complaints',

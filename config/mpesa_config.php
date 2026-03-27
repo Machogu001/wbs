@@ -1,32 +1,47 @@
 <?php
-class MpesaConfig {
-    // Sandbox credentials (Change these for production)
-    const CONSUMER_KEY = "qJZQH7y0Rkr5ZB2BGPtiREqsadATxNxcYTXauGfEApJqZ4ub";
-    const CONSUMER_SECRET = "YOIx5GrupnXjJPs4Bmdzy5A6XI7SAO2gqPrwo4oJ3ieCA9bfGyf8aHLEr6t73HjZ";
-    const SHORTCODE = "4166503"; // Production shortcode
-    const PASSKEY = "759a508b982bd9c4b11f2120a204000f1a8db4858e023c8a4ceda8dc5e1e8869";
-    // M-Pesa STK callback endpoint in this app
-    // This should point to api/payments/payment_callback.php (pretty URL without .php)
-    const CALLBACK_URL = "https://wbs.bremac.co.ke/api/payments/payment_callback";
-    
-    // URLs
-    // Sandbox URL (kept for testing, not used when in production)
-    const BASE_URL_SANDBOX = "https://sandbox.safaricom.co.ke";
-    // Production Daraja URL
-    const BASE_URL_PRODUCTION = "https://api.safaricom.co.ke";
-    
-    // System Configuration
-    const SYSTEM_NAME = "Water Billing System";
-    const CURRENCY = "KES";
+require_once __DIR__ . '/sms_config.php';
 
-    // Secret used to sign one-click payment links sent via SMS.
-    // Change this to a long random string in production and keep it private.
-    const PAYMENT_LINK_SECRET = "change_this_payment_link_secret_please";
-    
-    // Determine if in production mode
+class MpesaConfig {
+    const BASE_URL_SANDBOX = 'https://sandbox.safaricom.co.ke';
+    const BASE_URL_PRODUCTION = 'https://api.safaricom.co.ke';
+
+    private static function env(string $key, string $default = ''): string {
+        $value = getenv($key);
+        return ($value !== false && $value !== null && $value !== '') ? trim((string)$value) : $default;
+    }
+
+    public static function getConsumerKey(): string {
+        return self::env('MPESA_CONSUMER_KEY');
+    }
+
+    public static function getConsumerSecret(): string {
+        return self::env('MPESA_CONSUMER_SECRET');
+    }
+
+    public static function getShortCode(): string {
+        // Backward compatibility: support legacy MPESA_SHORT_CODE key as fallback.
+        $shortcode = self::env('MPESA_SHORTCODE');
+        if ($shortcode !== '') {
+            return $shortcode;
+        }
+        return self::env('MPESA_SHORT_CODE');
+    }
+
+    public static function getPassKey(): string {
+        return self::env('MPESA_PASSKEY');
+    }
+
+    public static function getCallbackUrl(): string {
+        return self::env('MPESA_CALLBACK_URL', 'https://wbs.bremac.co.ke/api/payments/payment_callback');
+    }
+
+    public static function getPaymentLinkSecret(): string {
+        return self::env('PAYMENT_LINK_SECRET', 'change_this_payment_link_secret_please');
+    }
+
     public static function isProduction() {
-        // Using live shortcode and callback; run against production Daraja
-        return true;
+        $mode = strtolower(self::env('MPESA_ENV', 'sandbox'));
+        return in_array($mode, ['production', 'prod', 'live'], true);
     }
     
     public static function getBaseUrl() {
