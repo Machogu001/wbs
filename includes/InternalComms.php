@@ -8,7 +8,7 @@ class InternalComms
     private $broadcastsTable = 'admin_broadcasts';
     private $chatTable = 'internal_chat_messages';
     private $templatesTable = 'sms_message_templates';
-    private const DIRECT_SEND_LIMIT = 10;
+    private const DIRECT_SEND_LIMIT = 25;
 
     public function __construct($db)
     {
@@ -244,6 +244,14 @@ class InternalComms
 
             $sentPhones[$phone] = true;
             $count++;
+        }
+
+        if (!$sendImmediately && $queuedCount > 0) {
+            try {
+                $sms->processPendingQueue(min(max($queuedCount, 50), 250));
+            } catch (\Throwable $e) {
+                // Keep broadcast completion non-blocking even if accelerated queue processing fails.
+            }
         }
 
         try {

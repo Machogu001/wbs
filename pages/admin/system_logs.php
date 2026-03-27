@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../config/database.php';
 
 $database = new Database();
 $db = $database->getConnection();
+$smsQueue = new SMSQueue($db);
 
 $auth = new Auth($db);
 if (!$auth->isLoggedIn() || !$auth->isAdmin()) {
@@ -203,8 +204,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $errorLog = new ErrorLog($db);
-$smsQueue = new SMSQueue($db);
-
 // Self-heal critical monitoring tables for environments with partial migrations.
 ErrorLog::ensureTable($db);
 SMSQueue::ensureTable($db);

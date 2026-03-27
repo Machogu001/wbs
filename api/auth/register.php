@@ -115,6 +115,7 @@ try {
     $settingsService = new BillingSettings($db);
     $settings = $settingsService->getSettings();
     $registrationFee = isset($settings['registration_fee']) ? (float)$settings['registration_fee'] : 0.00;
+    $enforceLocationAccuracy = !empty($settings['enforce_location_accuracy']);
 
     // -------------------------------------------------------------
     // STAFF REGISTRATION: no meter number, no registration fee flow.
@@ -208,6 +209,30 @@ try {
         }
     }
 
+    // Enforce GPS accuracy BEFORE any account is created or STK push is sent
+    if ($enforceLocationAccuracy) {
+        $submittedAccuracy = isset($data->gps_accuracy) && $data->gps_accuracy !== '' ? (float)$data->gps_accuracy : null;
+        $hasLat = isset($data->latitude) && $data->latitude !== '';
+        $hasLng = isset($data->longitude) && $data->longitude !== '';
+        $locationLabel = isset($data->location_label) ? trim((string)$data->location_label) : '';
+        if ($locationLabel === '') {
+            http_response_code(422);
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'Location is required when GPS enforcement is enabled.'
+            ]);
+            exit;
+        }
+        if (!$hasLat || !$hasLng || $submittedAccuracy === null || $submittedAccuracy > 14) {
+            http_response_code(422);
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'GPS location with accuracy ≤14m is required. Please use the "Use my current GPS location" button outdoors and try again.'
+            ]);
+            exit;
+        }
+    }
+
     $accountNumber = nextAccountNumber($db, 'MTR');
 
     $user->account_number = $accountNumber;
@@ -221,12 +246,17 @@ try {
     $user->meter_number = $accountNumber;
     $user->connection_type = isset($data->connection_type) ? (string)$data->connection_type : 'domestic';
     $user->location_label = isset($data->location_label) ? trim((string)$data->location_label) : null;
+    $clientLatitude = null;
+    $clientLongitude = null;
     if (isset($data->latitude) && $data->latitude !== '') {
-        $user->latitude = (float)$data->latitude;
+        $clientLatitude = (float)$data->latitude;
+        $user->latitude = $clientLatitude;
     }
     if (isset($data->longitude) && $data->longitude !== '') {
-        $user->longitude = (float)$data->longitude;
+        $clientLongitude = (float)$data->longitude;
+        $user->longitude = $clientLongitude;
     }
+
     $user->password = $password;
     $user->role = 'customer';
 

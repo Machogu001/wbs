@@ -22,6 +22,32 @@ $count_unpaid = 0;
 $count_overdue = 0;
 $next_due_date = null;
 $filter = isset($_GET['filter']) ? $_GET['filter'] : 'all';
+$fromPeriod = isset($_GET['from']) ? trim((string)$_GET['from']) : '';
+$toPeriod = isset($_GET['to']) ? trim((string)$_GET['to']) : '';
+
+if (!preg_match('/^\d{4}-\d{2}$/', $fromPeriod)) {
+	$fromPeriod = '';
+}
+if (!preg_match('/^\d{4}-\d{2}$/', $toPeriod)) {
+	$toPeriod = '';
+}
+
+$fromDate = $fromPeriod !== '' ? ($fromPeriod . '-01') : null;
+$toDate = $toPeriod !== '' ? date('Y-m-t', strtotime($toPeriod . '-01')) : null;
+
+$billWithinPeriod = function(array $billRow) use ($fromDate, $toDate): bool {
+	$month = isset($billRow['billing_month']) ? date('Y-m-01', strtotime((string)$billRow['billing_month'])) : null;
+	if (!$month) {
+		return false;
+	}
+	if ($fromDate !== null && $month < $fromDate) {
+		return false;
+	}
+	if ($toDate !== null && $month > $toDate) {
+		return false;
+	}
+	return true;
+};
 
 // Optional: export this customer's bills as CSV
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
@@ -31,6 +57,9 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 	}
 	$billService = new Bill($db);
 	$billsCsv = $billService->getBillsByUser($_SESSION['user_id']);
+	if ($fromDate !== null || $toDate !== null) {
+		$billsCsv = array_values(array_filter($billsCsv, $billWithinPeriod));
+	}
 	header('Content-Type: text/csv; charset=utf-8');
 	$filename = 'my_bills_' . date('Ymd') . '.csv';
 	header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -138,13 +167,27 @@ if ($db) {
 						<p class="mb-0 small text-muted">You have no pending or overdue bills.</p>
 					<?php endif; ?>
 				</div>
-				<div class="card-footer bg-transparent border-0 pt-0 d-flex justify-content-between flex-wrap gap-2">
-					<a href="/statement" class="btn btn-sm btn-outline-primary">
-						<i class="bi bi-file-earmark-pdf"></i> Statement PDF
-					</a>
-					<a href="/bills?export=csv" class="btn btn-sm btn-outline-secondary">
-						<i class="bi bi-download"></i> Bills CSV
-					</a>
+				<div class="card-footer bg-transparent border-0 pt-0">
+					<form method="GET" action="/statement" class="row g-2 align-items-end">
+						<div class="col-6">
+							<label class="form-label small mb-1">From</label>
+							<input type="month" name="from" class="form-control form-control-sm" value="<?php echo htmlspecialchars($fromPeriod); ?>">
+						</div>
+						<div class="col-6">
+							<label class="form-label small mb-1">To</label>
+							<input type="month" name="to" class="form-control form-control-sm" value="<?php echo htmlspecialchars($toPeriod); ?>">
+						</div>
+						<div class="col-6 d-grid">
+							<button type="submit" class="btn btn-sm btn-outline-primary">
+								<i class="bi bi-file-earmark-pdf"></i> Statement PDF
+							</button>
+						</div>
+						<div class="col-6 d-grid">
+							<button type="submit" formaction="/bills" name="export" value="csv" class="btn btn-sm btn-outline-secondary">
+								<i class="bi bi-download"></i> Bills CSV
+							</button>
+						</div>
+					</form>
 				</div>
 			</div>
 		</div>

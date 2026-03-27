@@ -93,7 +93,7 @@ try {
                 $stmtActivate->execute();
             }
 
-            $sms = new SMS();
+            $sms = new SMS($db);
 
             // Try to get account number from latest bill data
             $billRow = $bill->getById($paymentData['bill_id']);
@@ -125,8 +125,8 @@ try {
                     $companyName;
             }
 
-            // Queue SMS instead of sending synchronously
-            $sms->queue($user['phone_number'], $messageText, 'payment_confirmation');
+            // For payment events, attempt immediate delivery and only queue on failure.
+            $sms->sendWithFallback($user['phone_number'], $messageText, 'payment_confirmation');
 
             // Also send an email if the user has an email address
             if (!empty($user['email'])) {
@@ -179,7 +179,7 @@ try {
         $user = $userService->getById($paymentData['user_id']);
         if ($user) {
             $isRegistrationPayment = !empty($paymentData['registration_id']);
-            $sms = new SMS();
+            $sms = new SMS($db);
 
             // Try to get account number from latest bill data
             $billRow = $bill->getById($paymentData['bill_id']);
@@ -213,8 +213,8 @@ try {
                     $companyName;
             }
 
-            // Queue SMS for delayed delivery
-            $sms->queue($user['phone_number'], $messageText, 'payment_failure');
+            // For payment events, attempt immediate delivery and only queue on failure.
+            $sms->sendWithFallback($user['phone_number'], $messageText, 'payment_failure');
 
             // Also send an email if the user has an email address
             if (!empty($user['email'])) {

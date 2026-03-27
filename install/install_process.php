@@ -114,6 +114,7 @@ try {
         rate_per_unit DECIMAL(10,2) NOT NULL DEFAULT 50.00,
         service_charge DECIMAL(10,2) NOT NULL DEFAULT 0.00,
         registration_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        enforce_location_accuracy TINYINT(1) NOT NULL DEFAULT 0,
         company_pin VARCHAR(60) NULL,
         company_name VARCHAR(255) DEFAULT 'Water Billing System',
         support_phone VARCHAR(50) DEFAULT '254724400202',
@@ -548,10 +549,10 @@ try {
     if (!$settingsCount || (int)$settingsCount['count'] === 0) {
         $stmtSettings = $conn->prepare(
             "INSERT INTO billing_settings
-             (id, rate_per_unit, service_charge, registration_fee, company_name, support_phone,
+             (id, rate_per_unit, service_charge, registration_fee, enforce_location_accuracy, company_name, support_phone,
               support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate,
               company_pin, etims_integration_url, etims_api_key, etims_taxation_type_code)
-             VALUES (1, 50.00, 0.00, 0.00, :company_name, :support_phone,
+             VALUES (1, 50.00, 0.00, 0.00, 0, :company_name, :support_phone,
                      :support_email, 'KES', :locale_code, :timezone_name, 1, 0.00, NULL, NULL, NULL, NULL)"
         );
         $stmtSettings->execute([
@@ -692,6 +693,11 @@ class Database {
                     <div class="alert alert-success">
                         <h4>' . htmlspecialchars($company_name) . ' installed successfully!</h4>
                     </div>
+                    <h5>Initial System Settings:</h5>
+                    <ul>
+                        <li><strong>Registration Fee:</strong> KES 0.00</li>
+                        <li><strong>GPS Enforcement:</strong> <span class="badge bg-secondary">Off</span> <span class="text-muted">(can be enabled later in Settings)</span></li>
+                    </ul>
                     <h5>Admin Credentials:</h5>
                     <ul>
                         <li><strong>Name:</strong> ' . htmlspecialchars($admin_name) . '</li>

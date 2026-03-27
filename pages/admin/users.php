@@ -975,6 +975,16 @@ function initAdminCustomerLocationMap() {
 	// Geolocation button
 	if (btn) {
 		btn.addEventListener('click', function() {
+			if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+				var insecureMsg = 'GPS detection requires HTTPS. Open this page using https:// and try again, or pin location manually on the map.';
+				if (window.showToast) {
+					showToast(insecureMsg, 'danger');
+				} else {
+					alert(insecureMsg);
+				}
+				return;
+			}
+
 			if (!navigator.geolocation) {
 				var msg = 'Geolocation is not supported by this browser.';
 				if (window.showToast) {
@@ -986,28 +996,122 @@ function initAdminCustomerLocationMap() {
 			}
 			btn.disabled = true;
 			btn.textContent = 'Detecting location...';
-			navigator.geolocation.getCurrentPosition(function(position) {
-				var lat = position.coords.latitude;
-				var lng = position.coords.longitude;
-				map.setCenter({ lat: lat, lng: lng });
-				map.setZoom(16);
-				ensureMarker(lat, lng);
+
+			var bestPosition = null;
+			var finished = false;
+			var watchId = null;
+			var finishTimer = null;
+
+			function resetButton() {
 				btn.disabled = false;
 				btn.innerHTML = '<i class="bi bi-geo-alt"></i> Use my current GPS location';
-			}, function() {
+			}
+
+			function finishWithPosition(position) {
+				if (finished) return;
+				finished = true;
+				if (watchId !== null) {
+					navigator.geolocation.clearWatch(watchId);
+				}
+				if (finishTimer) {
+					clearTimeout(finishTimer);
+				}
+
+				var lat = position.coords.latitude;
+				var lng = position.coords.longitude;
+				var accuracy = typeof position.coords.accuracy === 'number' ? position.coords.accuracy : 999999;
+
+				if (accuracy > 5000) {
+					var isLikelyMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+					if (isLikelyMobile) {
+						if (window.showToast) {
+							showToast('Detected location is too coarse (~' + Math.round(accuracy) + 'm). Enable precise location/GPS on your phone and try again, or pin manually on the map.', 'danger');
+						}
+						resetButton();
+						return;
+					}
+
+					// Desktop/laptop fallback: allow approximate location and let admin refine pin manually.
+					if (window.showToast) {
+						showToast('Using approximate location (~' + Math.round(accuracy) + 'm). Please drag the pin to the exact spot if needed.', 'warning');
+					}
+				}
+
+				map.setCenter({ lat: lat, lng: lng });
+				map.setZoom(18);
+				ensureMarker(lat, lng);
+
+				if (window.showToast) {
+					if (accuracy > 100) {
+						showToast('Location detected, but accuracy is low (~' + Math.round(accuracy) + 'm). Move to open sky and tap again for a better fix.', 'warning');
+					} else {
+						showToast('Location detected (accuracy ~' + Math.round(accuracy) + 'm).', 'success');
+					}
+				}
+
+				resetButton();
+			}
+
+			function finishWithError(error) {
+				if (finished) return;
+				finished = true;
+				if (watchId !== null) {
+					navigator.geolocation.clearWatch(watchId);
+				}
+				if (finishTimer) {
+					clearTimeout(finishTimer);
+				}
+
 				var msg = 'Unable to get location. Please allow location access in your browser.';
+				if (error && typeof error.code !== 'undefined') {
+					if (error.code === 1) {
+						msg = 'Location access was denied. Allow location permission in your browser, then try again.';
+					} else if (error.code === 2) {
+						msg = 'Location is currently unavailable. Please check GPS/network and try again, or place the pin manually.';
+					} else if (error.code === 3) {
+						msg = 'Location request timed out. Move to an area with better signal and try again.';
+					}
+				}
 				if (window.showToast) {
 					showToast(msg, 'danger');
 				} else {
 					alert(msg);
 				}
-				btn.disabled = false;
-				btn.innerHTML = '<i class="bi bi-geo-alt"></i> Use my current GPS location';
+				resetButton();
+			}
+
+			watchId = navigator.geolocation.watchPosition(function(position) {
+				if (!bestPosition) {
+					bestPosition = position;
+				} else {
+					var oldAcc = typeof bestPosition.coords.accuracy === 'number' ? bestPosition.coords.accuracy : 999999;
+					var newAcc = typeof position.coords.accuracy === 'number' ? position.coords.accuracy : 999999;
+					if (newAcc < oldAcc) {
+						bestPosition = position;
+					}
+				}
+
+				var currentAcc = typeof position.coords.accuracy === 'number' ? position.coords.accuracy : 999999;
+				if (currentAcc <= 60) {
+					finishWithPosition(position);
+				}
+			}, function(error) {
+				if (error && error.code === 1) {
+					finishWithError(error);
+				}
 			}, {
 				enableHighAccuracy: true,
 				timeout: 10000,
 				maximumAge: 0
 			});
+
+			finishTimer = setTimeout(function() {
+				if (bestPosition) {
+					finishWithPosition(bestPosition);
+				} else {
+					finishWithError({ code: 3 });
+				}
+			}, 12000);
 		});
 	}
 
@@ -1230,6 +1334,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
 	if (btn) {
 		btn.addEventListener('click', function() {
+			if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+				var insecureMsg = 'GPS detection requires HTTPS. Open this page using https:// and try again, or pin location manually on the map.';
+				if (window.showToast) {
+					showToast(insecureMsg, 'danger');
+				} else {
+					alert(insecureMsg);
+				}
+				return;
+			}
+
 			if (!navigator.geolocation) {
 				var msg = 'Geolocation is not supported by this browser.';
 				if (window.showToast) {
@@ -1241,31 +1355,125 @@ document.addEventListener('DOMContentLoaded', function() {
 			}
 			btn.disabled = true;
 			btn.textContent = 'Detecting location...';
-			navigator.geolocation.getCurrentPosition(function(position) {
+
+			var bestPosition = null;
+			var finished = false;
+			var watchId = null;
+			var finishTimer = null;
+
+			function resetButton() {
+				btn.disabled = false;
+				btn.innerHTML = '<i class="bi bi-geo-alt"></i> Use my current GPS location';
+			}
+
+			function finishWithPosition(position) {
+				if (finished) return;
+				finished = true;
+				if (watchId !== null) {
+					navigator.geolocation.clearWatch(watchId);
+				}
+				if (finishTimer) {
+					clearTimeout(finishTimer);
+				}
+
 				var lat = position.coords.latitude;
 				var lng = position.coords.longitude;
+				var accuracy = typeof position.coords.accuracy === 'number' ? position.coords.accuracy : 999999;
+
+				if (accuracy > 5000) {
+					var isLikelyMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+					if (isLikelyMobile) {
+						if (window.showToast) {
+							showToast('Detected location is too coarse (~' + Math.round(accuracy) + 'm). Enable precise location/GPS on your phone and try again, or pin manually on the map.', 'danger');
+						}
+						resetButton();
+						return;
+					}
+
+					// Desktop/laptop fallback: allow approximate location and let admin refine pin manually.
+					if (window.showToast) {
+						showToast('Using approximate location (~' + Math.round(accuracy) + 'm). Please drag the pin to the exact spot if needed.', 'warning');
+					}
+				}
+
 				if (map) {
-					map.setView([lat, lng], 16);
+					map.setView([lat, lng], 18);
 					ensureMarker(lat, lng);
 				} else {
 					updateInputsFromLatLng(lat, lng);
 				}
-				btn.disabled = false;
-				btn.innerHTML = '<i class="bi bi-geo-alt"></i> Use my current GPS location';
-			}, function(error) {
+
+				if (window.showToast) {
+					if (accuracy > 100) {
+						showToast('Location detected, but accuracy is low (~' + Math.round(accuracy) + 'm). Move to open sky and tap again for a better fix.', 'warning');
+					} else {
+						showToast('Location detected (accuracy ~' + Math.round(accuracy) + 'm).', 'success');
+					}
+				}
+
+				resetButton();
+			}
+
+			function finishWithError(error) {
+				if (finished) return;
+				finished = true;
+				if (watchId !== null) {
+					navigator.geolocation.clearWatch(watchId);
+				}
+				if (finishTimer) {
+					clearTimeout(finishTimer);
+				}
+
 				var msg = 'Unable to get location. Please allow location access in your browser.';
+				if (error && typeof error.code !== 'undefined') {
+					if (error.code === 1) {
+						msg = 'Location access was denied. Allow location permission in your browser, then try again.';
+					} else if (error.code === 2) {
+						msg = 'Location is currently unavailable. Please check GPS/network and try again, or place the pin manually.';
+					} else if (error.code === 3) {
+						msg = 'Location request timed out. Move to an area with better signal and try again.';
+					}
+				}
 				if (window.showToast) {
 					showToast(msg, 'danger');
 				} else {
 					alert(msg);
 				}
-				btn.disabled = false;
-				btn.innerHTML = '<i class="bi bi-geo-alt"></i> Use my current GPS location';
+				resetButton();
+			}
+
+			watchId = navigator.geolocation.watchPosition(function(position) {
+				if (!bestPosition) {
+					bestPosition = position;
+				} else {
+					var oldAcc = typeof bestPosition.coords.accuracy === 'number' ? bestPosition.coords.accuracy : 999999;
+					var newAcc = typeof position.coords.accuracy === 'number' ? position.coords.accuracy : 999999;
+					if (newAcc < oldAcc) {
+						bestPosition = position;
+					}
+				}
+
+				var currentAcc = typeof position.coords.accuracy === 'number' ? position.coords.accuracy : 999999;
+				if (currentAcc <= 60) {
+					finishWithPosition(position);
+				}
+			}, function(error) {
+				if (error && error.code === 1) {
+					finishWithError(error);
+				}
 			}, {
 				enableHighAccuracy: true,
 				timeout: 10000,
 				maximumAge: 0
 			});
+
+			finishTimer = setTimeout(function() {
+				if (bestPosition) {
+					finishWithPosition(bestPosition);
+				} else {
+					finishWithError({ code: 3 });
+				}
+			}, 12000);
 		});
 	}
 

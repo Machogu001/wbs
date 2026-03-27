@@ -6,6 +6,7 @@
     $footerSupportEmail = 'support@bremac.co.ke';
     $footerRegistrationFee = 0.00;
     $footerCurrencyCode = 'KES';
+    $footerEnforceLocationAccuracy = 0;
     $footerCountryCodeOptions = [
         '254' => 'Kenya (+254)',
         '256' => 'Uganda (+256)',
@@ -35,6 +36,9 @@
                     }
                     if (!empty($footerSettings['currency_code'])) {
                         $footerCurrencyCode = $footerSettings['currency_code'];
+                    }
+                    if (!empty($footerSettings['enforce_location_accuracy'])) {
+                        $footerEnforceLocationAccuracy = 1;
                     }
 
                     $countryDialCodeService = new CountryDialCode($dbFooter);
@@ -260,9 +264,19 @@
                                 <div class="invalid-feedback">Please enter your address.</div>
                             </div>
                             <div class="col-12 landing-client-only-field">
-                                <label for="landing_location_label" class="form-label">Location (optional)</label>
+                                <label for="landing_location_label" class="form-label" id="landing_location_label_label">Location (optional)</label>
                                 <input type="text" class="form-control location-autocomplete" id="landing_location_label" placeholder="e.g. P5PP+CJ, Nguluni" autocomplete="off">
-                                <div class="form-text">Optional short location such as Plus Code or estate name (e.g. "P5PP+CJ, Nguluni").</div>
+                                <div class="invalid-feedback">Please enter your location.</div>
+                                <div class="form-text" id="landing_location_label_help">Optional short location such as Plus Code or estate name (e.g. "P5PP+CJ, Nguluni").</div>
+                                <div class="mt-2">
+                                    <button type="button" class="btn btn-outline-primary btn-sm" id="landingUseGpsBtn">
+                                        <i class="bi bi-geo-alt"></i> Use my current GPS location
+                                    </button>
+                                </div>
+                                <input type="hidden" id="landing_latitude">
+                                <input type="hidden" id="landing_longitude">
+                                <input type="hidden" id="landing_gps_accuracy" value="">
+                                <div id="landing_gps_accuracy_feedback" class="form-text d-none"></div>
                             </div>
                             <div class="col-md-6 landing-client-only-field">
                                 <label for="landing_connection_type" class="form-label">Connection Type *</label>
@@ -708,6 +722,7 @@
     <?php endif; ?>
     <script>
         window.CURRENT_USER_ID = <?php echo isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 'null'; ?>;
+        window.ENFORCE_LOCATION_ACCURACY = <?php echo (int)$footerEnforceLocationAccuracy; ?>;
     </script>
     <?php $scriptVersion = @filemtime(__DIR__ . '/../public/js/script.js') ?: time(); ?>
     <script src="/public/js/script.js?v=<?php echo (int)$scriptVersion; ?>"></script>
@@ -1047,15 +1062,24 @@
         function toggleLandingRegistrationModeUI() {
             var isClient = isLandingClientRegistration();
             var isStaff = isLandingStaffRegistration();
+            var enforceLocation = !!window.ENFORCE_LOCATION_ACCURACY;
             $('.landing-client-only-field').toggleClass('d-none', !isClient);
             $('.landing-staff-only-field').toggleClass('d-none', !isStaff);
 
             $('#landing_email, #landing_id_number, #landing_address, #landing_connection_type, #landing_register_password, #landing_confirm_password')
                 .prop('required', isClient);
+            $('#landing_location_label').prop('required', isClient && enforceLocation);
             $('#landing_username').prop('required', isStaff);
 
+            $('#landing_location_label_label').text(enforceLocation ? 'Location *' : 'Location (optional)');
+            $('#landing_location_label_help').text(
+                enforceLocation
+                    ? 'Required short location such as Plus Code or estate name (e.g. "P5PP+CJ, Nguluni").'
+                    : 'Optional short location such as Plus Code or estate name (e.g. "P5PP+CJ, Nguluni").'
+            );
+
             if (!isClient) {
-                $('#landing_email, #landing_id_number, #landing_address, #landing_connection_type, #landing_register_password, #landing_confirm_password')
+                $('#landing_email, #landing_id_number, #landing_address, #landing_location_label, #landing_connection_type, #landing_register_password, #landing_confirm_password')
                     .removeClass('is-invalid');
                 $('#landing_register_password, #landing_confirm_password').val('');
             }
@@ -1064,7 +1088,14 @@
             }
         }
 
+        function clearLandingLocationInvalidState() {
+            if ($.trim($('#landing_location_label').val()) !== '') {
+                $('#landing_location_label').removeClass('is-invalid');
+            }
+        }
+
         $('#landing_registration_type').on('change', toggleLandingRegistrationModeUI);
+        $('#landing_location_label').on('input change', clearLandingLocationInvalidState);
         toggleLandingRegistrationModeUI();
 
         function handleLandingPostLoginSuccess(response) {
@@ -1399,6 +1430,104 @@
             return code + local;
         }
 
+        function detectLandingCurrentLocation() {
+            var $btn = $('#landingUseGpsBtn');
+
+            if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+                if (window.showToast) {
+                    showToast('GPS detection requires HTTPS. Open this page using https:// and try again.', 'danger');
+                }
+                return;
+            }
+
+            if (!navigator.geolocation) {
+                if (window.showToast) {
+                    showToast('Geolocation is not supported by this browser.', 'danger');
+                }
+                return;
+            }
+
+            $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Detecting...');
+
+            navigator.geolocation.getCurrentPosition(function(position) {
+                var lat = position.coords.latitude;
+                var lng = position.coords.longitude;
+                var accuracy = typeof position.coords.accuracy === 'number' ? position.coords.accuracy : 999999;
+
+                $('#landing_latitude').val(lat.toFixed(7));
+                $('#landing_longitude').val(lng.toFixed(7));
+                $('#landing_gps_accuracy').val(accuracy);
+                var feedbackDiv = document.getElementById('landing_gps_accuracy_feedback');
+                if (feedbackDiv) {
+                    feedbackDiv.classList.remove('d-none', 'text-success', 'text-warning', 'text-danger');
+                    if (accuracy <= 14) {
+                        feedbackDiv.textContent = 'GPS accuracy: ~' + Math.round(accuracy) + 'm ✓ Good';
+                        feedbackDiv.classList.add('text-success');
+                    } else {
+                        feedbackDiv.textContent = 'GPS accuracy: ~' + Math.round(accuracy) + 'm — move outside for better signal, then retry.';
+                        feedbackDiv.classList.add('text-warning');
+                    }
+                }
+
+                if (accuracy <= 14) {
+                    if (window.showToast) {
+                        showToast('GPS captured (accuracy ~' + Math.round(accuracy) + 'm).', 'success');
+                    }
+                } else if (accuracy <= 100) {
+                    if (window.showToast) {
+                        showToast('GPS captured (accuracy ~' + Math.round(accuracy) + 'm). Move outside for better accuracy.', 'warning');
+                    }
+                } else {
+                    if (window.showToast) {
+                        showToast('GPS captured but accuracy is very low (~' + Math.round(accuracy) + 'm). You may edit location manually.', 'warning');
+                    }
+                }
+
+                // Light reverse-geocode hint for location label if empty
+                if (!$('#landing_location_label').val()) {
+                    var url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng);
+                    fetch(url, { headers: { 'Accept-Language': 'en' } })
+                        .then(function(resp) { return resp.json(); })
+                        .then(function(data) {
+                            if (!data) return;
+                            var label = (data.address && (data.address.suburb || data.address.neighbourhood || data.address.village || data.address.town || data.address.city)) || data.display_name || '';
+                            if (label) {
+                                $('#landing_location_label').val(String(label).slice(0, 120));
+                                clearLandingLocationInvalidState();
+                            }
+                        })
+                        .catch(function() {
+                            // Ignore reverse-geocode failures
+                        });
+                }
+
+                $btn.prop('disabled', false).html('<i class="bi bi-geo-alt"></i> Use my current GPS location');
+            }, function(error) {
+                var msg = 'Unable to get location. Please allow location access in your browser.';
+                if (error && typeof error.code !== 'undefined') {
+                    if (error.code === 1) {
+                        msg = 'Location access was denied. Allow permission and try again.';
+                    } else if (error.code === 2) {
+                        msg = 'Location is unavailable. Check GPS/network and try again.';
+                    } else if (error.code === 3) {
+                        msg = 'Location request timed out. Please try again.';
+                    }
+                }
+                if (window.showToast) {
+                    showToast(msg, 'danger');
+                }
+                $btn.prop('disabled', false).html('<i class="bi bi-geo-alt"></i> Use my current GPS location');
+            }, {
+                enableHighAccuracy: true,
+                timeout: 12000,
+                maximumAge: 0
+            });
+        }
+
+        $(document).on('click', '#landingUseGpsBtn', function() {
+            detectLandingCurrentLocation();
+        });
+
         // ── Registration modal: payment countdown & retry ──────────────────
         var ldgPaySettled = false;
         var ldgCdInterval = null;
@@ -1609,6 +1738,26 @@
                 return;
             }
 
+            // Enforce GPS accuracy when admin has enabled the requirement
+            if (isClient && window.ENFORCE_LOCATION_ACCURACY) {
+                var capturedAccuracy = parseFloat($form.find('#landing_gps_accuracy').val());
+                var hasCoords = $form.find('#landing_latitude').val() !== '' && $form.find('#landing_longitude').val() !== '';
+                var locationLabel = String($form.find('#landing_location_label').val() || '').trim();
+                if (!locationLabel) {
+                    $form.find('#landing_location_label').addClass('is-invalid');
+                    if (window.showToast) {
+                        showToast('Please enter your location before submitting.', 'danger');
+                    }
+                    return;
+                }
+                if (!hasCoords || isNaN(capturedAccuracy) || capturedAccuracy > 14) {
+                    if (window.showToast) {
+                        showToast('Please capture your GPS location with accuracy ≤14m before submitting. Use the \"Use my current GPS location\" button.', 'danger');
+                    }
+                    return;
+                }
+            }
+
             const formData = {
                 registration_type:  $form.find('#landing_registration_type').val(),
                 first_name:         $form.find('#landing_first_name').val(),
@@ -1618,7 +1767,9 @@
                 phone_country_code: $form.find('#landing_phone_country_code').val(),
                 phone_number_local: $form.find('#landing_phone_number_local').val(),
                 phone_number:       buildLandingNormalizedPhone(),
-                id_number:          $form.find('#landing_id_number').val()
+                id_number:          $form.find('#landing_id_number').val(),
+                latitude:           $form.find('#landing_latitude').val(),
+                longitude:          $form.find('#landing_longitude').val()
             };
 
             if (isStaff)  formData.username = username;

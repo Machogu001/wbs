@@ -83,6 +83,7 @@ class SMS {
 		$decoded = json_decode($response, true);
 		$httpOk = ($httpCode >= 200 && $httpCode < 300);
 		$success = false;
+		$responseText = is_string($response) ? strtolower($response) : '';
 
 		if ($httpOk) {
 			if (is_array($decoded)) {
@@ -113,6 +114,9 @@ class SMS {
 				// If provider returns non-JSON but HTTP 2xx, treat as accepted.
 				$success = true;
 			}
+		} elseif ($httpCode === 409 && $this->isAcceptedConflictResponse($decoded, $responseText)) {
+			// Some providers return 409 for duplicate/already-accepted SMS requests.
+			$success = true;
 		}
 
 		return [
@@ -120,6 +124,27 @@ class SMS {
 			'http_code' => $httpCode,
 			'response' => $response
 		];
+	}
+
+	/**
+	 * Attempt immediate delivery for non-bulk messages and fall back to the queue if delivery fails.
+	 */
+	public function sendWithFallback($phone, $message, $type = 'general') {
+		$result = $this->send($phone, $message);
+
+		if (!empty($result['success'])) {
+			$this->recordSentMessage($phone, $message, $type, $result);
+			$result['delivery_mode'] = 'immediate';
+			return $result;
+		}
+
+		$responseMessage = isset($result['message']) ? (string)$result['message'] : '';
+		$alreadyQueuedBySend = stripos($responseMessage, 'queued for later') !== false;
+		$queued = $alreadyQueuedBySend ? true : $this->queue->queue($phone, $message, $type);
+
+		$result['queued'] = $queued;
+		$result['delivery_mode'] = $queued ? 'queued' : 'failed';
+		return $result;
 	}
 
 	/**
@@ -172,6 +197,73 @@ class SMS {
 	 */
 	public function getQueueStats() {
 		return $this->queue->getStats();
+	}
+
+	private function recordSentMessage($phone, $message, $type, array $result) {
+		if (!$this->db) {
+			return;
+		}
+
+		try {
+			$stmt = $this->db->prepare("INSERT INTO sms_queue (phone, message, type, status, http_code, response, retry_count, created_at, sent_at)
+				VALUES (:phone, :message, :type, 'sent', :http_code, :response, 0, NOW(), NOW())");
+			$stmt->execute([
+				':phone' => $phone,
+				':message' => $message,
+				':type' => $type,
+				':http_code' => isset($result['http_code']) ? (int)$result['http_code'] : null,
+				':response' => isset($result['response']) ? (string)$result['response'] : null,
+			]);
+		} catch (Exception $e) {
+			// Do not fail successful sends if audit logging fails.
+		}
+	}
+
+	private function isAcceptedConflictResponse($decoded, $responseText) {
+		$acceptedHints = [
+			'already sent',
+			'already queued',
+			'already exists',
+			'duplicate',
+			'previously submitted',
+			'already processed',
+			'in progress',
+			'processing',
+			'accepted',
+			'queued',
+		];
+
+		foreach ($acceptedHints as $hint) {
+			if ($responseText !== '' && strpos($responseText, $hint) !== false) {
+				return true;
+			}
+		}
+
+		if (is_array($decoded)) {
+			$fields = [
+				$decoded['message'] ?? null,
+				$decoded['detail'] ?? null,
+				$decoded['error'] ?? null,
+				$decoded['description'] ?? null,
+				$decoded['status'] ?? null,
+				$decoded['state'] ?? null,
+				$decoded['result'] ?? null,
+			];
+
+			foreach ($fields as $fieldValue) {
+				if (!is_string($fieldValue)) {
+					continue;
+				}
+				$fieldValue = strtolower(trim($fieldValue));
+				foreach ($acceptedHints as $hint) {
+					if (strpos($fieldValue, $hint) !== false) {
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
 	}
 
 	private function normalizePhone($phone) {

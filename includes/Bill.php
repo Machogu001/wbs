@@ -188,6 +188,8 @@ class Bill {
 		$query = "SELECT
 					COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) AS total_paid,
 					COALESCE(SUM(CASE WHEN status IN ('pending','overdue') THEN amount ELSE 0 END), 0) AS total_unpaid,
+					COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) AS pending_amount,
+					COALESCE(SUM(CASE WHEN status = 'overdue' THEN amount ELSE 0 END), 0) AS overdue_amount,
 					COALESCE(SUM(CASE WHEN status IN ('pending','overdue') THEN 1 ELSE 0 END), 0) AS pending_count
 				  FROM " . $this->table . " WHERE user_id = :user_id";
 		$stmt = $this->conn->prepare($query);
@@ -200,6 +202,8 @@ class Bill {
 		$query = "SELECT
 					COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) AS total_paid,
 					COALESCE(SUM(CASE WHEN status IN ('pending','overdue') THEN amount ELSE 0 END), 0) AS total_unpaid,
+					COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) AS pending_amount,
+					COALESCE(SUM(CASE WHEN status = 'overdue' THEN amount ELSE 0 END), 0) AS overdue_amount,
 					COALESCE(SUM(CASE WHEN status IN ('pending','overdue') THEN 1 ELSE 0 END), 0) AS pending_count
 				  FROM " . $this->table;
 		$stmt = $this->conn->prepare($query);

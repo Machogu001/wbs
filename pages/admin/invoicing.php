@@ -27,144 +27,308 @@ if ($db) {
 	$settingsService = new BillingSettings($db);
 }
 
+function resolveReadingClient(User $userService, string $identifier): array {
+	$identifier = trim($identifier);
+	if ($identifier === '') {
+		return ['success' => false, 'message' => 'Client is required.'];
+	}
+
+	$user = $userService->getByAccountNumber($identifier);
+	if (!$user) {
+		$user = $userService->getByMeterNumber($identifier);
+	}
+
+	if (!$user) {
+		$matches = $userService->searchByNameOrAccount($identifier, 2);
+		if (count($matches) === 1) {
+			$user = $matches[0];
+		} elseif (count($matches) > 1) {
+			return ['success' => false, 'message' => 'Multiple clients found. Please use account or meter number.'];
+		}
+	}
+
+	if (!$user) {
+		return ['success' => false, 'message' => 'Account, meter number, or name not found.'];
+	}
+
+	return ['success' => true, 'user' => $user];
+}
+
+function getMeterPhotoUploadAtIndex(array $files, int $index): ?array {
+	if (!isset($files['name']) || !is_array($files['name']) || !array_key_exists($index, $files['name'])) {
+		return null;
+	}
+
+	return [
+		'name' => $files['name'][$index] ?? '',
+		'type' => $files['type'][$index] ?? '',
+		'tmp_name' => $files['tmp_name'][$index] ?? '',
+		'error' => $files['error'][$index] ?? UPLOAD_ERR_NO_FILE,
+		'size' => $files['size'][$index] ?? 0,
+	];
+}
+
+function uploadReadingPhoto(?array $photo, string $accountNumber): array {
+	if (!$photo || ($photo['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+		return ['success' => true, 'path' => null];
+	}
+
+	if (($photo['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+		return ['success' => false, 'message' => 'Failed to upload meter photo.'];
+	}
+
+	$imageInfo = getimagesize($photo['tmp_name']);
+	$allowedTypes = ['image/jpeg', 'image/png'];
+	if ($imageInfo === false || !in_array($imageInfo['mime'], $allowedTypes, true)) {
+		return ['success' => false, 'message' => 'Please upload a valid JPG or PNG image.'];
+	}
+
+	$uploadDir = __DIR__ . '/../../uploads/meter_readings';
+	if (!is_dir($uploadDir)) {
+		mkdir($uploadDir, 0755, true);
+	}
+
+	$ext = $imageInfo['mime'] === 'image/png' ? 'png' : 'jpg';
+	$filename = 'reading_' . preg_replace('/[^A-Za-z0-9_-]/', '', $accountNumber) . '_' . time() . '_' . random_int(1000, 9999) . '.' . $ext;
+	$destination = $uploadDir . '/' . $filename;
+
+	if (!move_uploaded_file($photo['tmp_name'], $destination)) {
+		return ['success' => false, 'message' => 'Failed to save meter photo.'];
+	}
+
+	return ['success' => true, 'path' => '/uploads/meter_readings/' . $filename];
+}
+
+function processMeterReadingEntry(array $entry, ?array $photo, User $userService, MeterReading $readingService, Bill $billService, array $settings, int $actorId): array {
+	$identifier = trim((string)($entry['account_or_meter'] ?? ''));
+	$currentReading = (float)($entry['current_reading'] ?? 0);
+	$billingMonth = (string)($entry['billing_month'] ?? '');
+	$dueDate = (string)($entry['due_date'] ?? '');
+
+	if ($currentReading <= 0) {
+		return ['success' => false, 'message' => 'Current reading must be greater than 0.'];
+	}
+
+	$clientResult = resolveReadingClient($userService, $identifier);
+	if (!$clientResult['success']) {
+		return $clientResult;
+	}
+
+	$user = $clientResult['user'];
+	$photoResult = uploadReadingPhoto($photo, $user['account_number']);
+	if (!$photoResult['success']) {
+		return $photoResult;
+	}
+
+	$billResult = $billService->createBillForUser(
+		$user['id'],
+		$user['account_number'],
+		$currentReading,
+		$billingMonth,
+		$dueDate,
+		$settings['rate_per_unit'],
+		$settings['service_charge'],
+		'pending'
+	);
+
+	if (empty($billResult['success'])) {
+		return ['success' => false, 'message' => $billResult['message'] ?? 'Failed to create pending bill.'];
+	}
+
+	$sms = new SMS();
+	$previousReading = $billResult['previous_reading'];
+	$currentReadingValue = $billResult['current_reading'];
+	$units = $billResult['consumption'];
+	$billAmount = $billResult['amount'];
+	$previousBalance = 0;
+	$totalToPay = $billAmount;
+	$billDate = date('d-m-Y');
+	$account = $user['account_number'];
+	$paybill = MpesaConfig::getShortCode();
+	$payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
+
+	$messageText = "AC: {$account}\n" .
+		"BillDate: {$billDate}\n" .
+		"CurRead: " . number_format($currentReadingValue, 2) . "\n" .
+		"PrevRead: " . number_format($previousReading, 2) . "\n" .
+		"Units: " . number_format($units, 2) . "\n" .
+		"Bill: KES " . number_format($billAmount, 2) . "\n" .
+		"PrevBal: KES " . number_format($previousBalance, 2) . "\n" .
+		"Total to Pay: KES " . number_format($totalToPay, 2) . "\n" .
+		"DueDate: " . date('d-m-Y', strtotime($dueDate)) . "\n" .
+		"Paybill: {$paybill}\n" .
+		"Acc: {$account}\n" .
+		"Pay online: {$payUrl}";
+
+	$sms->send($user['phone_number'], $messageText);
+
+	if (!empty($user['email'])) {
+		require_once __DIR__ . '/../../includes/Email.php';
+		$email = new Email();
+		$email->send($user['email'], 'New water bill generated', $messageText);
+	}
+
+	$readingId = $readingService->createReading(
+		$user['id'],
+		$user['account_number'],
+		$user['meter_number'],
+		$currentReading,
+		$billingMonth,
+		$dueDate,
+		$photoResult['path'],
+		$actorId,
+		$billResult['bill_id'],
+		'approved',
+		$actorId
+	);
+
+	if (!$readingId) {
+		return ['success' => false, 'message' => 'Failed to submit meter reading.'];
+	}
+
+	return ['success' => true, 'account_number' => $user['account_number']];
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 	if (isset($_POST['action']) && $_POST['action'] === 'add_reading') {
-		$identifier = trim($_POST['account_or_meter']);
-		$current_reading = (float)$_POST['current_reading'];
-		$billing_month = $_POST['billing_month'];
-		$due_date = $_POST['due_date'];
+		$identifiers = $_POST['account_or_meter'] ?? [];
+		$currentReadings = $_POST['current_reading'] ?? [];
+		$billingMonth = $_POST['billing_month'] ?? '';
+		$dueDate = $_POST['due_date'] ?? '';
+
+		if (!is_array($identifiers)) {
+			$identifiers = [$identifiers];
+		}
+		if (!is_array($currentReadings)) {
+			$currentReadings = [$currentReadings];
+		}
 
 		$userService = new User($db);
 		$readingService = new MeterReading($db);
 		$billService = new Bill($db);
 		$settings = $settingsService->getSettings();
 
-		if ($current_reading <= 0) {
-			$message = "Current reading must be greater than 0.";
-			$message_type = "danger";
+		$entries = [];
+		$maxRows = max(count($identifiers), count($currentReadings));
+		for ($i = 0; $i < $maxRows; $i++) {
+			$identifier = trim((string)($identifiers[$i] ?? ''));
+			$currentReading = trim((string)($currentReadings[$i] ?? ''));
+			if ($identifier === '' && $currentReading === '') {
+				continue;
+			}
+			$entries[] = [
+				'row_number' => $i + 1,
+				'account_or_meter' => $identifier,
+				'current_reading' => $currentReading,
+				'billing_month' => $billingMonth,
+				'due_date' => $dueDate,
+				'photo' => getMeterPhotoUploadAtIndex($_FILES['meter_photo'] ?? [], $i),
+			];
+		}
+
+		if (empty($entries)) {
+			$message = 'Add at least one client reading before submitting.';
+			$message_type = 'danger';
 		} else {
-			$user = $userService->getByAccountNumber($identifier);
-			if (!$user) {
-				$user = $userService->getByMeterNumber($identifier);
-			}
-
-			if (!$user) {
-				$matches = $userService->searchByNameOrAccount($identifier, 2);
-				if (count($matches) === 1) {
-					$user = $matches[0];
-				} elseif (count($matches) > 1) {
-					$message = "Multiple clients found. Please use account or meter number.";
-					$message_type = "danger";
+			$successCount = 0;
+			$errors = [];
+			foreach ($entries as $entry) {
+				$result = processMeterReadingEntry($entry, $entry['photo'], $userService, $readingService, $billService, $settings, (int)$_SESSION['user_id']);
+				if (!empty($result['success'])) {
+					$successCount++;
+				} else {
+					$errors[] = 'Row ' . $entry['row_number'] . ': ' . ($result['message'] ?? 'Failed to process entry.');
 				}
 			}
 
-			if (!$user) {
-				$message = $message ?? "Account, meter number, or name not found.";
-				$message_type = "danger";
+			if ($successCount > 0) {
+				$_SESSION['flash_message'] = $successCount === count($entries)
+					? 'Submitted ' . $successCount . ' meter reading(s). Bills were created and marked pending payment.'
+					: 'Submitted ' . $successCount . ' of ' . count($entries) . ' meter reading(s). ' . implode(' ', array_slice($errors, 0, 3));
+				$_SESSION['flash_type'] = $successCount === count($entries) ? 'success' : 'warning';
+				header('Location: /invoicing');
+				exit;
+			}
+
+			$message = implode(' ', $errors);
+			$message_type = 'danger';
+		}
+	} elseif (isset($_POST['action']) && $_POST['action'] === 'import_readings_csv') {
+		$defaultBillingMonth = trim((string)($_POST['import_billing_month'] ?? ''));
+		$defaultDueDate = trim((string)($_POST['import_due_date'] ?? ''));
+
+		if (!isset($_FILES['readings_csv']) || ($_FILES['readings_csv']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+			$message = 'Please upload a CSV file to import readings.';
+			$message_type = 'danger';
+		} else {
+			$userService = new User($db);
+			$readingService = new MeterReading($db);
+			$billService = new Bill($db);
+			$settings = $settingsService->getSettings();
+
+			$csvFile = $_FILES['readings_csv']['tmp_name'];
+			$handle = fopen($csvFile, 'r');
+			if ($handle === false) {
+				$message = 'Unable to open the uploaded CSV file.';
+				$message_type = 'danger';
 			} else {
-				$photo_path = null;
-				if (isset($_FILES['meter_photo']) && $_FILES['meter_photo']['error'] === UPLOAD_ERR_OK) {
-					$photo = $_FILES['meter_photo'];
-					$imageInfo = getimagesize($photo['tmp_name']);
-					$allowedTypes = ['image/jpeg', 'image/png'];
-					if ($imageInfo === false || !in_array($imageInfo['mime'], $allowedTypes, true)) {
-						$message = "Please upload a valid JPG or PNG image.";
-						$message_type = "danger";
-					} else {
-						$upload_dir = __DIR__ . '/../../uploads/meter_readings';
-						if (!is_dir($upload_dir)) {
-							mkdir($upload_dir, 0755, true);
-						}
-						$ext = $imageInfo['mime'] === 'image/png' ? 'png' : 'jpg';
-						$filename = 'reading_' . $user['account_number'] . '_' . time() . '.' . $ext;
-						$destination = $upload_dir . '/' . $filename;
-
-						if (move_uploaded_file($photo['tmp_name'], $destination)) {
-							$photo_path = '/uploads/meter_readings/' . $filename;
-						} else {
-							$message = "Failed to upload meter photo.";
-							$message_type = "danger";
+				$entries = [];
+				$rowNumber = 0;
+				while (($row = fgetcsv($handle)) !== false) {
+					$rowNumber++;
+					if ($rowNumber === 1) {
+						$firstCell = strtolower(trim((string)($row[0] ?? '')));
+						if ($firstCell === 'account_or_meter' || $firstCell === 'account' || $firstCell === 'client') {
+							continue;
 						}
 					}
+
+					$identifier = trim((string)($row[0] ?? ''));
+					$currentReading = trim((string)($row[1] ?? ''));
+					$billingMonth = trim((string)($row[2] ?? ''));
+					$dueDate = trim((string)($row[3] ?? ''));
+
+					if ($identifier === '' && $currentReading === '') {
+						continue;
+					}
+
+					$entries[] = [
+						'row_number' => $rowNumber,
+						'account_or_meter' => $identifier,
+						'current_reading' => $currentReading,
+						'billing_month' => $billingMonth !== '' ? $billingMonth : $defaultBillingMonth,
+						'due_date' => $dueDate !== '' ? $dueDate : $defaultDueDate,
+						'photo' => null,
+					];
 				}
+				fclose($handle);
 
-				if (!$message) {
-					$billResult = $billService->createBillForUser(
-						$user['id'],
-						$user['account_number'],
-						$current_reading,
-						$billing_month,
-						$due_date,
-						$settings['rate_per_unit'],
-						$settings['service_charge'],
-						'pending'
-					);
-
-					if (!$billResult) {
-						$message = "Failed to create pending bill.";
-						$message_type = "danger";
-					} else {
-						$sms = new SMS();
-						$previousReading = $billResult['previous_reading'];
-						$currentReading = $billResult['current_reading'];
-						$units = $billResult['consumption'];
-						$billAmount = $billResult['amount'];
-						$previousBalance = 0;
-						$totalToPay = $billAmount;
-						$billDate = date('d-m-Y');
-						$account = $user['account_number'];
-						$paybill = MpesaConfig::getShortCode();
-						$payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
-
-						$messageText = "AC: {$account}\n" .
-							"BillDate: {$billDate}\n" .
-							"CurRead: " . number_format($currentReading, 2) . "\n" .
-							"PrevRead: " . number_format($previousReading, 2) . "\n" .
-							"Units: " . number_format($units, 2) . "\n" .
-							"Bill: KES " . number_format($billAmount, 2) . "\n" .
-							"PrevBal: KES " . number_format($previousBalance, 2) . "\n" .
-							"Total to Pay: KES " . number_format($totalToPay, 2) . "\n" .
-							"DueDate: " . date('d-m-Y', strtotime($due_date)) . "\n" .
-							"Paybill: {$paybill}\n" .
-							"Acc: {$account}\n" .
-							"Pay online: {$payUrl}";
-
-						$sms->send($user['phone_number'], $messageText);
-
-						// Also send an email bill notice if user has email
-						if (!empty($user['email'])) {
-							require_once __DIR__ . '/../../includes/Email.php';
-							$email = new Email();
-							$email->send(
-								$user['email'],
-								'New water bill generated',
-								$messageText
-							);
-						}
-						$reading_id = $readingService->createReading(
-							$user['id'],
-							$user['account_number'],
-							$user['meter_number'],
-							$current_reading,
-							$billing_month,
-							$due_date,
-							$photo_path,
-							$_SESSION['user_id'],
-							$billResult['bill_id'],
-							'approved',
-							$_SESSION['user_id']
-						);
-
-						if ($reading_id) {
-							$_SESSION['flash_message'] = "Meter reading submitted and approved. Bill created and pending payment.";
-							$_SESSION['flash_type'] = "success";
-							header("Location: /invoicing");
-							exit;
+				if (empty($entries)) {
+					$message = 'No valid reading rows were found in the CSV file.';
+					$message_type = 'danger';
+				} else {
+					$successCount = 0;
+					$errors = [];
+					foreach ($entries as $entry) {
+						$result = processMeterReadingEntry($entry, null, $userService, $readingService, $billService, $settings, (int)$_SESSION['user_id']);
+						if (!empty($result['success'])) {
+							$successCount++;
 						} else {
-							$message = "Failed to submit meter reading.";
-							$message_type = "danger";
+							$errors[] = 'CSV row ' . $entry['row_number'] . ': ' . ($result['message'] ?? 'Failed to process entry.');
 						}
 					}
+
+					if ($successCount > 0) {
+						$_SESSION['flash_message'] = $successCount === count($entries)
+							? 'Imported ' . $successCount . ' meter reading(s) from CSV. Bills were created and marked pending payment.'
+							: 'Imported ' . $successCount . ' of ' . count($entries) . ' CSV reading(s). ' . implode(' ', array_slice($errors, 0, 3));
+						$_SESSION['flash_type'] = $successCount === count($entries) ? 'success' : 'warning';
+						header('Location: /invoicing');
+						exit;
+					}
+
+					$message = implode(' ', $errors);
+					$message_type = 'danger';
 				}
 			}
 		}
@@ -182,6 +346,20 @@ if ($db && $settingsService) {
 	$client_list = $userService->listAll();
 }
 
+$totalClients = count($clients_summary);
+$clientsWithUnpaid = 0;
+$paidClients = 0;
+$totalUnpaidAmount = 0.0;
+foreach ($clients_summary as $clientSummary) {
+	$totalUnpaidAmount += (float)($clientSummary['total_unpaid'] ?? 0);
+	if ((float)($clientSummary['total_unpaid'] ?? 0) > 0) {
+		$clientsWithUnpaid++;
+	}
+	if (($clientSummary['last_status'] ?? '') === 'paid') {
+		$paidClients++;
+	}
+}
+
 
 $is_admin_page = true;
 $page_title = "Admin - Invoicing";
@@ -194,13 +372,36 @@ if (isset($_SESSION['flash_message'])) {
 }
 ?>
 
-<div class="container mt-4">
+<div class="container mt-4 invoicing-page">
 	<div class="row">
 		<div class="col-md-12">
-			<div class="admin-page-header d-flex justify-content-between align-items-center">
-				<div>
-					<h2 class="mb-1">Invoicing</h2>
-					<p class="text-muted mb-0">Record client meter readings and generate invoices.</p>
+			<div class="invoicing-hero">
+				<div class="invoicing-hero-copy">
+					<span class="invoicing-hero-eyebrow">Billing Desk</span>
+					<h2 class="mb-2">Invoicing</h2>
+					<p class="mb-0">Record client meter readings, generate invoices, and keep a quick eye on outstanding balances.</p>
+				</div>
+				<div class="invoicing-hero-metrics">
+					<div class="invoicing-metric-card">
+						<div class="invoicing-metric-icon"><i class="bi bi-people"></i></div>
+						<span class="invoicing-metric-label">Clients</span>
+						<strong><?php echo number_format($totalClients); ?></strong>
+					</div>
+					<div class="invoicing-metric-card invoicing-metric-warn">
+						<div class="invoicing-metric-icon"><i class="bi bi-exclamation-circle"></i></div>
+						<span class="invoicing-metric-label">Unpaid Accounts</span>
+						<strong><?php echo number_format($clientsWithUnpaid); ?></strong>
+					</div>
+					<div class="invoicing-metric-card invoicing-metric-money">
+						<div class="invoicing-metric-icon"><i class="bi bi-cash-stack"></i></div>
+						<span class="invoicing-metric-label">Outstanding</span>
+						<strong><?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?> <?php echo number_format($totalUnpaidAmount, 2); ?></strong>
+					</div>
+					<div class="invoicing-metric-card invoicing-metric-good">
+						<div class="invoicing-metric-icon"><i class="bi bi-check-circle"></i></div>
+						<span class="invoicing-metric-label">Paid Last Bill</span>
+						<strong><?php echo number_format($paidClients); ?></strong>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -217,18 +418,66 @@ if (isset($_SESSION['flash_message'])) {
 	<?php endif; ?>
 
 	<div class="row mt-4">
-		<div class="col-md-6">
-			<div class="card">
-				<div class="card-header">
-					<h5 class="mb-0 admin-section-title">Record Client Meter Reading (Pending Approval)</h5>
+		<div class="col-12">
+			<div class="card invoicing-card invoicing-entry-card">
+				<div class="card-header invoicing-card-header">
+					<div>
+						<h5 class="mb-1 admin-section-title">Record Client Meter Readings</h5>
+						<p class="mb-0 text-muted small">Add multiple clients in one batch. Entries submitted here are approved immediately and invoice notices are sent to each client.</p>
+					</div>
 				</div>
-				<div class="card-body">
+				<div class="card-body invoicing-card-body">
+					<div class="invoicing-import-box mb-4">
+						<div class="invoicing-import-head">
+							<div>
+								<h6 class="mb-1">Bulk Import via CSV</h6>
+								<p class="mb-0 text-muted small">Upload many readings at once. You can leave billing month and due date empty in the CSV and use defaults below.</p>
+							</div>
+							<a href="/api/admin/download_meter_reading_template" class="btn btn-outline-secondary btn-sm">
+								<i class="bi bi-download me-1"></i>Download Template
+							</a>
+						</div>
+						<form method="POST" enctype="multipart/form-data" class="row g-3 mt-1">
+							<input type="hidden" name="action" value="import_readings_csv">
+							<div class="col-xl-5 col-lg-6">
+								<label class="form-label fw-semibold">CSV File</label>
+								<input type="file" name="readings_csv" accept=".csv,text/csv" class="form-control" required>
+							</div>
+							<div class="col-xl-3 col-lg-3 col-md-6">
+								<label class="form-label fw-semibold">Default Billing Month</label>
+								<input type="date" name="import_billing_month" class="form-control" value="<?php echo date('Y-m-01'); ?>">
+							</div>
+							<div class="col-xl-3 col-lg-3 col-md-6">
+								<label class="form-label fw-semibold">Default Due Date</label>
+								<input type="date" name="import_due_date" class="form-control" value="<?php echo date('Y-m-d', strtotime('+14 days')); ?>">
+							</div>
+							<div class="col-xl-1 col-lg-12 d-flex align-items-end">
+								<button type="submit" class="btn btn-primary w-100">
+									<i class="bi bi-upload me-1"></i>Import
+								</button>
+							</div>
+						</form>
+					</div>
+
 					<form method="POST" enctype="multipart/form-data">
 						<input type="hidden" name="action" value="add_reading">
-						<div class="mb-3">
-							<label class="form-label">Search Client (Name or Account No.)</label>
-							<input type="text" id="clientSearch" name="account_or_meter" class="form-control" list="clientList" placeholder="Start typing name or account" required>
-							<datalist id="clientList">
+						<div class="row g-3">
+							<div class="col-md-6 col-xl-4">
+								<label class="form-label fw-semibold">Billing Month</label>
+								<input type="date" name="billing_month" class="form-control" value="<?php echo date('Y-m-01'); ?>" required>
+							</div>
+							<div class="col-md-6 col-xl-4">
+								<label class="form-label fw-semibold">Due Date</label>
+								<input type="date" name="due_date" class="form-control" value="<?php echo date('Y-m-d', strtotime('+14 days')); ?>" required>
+							</div>
+							<div class="col-xl-4 d-flex align-items-end">
+								<div class="invoicing-shared-note w-100">
+									<span class="invoicing-shared-note-label">Batch settings</span>
+									<p class="mb-0 text-muted small">These dates apply to every client reading in this batch.</p>
+								</div>
+							</div>
+							<div class="col-12">
+								<datalist id="clientList">
 								<?php foreach($client_list as $client): ?>
 									<option value="<?php echo htmlspecialchars($client['account_number']); ?>">
 										<?php echo htmlspecialchars($client['full_name'] . ' - ' . $client['account_number']); ?>
@@ -236,36 +485,53 @@ if (isset($_SESSION['flash_message'])) {
 									<option value="<?php echo htmlspecialchars($client['full_name']); ?>"></option>
 								<?php endforeach; ?>
 							</datalist>
-							<small class="text-muted">Type to search; select from suggestions.</small>
+								<div class="invoicing-reading-list" id="readingRows">
+									<div class="invoicing-reading-row" data-row-index="0">
+										<div class="invoicing-reading-row-head">
+											<h6 class="mb-0">Client 1</h6>
+											<button type="button" class="btn btn-sm btn-outline-danger js-remove-reading-row d-none">Remove</button>
+										</div>
+										<div class="row g-3">
+											<div class="col-lg-5">
+												<label class="form-label fw-semibold">Search Client (Name or Account No.)</label>
+												<input type="text" name="account_or_meter[]" class="form-control client-search-input" list="clientList" placeholder="Start typing name or account" required>
+												<small class="text-muted">Type to search and select from suggestions.</small>
+											</div>
+											<div class="col-lg-3 col-md-6">
+												<label class="form-label fw-semibold">Current Reading (m³)</label>
+												<input type="number" step="0.01" min="0" name="current_reading[]" class="form-control" required>
+											</div>
+											<div class="col-lg-4 col-md-6">
+												<label class="form-label fw-semibold">Meter Photo (Optional)</label>
+												<input type="file" name="meter_photo[]" accept="image/png,image/jpeg" class="form-control">
+												<small class="text-muted">Optional for admin entries.</small>
+											</div>
+										</div>
+									</div>
+								</div>
+								<div class="invoicing-reading-tools mt-3">
+									<button type="button" class="btn btn-outline-primary" id="addReadingRowBtn">
+										<i class="bi bi-plus-circle me-1"></i>Add Another Client
+									</button>
+								</div>
+							</div>
 						</div>
-						<div class="mb-3">
-							<label class="form-label">Current Reading (m³)</label>
-							<input type="number" step="0.01" min="0" name="current_reading" class="form-control" required>
+						<div class="invoicing-form-actions mt-4">
+							<button type="submit" class="btn btn-success btn-lg px-4">Submit Readings</button>
 						</div>
-						<div class="mb-3">
-							<label class="form-label">Billing Month</label>
-							<input type="date" name="billing_month" class="form-control" value="<?php echo date('Y-m-01'); ?>" required>
-						</div>
-						<div class="mb-3">
-							<label class="form-label">Due Date</label>
-							<input type="date" name="due_date" class="form-control" value="<?php echo date('Y-m-d', strtotime('+14 days')); ?>" required>
-						</div>
-						<div class="mb-3">
-							<label class="form-label">Meter Photo (Optional)</label>
-							<input type="file" name="meter_photo" accept="image/png,image/jpeg" class="form-control">
-							<small class="text-muted">Optional for admin entries.</small>
-						</div>
-						<button type="submit" class="btn btn-success">Submit Reading</button>
 					</form>
 				</div>
 			</div>
 		</div>
-		<div class="col-md-6">
-			<div class="card">
-				<div class="card-header d-flex justify-content-between align-items-center">
-					<h5 class="mb-0 admin-section-title">Client Billing Overview</h5>
-					<div class="d-flex align-items-center gap-2">
-						<label class="form-label mb-0">Filter:</label>
+		<div class="col-12 mt-4">
+			<div class="card invoicing-card invoicing-overview-card">
+				<div class="card-header system-settings-overview-header">
+					<div>
+						<h5 class="mb-1 admin-section-title">Client Billing Overview</h5>
+						<p class="mb-0 text-muted small">Quick reference for latest client bills, payment status, and direct payment-link actions.</p>
+					</div>
+					<div class="d-flex align-items-center gap-2 system-settings-filter-wrap">
+						<label class="form-label mb-0" style="white-space:nowrap;">Filter:</label>
 						<select id="billingFilter" class="form-select form-select-sm">
 							<option value="all">All</option>
 							<option value="paid">Paid</option>
@@ -273,18 +539,18 @@ if (isset($_SESSION['flash_message'])) {
 						</select>
 					</div>
 				</div>
-				<div class="card-body">
-					<div class="table-responsive">
-						<table class="table table-striped align-middle">
+				<div class="card-body invoicing-card-body p-0">
+					<div class="table-responsive invoicing-table-wrap">
+						<table class="table table-striped align-middle mb-0 invoicing-table">
 							<thead>
 								<tr>
 									<th>Account</th>
 									<th>Name</th>
 									<th>Phone</th>
 									<th>Last Bill</th>
-									<th>Last Status</th>
+									<th>Status</th>
 									<th>Due Date</th>
-									<th>Total Unpaid (KES)</th>
+									<th>Unpaid (KES)</th>
 									<th>Action</th>
 								</tr>
 							</thead>
@@ -344,16 +610,61 @@ if (isset($_SESSION['flash_message'])) {
 
 <script>
 (function() {
-	const searchInput = document.getElementById('clientSearch');
 	const dataList = document.getElementById('clientList');
 	const filterSelect = document.getElementById('billingFilter');
 	const tableRows = document.querySelectorAll('table tbody tr[data-unpaid]');
+	const readingRows = document.getElementById('readingRows');
+	const addReadingRowBtn = document.getElementById('addReadingRowBtn');
 
-	if (searchInput && dataList) {
+	function refreshReadingRowState() {
+		if (!readingRows) return;
+		const rows = readingRows.querySelectorAll('.invoicing-reading-row');
+		rows.forEach((row, index) => {
+			row.setAttribute('data-row-index', index);
+			const heading = row.querySelector('.invoicing-reading-row-head h6');
+			if (heading) heading.textContent = 'Client ' + (index + 1);
+			const removeBtn = row.querySelector('.js-remove-reading-row');
+			if (removeBtn) {
+				removeBtn.classList.toggle('d-none', rows.length === 1);
+			}
+		});
+	}
+
+	if (readingRows && addReadingRowBtn) {
+		addReadingRowBtn.addEventListener('click', function() {
+			const firstRow = readingRows.querySelector('.invoicing-reading-row');
+			if (!firstRow) return;
+			const clone = firstRow.cloneNode(true);
+			clone.querySelectorAll('input').forEach(input => {
+				if (input.type === 'file') {
+					input.value = '';
+				} else {
+					input.value = '';
+				}
+			});
+			readingRows.appendChild(clone);
+			refreshReadingRowState();
+		});
+
+		readingRows.addEventListener('click', function(event) {
+			const removeBtn = event.target.closest('.js-remove-reading-row');
+			if (!removeBtn) return;
+			const row = removeBtn.closest('.invoicing-reading-row');
+			if (!row) return;
+			row.remove();
+			refreshReadingRowState();
+		});
+
+		refreshReadingRowState();
+	}
+
+	if (dataList) {
 		let debounceTimer = null;
-		searchInput.addEventListener('input', function() {
+		document.addEventListener('input', function(event) {
+			const searchInput = event.target.closest('.client-search-input');
+			if (!searchInput) return;
 			clearTimeout(debounceTimer);
-			const q = this.value.trim();
+			const q = searchInput.value.trim();
 			if (q.length < 2) {
 				return;
 			}

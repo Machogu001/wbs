@@ -14,6 +14,8 @@ require_once __DIR__ . '/../templates/header.php';
 
 $total_paid = 0.0;
 $total_unpaid = 0.0;
+$pending_amount = 0.0;
+$overdue_amount = 0.0;
 $pending_count = 0;
 $collection_rate = 0.0;
 $current_usage = 0.0;
@@ -71,6 +73,8 @@ if ($db) {
 
     $total_paid = (float)($summary['total_paid'] ?? 0);
     $total_unpaid = (float)($summary['total_unpaid'] ?? 0);
+    $pending_amount = (float)($summary['pending_amount'] ?? 0);
+    $overdue_amount = (float)($summary['overdue_amount'] ?? 0);
     $pending_count = (int)($summary['pending_count'] ?? 0);
 
     // Build simple monthly aggregates for charts (last 12 months across bills & payments)
@@ -346,7 +350,7 @@ if ($db) {
                         </small>
                     </div>
                     <div class="d-flex align-items-center gap-2">
-                        <label for="dashboardRange" class="form-label mb-0 small text-muted">Range</label>
+                        <label for="dashboardRange" class="form-label mb-0 small text-muted" style="white-space:nowrap;">Range</label>
                         <select id="dashboardRange" class="form-select form-select-sm" style="min-width: 140px;">
                             <option value="3">Last 3 months</option>
                             <option value="6" selected>Last 6 months</option>
@@ -382,7 +386,8 @@ if ($db) {
                         <ul class="list-unstyled small mb-0">
                             <li><span class="badge bg-success me-1">&nbsp;</span> Paid: Ksh <?php echo number_format($total_paid, 2); ?></li>
                             <li><span class="badge bg-primary me-1">&nbsp;</span> Unpaid: Ksh <?php echo number_format($total_unpaid, 2); ?></li>
-                            <li class="mt-1"><span class="badge bg-warning text-dark me-1">&nbsp;</span> Pending bills: <?php echo (int)$pending_count; ?></li>
+                            <li class="mt-1"><span class="badge bg-warning text-dark me-1">&nbsp;</span> Pending bills: Ksh <?php echo number_format($pending_amount, 2); ?></li>
+                            <li><span class="badge bg-danger me-1">&nbsp;</span> Overdue bills: Ksh <?php echo number_format($overdue_amount, 2); ?></li>
                         </ul>
                     <?php else: ?>
                         <p class="mb-0 text-muted small">Status breakdown will appear here once there are bills and payments.</p>

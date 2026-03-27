@@ -1,8 +1,8 @@
 <?php
 /**
  * SMS Queue Processor - Cron Job
- * Set up a cron job to run this script every 5 minutes:
- * /5 = every 5 minutes (uncomment the line below in crontab)
+ * Set up a cron job to run this script every minute:
+ * * * * * /usr/bin/php /var/www/wbs/api/cron/process_sms_queue.php
  * /usr/bin/php /var/www/wbs/api/cron/process_sms_queue.php
  */
 
@@ -10,7 +10,7 @@ require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 
 // Prevent timeout for cron job
-set_time_limit(300);
+set_time_limit(900);
 
 $database = new Database();
 $db = $database->getConnection();
@@ -23,7 +23,18 @@ if (!$db) {
 $sms = new SMS();
 
 try {
-    $processed = $sms->processPendingQueue(50);
+    $processed = 0;
+    $batchSize = 250;
+    $maxBatches = 4;
+
+    for ($batchIndex = 0; $batchIndex < $maxBatches; $batchIndex++) {
+        $batchProcessed = $sms->processPendingQueue($batchSize);
+        $processed += $batchProcessed;
+
+        if ($batchProcessed < $batchSize) {
+            break;
+        }
+    }
     
     if ($processed > 0) {
         error_log("SMS Queue: Processed $processed messages at " . date('Y-m-d H:i:s'));

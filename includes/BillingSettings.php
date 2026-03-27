@@ -9,7 +9,7 @@ class BillingSettings {
     }
 
     public function getSettings() {
-        $query = "SELECT rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, updated_at FROM " . $this->table . " WHERE id = 1 LIMIT 1";
+        $query = "SELECT rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, updated_at FROM " . $this->table . " WHERE id = 1 LIMIT 1";
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
         $settings = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -57,11 +57,16 @@ class BillingSettings {
             $settings['registration_fee'] = 0.00;
         }
         $settings['registration_fee'] = (float)$settings['registration_fee'];
+        // Ensure enforce_location_accuracy default
+        if (!isset($settings['enforce_location_accuracy'])) {
+            $settings['enforce_location_accuracy'] = 0;
+        }
+        $settings['enforce_location_accuracy'] = (int)$settings['enforce_location_accuracy'];
 
         return $settings;
     }
 
-    public function updateSettings($rate_per_unit, $service_charge, $company_pin = null, $etims_integration_url = null, $etims_api_key = null, $company_name = null, $support_phone = null, $support_email = null, $currency_code = null, $financial_year_start_month = null, $vat_rate = null, $etims_taxation_type_code = null, $registration_fee = null, $locale_code = null, $timezone_name = null) {
+    public function updateSettings($rate_per_unit, $service_charge, $company_pin = null, $etims_integration_url = null, $etims_api_key = null, $company_name = null, $support_phone = null, $support_email = null, $currency_code = null, $financial_year_start_month = null, $vat_rate = null, $etims_taxation_type_code = null, $registration_fee = null, $locale_code = null, $timezone_name = null, $enforce_location_accuracy = null) {
         $query = "UPDATE " . $this->table . " 
                   SET rate_per_unit = :rate_per_unit,
                       service_charge = :service_charge,
@@ -78,6 +83,7 @@ class BillingSettings {
                       vat_rate = :vat_rate,
                       etims_taxation_type_code = :etims_taxation_type_code,
                       registration_fee = :registration_fee,
+                      enforce_location_accuracy = :enforce_location_accuracy,
                       updated_at = NOW()
                   WHERE id = 1";
         $stmt = $this->conn->prepare($query);
@@ -112,6 +118,8 @@ class BillingSettings {
         $stmt->bindParam(":vat_rate", $vat_rate);
         $stmt->bindParam(":etims_taxation_type_code", $etims_taxation_type_code);
         $stmt->bindParam(":registration_fee", $registration_fee);
+        $enforce_location_accuracy = ($enforce_location_accuracy !== null) ? (int)$enforce_location_accuracy : 0;
+        $stmt->bindParam(":enforce_location_accuracy", $enforce_location_accuracy, PDO::PARAM_INT);
         if ($stmt->execute() && $stmt->rowCount() > 0) {
             return true;
         }
@@ -134,8 +142,8 @@ class BillingSettings {
           $default_fy_start = 1;
           $default_vat_rate = 0.0;
           $default_tax_code = '';
-          $query = "INSERT INTO " . $this->table . " (id, rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee) 
-              VALUES (1, :rate_per_unit, :service_charge, NULL, NULL, NULL, :company_name, :support_phone, :support_email, :currency_code, :locale_code, :timezone_name, :financial_year_start_month, :vat_rate, :etims_taxation_type_code, :registration_fee)";
+          $query = "INSERT INTO " . $this->table . " (id, rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy) 
+              VALUES (1, :rate_per_unit, :service_charge, NULL, NULL, NULL, :company_name, :support_phone, :support_email, :currency_code, :locale_code, :timezone_name, :financial_year_start_month, :vat_rate, :etims_taxation_type_code, :registration_fee, 0)";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":rate_per_unit", $default_rate);
         $stmt->bindParam(":service_charge", $default_service);
@@ -170,6 +178,7 @@ class BillingSettings {
 			vat_rate DECIMAL(5,2) DEFAULT 0.00,
             etims_taxation_type_code VARCHAR(10) NULL,
             registration_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            enforce_location_accuracy TINYINT(1) NOT NULL DEFAULT 0,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
         $this->conn->exec($sql);
@@ -246,6 +255,11 @@ class BillingSettings {
         }
         try {
             $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN registration_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00");
+        } catch (\PDOException $e) {
+            // Ignore if column already exists
+        }
+        try {
+            $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN enforce_location_accuracy TINYINT(1) NOT NULL DEFAULT 0");
         } catch (\PDOException $e) {
             // Ignore if column already exists
         }

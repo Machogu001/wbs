@@ -175,9 +175,19 @@ require_once __DIR__ . '/../templates/header.php';
                                                     </div>
                                                     <div class="col-lg-4">
                                                         <div class="mb-3">
-                                                            <label for="location_label" class="form-label">Location (optional)</label>
+                                                            <label for="location_label" class="form-label" id="location_label_label">Location (optional)</label>
                                                             <input type="text" class="form-control location-autocomplete" id="location_label" name="location_label" placeholder="e.g. P5PP+CJ, Nguluni" autocomplete="off">
-                                                            <div class="form-text">Optional short location such as Plus Code or estate name.</div>
+                                                            <div class="invalid-feedback">Please enter your location.</div>
+                                                            <div class="form-text" id="location_label_help">Optional short location such as Plus Code or estate name.</div>
+                                                            <div class="mt-2">
+                                                                <button type="button" class="btn btn-outline-primary btn-sm" id="useGpsBtn">
+                                                                    <i class="bi bi-geo-alt"></i> Use my current GPS location
+                                                                </button>
+                                                            </div>
+                                                            <input type="hidden" id="latitude" name="latitude">
+                                                            <input type="hidden" id="longitude" name="longitude">
+                                                            <input type="hidden" id="gps_accuracy" name="gps_accuracy" value="">
+                                                            <div id="gps_accuracy_feedback" class="form-text d-none"></div>
                                                         </div>
                                                     </div>
                         </div>
@@ -241,12 +251,12 @@ require_once __DIR__ . '/../templates/header.php';
                         </div>
 
                         <?php if ($registrationFee > 0): ?>
-                        <div class="alert alert-info py-2 mb-3 client-only-field">
+                        <div class="alert alert-info py-2 mb-3 client-only-field register-fee-notice">
                             <small>
-                                A one-time non-refundable installation/registration fee of
-                                <strong><?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>
-                                <?php echo number_format($registrationFee, 2); ?></strong>
-                                will be charged via M-Pesa STK push when you submit this form.
+                                <span>Registration fee:</span>
+                                <strong><?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?> <?php echo number_format($registrationFee, 2); ?></strong>
+                                <span>Non-refundable.</span>
+                                <span>M-Pesa STK push will be sent on submit.</span>
                             </small>
                         </div>
                         <?php endif; ?>
@@ -290,11 +300,20 @@ $(document).ready(function() {
     function toggleRegistrationModeUI() {
         var isClient = isClientRegistration();
         var isStaff = isStaffRegistration();
+        var enforceLocation = !!window.ENFORCE_LOCATION_ACCURACY;
         $('.client-only-field').toggleClass('d-none', !isClient);
         $('.staff-only-field').toggleClass('d-none', !isStaff);
 
         $('#email, #id_number, #address, #connection_type, #password, #confirm_password').prop('required', isClient);
+        $('#location_label').prop('required', isClient && enforceLocation);
         $('#username').prop('required', isStaff);
+
+        $('#location_label_label').text(enforceLocation ? 'Location *' : 'Location (optional)');
+        $('#location_label_help').text(
+            enforceLocation
+                ? 'Required short location such as Plus Code or estate name.'
+                : 'Optional short location such as Plus Code or estate name.'
+        );
 
         if (!isClient) {
             $('#email, #id_number, #address, #tax_pin, #location_label, #password, #confirm_password').removeClass('is-invalid');
@@ -305,7 +324,92 @@ $(document).ready(function() {
         }
     }
 
+    function clearRegisterLocationInvalidState() {
+        if ($.trim($('#location_label').val()) !== '') {
+            $('#location_label').removeClass('is-invalid');
+        }
+    }
+
+    function detectCurrentRegistrationLocation() {
+        var $btn = $('#useGpsBtn');
+
+        if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+            showToast('GPS detection requires HTTPS. Open this page using https:// and try again.', 'danger');
+            return;
+        }
+
+        if (!navigator.geolocation) {
+            showToast('Geolocation is not supported by this browser.', 'danger');
+            return;
+        }
+
+        $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Detecting...');
+
+        navigator.geolocation.getCurrentPosition(function(position) {
+            var lat = position.coords.latitude;
+            var lng = position.coords.longitude;
+            var accuracy = typeof position.coords.accuracy === 'number' ? position.coords.accuracy : 999999;
+
+            $('#latitude').val(lat.toFixed(7));
+            $('#longitude').val(lng.toFixed(7));
+            $('#gps_accuracy').val(accuracy);
+            var $fb = $('#gps_accuracy_feedback');
+            $fb.removeClass('d-none text-success text-warning text-danger');
+            if (accuracy <= 14) {
+                $fb.text('GPS accuracy: ~' + Math.round(accuracy) + 'm ✓ Good').addClass('text-success');
+            } else {
+                $fb.text('GPS accuracy: ~' + Math.round(accuracy) + 'm — move outside for better signal, then retry.').addClass('text-warning');
+            }
+
+            if (accuracy <= 14) {
+                showToast('GPS captured (accuracy ~' + Math.round(accuracy) + 'm).', 'success');
+            } else if (accuracy <= 100) {
+                showToast('GPS captured (accuracy ~' + Math.round(accuracy) + 'm). Move outside for better accuracy.', 'warning');
+            } else {
+                showToast('GPS captured but accuracy is very low (~' + Math.round(accuracy) + 'm). You may edit location manually.', 'warning');
+            }
+
+            if (!$('#location_label').val()) {
+                var url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng);
+                fetch(url, { headers: { 'Accept-Language': 'en' } })
+                    .then(function(resp) { return resp.json(); })
+                    .then(function(data) {
+                        if (!data) return;
+                        var label = (data.address && (data.address.suburb || data.address.neighbourhood || data.address.village || data.address.town || data.address.city)) || data.display_name || '';
+                        if (label) {
+                            $('#location_label').val(String(label).slice(0, 120));
+                            clearRegisterLocationInvalidState();
+                        }
+                    })
+                    .catch(function() {
+                        // Ignore reverse-geocode failures
+                    });
+            }
+
+            $btn.prop('disabled', false).html('<i class="bi bi-geo-alt"></i> Use my current GPS location');
+        }, function(error) {
+            var msg = 'Unable to get location. Please allow location access in your browser.';
+            if (error && typeof error.code !== 'undefined') {
+                if (error.code === 1) {
+                    msg = 'Location access was denied. Allow permission and try again.';
+                } else if (error.code === 2) {
+                    msg = 'Location is unavailable. Check GPS/network and try again.';
+                } else if (error.code === 3) {
+                    msg = 'Location request timed out. Please try again.';
+                }
+            }
+            showToast(msg, 'danger');
+            $btn.prop('disabled', false).html('<i class="bi bi-geo-alt"></i> Use my current GPS location');
+        }, {
+            enableHighAccuracy: true,
+            timeout: 12000,
+            maximumAge: 0
+        });
+    }
+
     $('#registration_type').on('change', toggleRegistrationModeUI);
+    $('#location_label').on('input change', clearRegisterLocationInvalidState);
+    $('#useGpsBtn').on('click', detectCurrentRegistrationLocation);
     toggleRegistrationModeUI();
 
     // Show/hide passwords on full registration page
@@ -344,6 +448,22 @@ $(document).ready(function() {
             $('#username').addClass('is-invalid');
             return;
         }
+
+        // Enforce GPS accuracy when admin has enabled the requirement
+        if (isClient && window.ENFORCE_LOCATION_ACCURACY) {
+            var capturedAccuracy = parseFloat($('#gps_accuracy').val());
+            var hasCoords = $('#latitude').val() !== '' && $('#longitude').val() !== '';
+            var locationLabel = String($('#location_label').val() || '').trim();
+            if (!locationLabel) {
+                $('#location_label').addClass('is-invalid');
+                showToast('Please enter your location before submitting.', 'danger');
+                return;
+            }
+            if (!hasCoords || isNaN(capturedAccuracy) || capturedAccuracy > 14) {
+                showToast('Please capture your GPS location with accuracy ≤14m before submitting. Use the "Use my current GPS location" button.', 'danger');
+                return;
+            }
+        }
 		
         // Prepare shared data
         const formData = {
@@ -367,6 +487,9 @@ $(document).ready(function() {
             formData.email = $('#email').val();
             formData.address = $('#address').val();
             formData.location_label = $('#location_label').val();
+            formData.latitude = $('#latitude').val();
+            formData.longitude = $('#longitude').val();
+            formData.gps_accuracy = $('#gps_accuracy').val();
             formData.connection_type = $('#connection_type').val();
             formData.password = password;
             formData.tax_pin = $('#tax_pin').val();

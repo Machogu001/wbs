@@ -46,12 +46,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 		$vat_rate = isset($_POST['vat_rate']) ? $_POST['vat_rate'] : null;
 		$etims_taxation_type_code = isset($_POST['etims_taxation_type_code']) ? $_POST['etims_taxation_type_code'] : null;
 		$registration_fee = isset($_POST['registration_fee']) ? $_POST['registration_fee'] : null;
+		$enforce_location_accuracy = isset($_POST['enforce_location_accuracy']) ? 1 : 0;
 
 		if ($rate <= 0) {
 			$message = "Rate per m³ must be greater than 0.";
 			$message_type = "danger";
 		} else {
-			if ($settingsService->updateSettings($rate, $service, $company_pin, $etims_integration_url, $etims_api_key, $company_name, $support_phone, $support_email, $currency_code, $financial_year_start_month, $vat_rate, $etims_taxation_type_code, $registration_fee, $locale_code, $timezone_name)) {
+			if ($settingsService->updateSettings($rate, $service, $company_pin, $etims_integration_url, $etims_api_key, $company_name, $support_phone, $support_email, $currency_code, $financial_year_start_month, $vat_rate, $etims_taxation_type_code, $registration_fee, $locale_code, $timezone_name, $enforce_location_accuracy)) {
 				// Log activity
 				try {
 					$logger = new ActivityLog($db);
@@ -441,6 +442,14 @@ require_once __DIR__ . '/../../templates/header.php';
 								<div class="form-text">One-time fee charged on new registrations.</div>
 							</div>
 							<div class="col-md-3">
+								<label class="form-label">Enforce GPS Location Accuracy</label>
+								<div class="form-check form-switch mt-1">
+									<input class="form-check-input" type="checkbox" role="switch" id="enforce_location_accuracy_switch" name="enforce_location_accuracy" value="1" <?php echo !empty($settings['enforce_location_accuracy']) ? 'checked' : ''; ?>>
+									<label class="form-check-label" for="enforce_location_accuracy_switch">Require accurate GPS (&le;14m)</label>
+								</div>
+								<div class="form-text">When enabled, clients must capture GPS with accuracy &le;14m before submitting the registration form.</div>
+							</div>
+							<div class="col-md-3">
 								<label class="form-label">Currency Code</label>
 								<input type="text" name="currency_code" class="form-control" value="<?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>" maxlength="10" placeholder="e.g. KES, USD">
 								<div class="form-text">ISO currency code used in reports and invoices.</div>
@@ -534,7 +543,8 @@ require_once __DIR__ . '/../../templates/header.php';
 					<p class="mb-2"><strong>Rate per m³:</strong> KES <?php echo number_format((float)($settings['rate_per_unit'] ?? 50), 2); ?></p>
 					<p class="mb-2"><strong>Service Charge:</strong> KES <?php echo number_format((float)($settings['service_charge'] ?? 0), 2); ?></p>
 					<p class="mb-2"><strong>Locale / Timezone:</strong> <?php echo htmlspecialchars($settings['locale_code'] ?? 'en-KE'); ?> &middot; <?php echo htmlspecialchars($settings['timezone_name'] ?? 'Africa/Nairobi'); ?></p>
-					<p class="mb-0"><strong>Registration Fee:</strong> <?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?> <?php echo number_format((float)($settings['registration_fee'] ?? 0), 2); ?></p>
+					<p class="mb-2"><strong>Registration Fee:</strong> <?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?> <?php echo number_format((float)($settings['registration_fee'] ?? 0), 2); ?></p>
+					<p class="mb-0"><strong>GPS Enforcement:</strong> <span class="badge bg-<?php echo !empty($settings['enforce_location_accuracy']) ? 'success' : 'secondary'; ?>"><?php echo !empty($settings['enforce_location_accuracy']) ? 'On' : 'Off'; ?></span></p>
 				</div>
 			</div>
 		</div>
@@ -543,10 +553,10 @@ require_once __DIR__ . '/../../templates/header.php';
 	<div class="row mt-4">
 		<div class="col-md-12">
 			<div class="card system-settings-card system-settings-overview-card">
-				<div class="card-header d-flex justify-content-between align-items-center system-settings-header-stack">
+				<div class="card-header system-settings-overview-header">
 					<h5 class="mb-0 admin-section-title">Client Billing Overview</h5>
 					<div class="d-flex align-items-center gap-2 system-settings-filter-wrap">
-						<label class="form-label mb-0">Filter:</label>
+						<label class="form-label mb-0" style="white-space:nowrap;">Filter:</label>
 						<select id="billingFilter" class="form-select form-select-sm">
 							<option value="all">All</option>
 							<option value="paid">Paid</option>
@@ -559,14 +569,14 @@ require_once __DIR__ . '/../../templates/header.php';
 						<table class="table table-striped align-middle mb-0 system-settings-table">
 							<thead>
 								<tr>
-									<th>Account</th>
-									<th>Name</th>
-									<th>Phone</th>
-									<th>Last Bill</th>
-									<th>Last Status</th>
-									<th>Due Date</th>
-									<th>Total Unpaid (KES)</th>
-									<th>Action</th>
+									<th class="billing-col-account">Account</th>
+									<th class="billing-col-name">Name</th>
+									<th class="billing-col-phone">Phone</th>
+									<th class="billing-col-bill">Last Bill</th>
+									<th class="billing-col-status">Status</th>
+									<th class="billing-col-date">Due Date</th>
+									<th class="billing-col-unpaid">Unpaid (KES)</th>
+									<th class="billing-col-action">Action</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -577,11 +587,11 @@ require_once __DIR__ . '/../../templates/header.php';
 								<?php else: ?>
 									<?php foreach($clients_summary as $client): ?>
 										<tr data-unpaid="<?php echo ((float)$client['total_unpaid']) > 0 ? '1' : '0'; ?>">
-											<td><?php echo htmlspecialchars($client['account_number']); ?></td>
-											<td><?php echo htmlspecialchars($client['full_name']); ?></td>
-											<td><?php echo htmlspecialchars($client['phone_number']); ?></td>
-											<td><?php echo $client['last_amount'] !== null ? number_format($client['last_amount'], 2) : 'N/A'; ?></td>
-											<td>
+											<td class="billing-col-account"><?php echo htmlspecialchars($client['account_number']); ?></td>
+											<td class="billing-col-name"><?php echo htmlspecialchars($client['full_name']); ?></td>
+											<td class="billing-col-phone"><?php echo htmlspecialchars($client['phone_number']); ?></td>
+											<td class="billing-col-bill"><?php echo $client['last_amount'] !== null ? number_format($client['last_amount'], 2) : 'N/A'; ?></td>
+											<td class="billing-col-status">
 												<?php if($client['last_status']): ?>
 													<span class="badge bg-<?php echo $client['last_status'] === 'paid' ? 'success' : 'warning'; ?>">
 														<?php echo htmlspecialchars(ucfirst($client['last_status'])); ?>
@@ -590,11 +600,11 @@ require_once __DIR__ . '/../../templates/header.php';
 													<span class="text-muted">N/A</span>
 												<?php endif; ?>
 											</td>
-											<td>
+											<td class="billing-col-date">
 												<?php echo $client['last_due_date'] ? htmlspecialchars(date('d-m-Y', strtotime($client['last_due_date']))) : 'N/A'; ?>
 											</td>
-											<td><?php echo number_format($client['total_unpaid'], 2); ?></td>
-											<td>
+											<td class="billing-col-unpaid"><?php echo number_format($client['total_unpaid'], 2); ?></td>
+											<td class="billing-col-action">
 												<?php if (!empty($client['last_bill_id']) && (int)$client['last_bill_id'] > 0): ?>
 													<?php $clientPayUrl = PaymentLink::generateLink((int)$client['last_bill_id']); ?>
 													<div class="d-flex gap-2 flex-wrap">
