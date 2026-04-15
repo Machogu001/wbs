@@ -283,6 +283,7 @@ main > .container {
   font-size: 0.74rem;
   color: #374151;
   line-height: 1.2;
+  white-space: normal;
 }
 
 .support-chat-header {

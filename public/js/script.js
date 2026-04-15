@@ -329,7 +329,20 @@ $(document).ready(function() {
 
         var available = !!resp.available;
         var names = Array.isArray(resp.available_names) ? resp.available_names : [];
+        var agents = Array.isArray(resp.agents) ? resp.agents : [];
         var namesSignature = names.join('|');
+
+        function formatAgentWithLastSeen(agent) {
+            var label = agent && agent.name ? String(agent.name) : 'Support';
+            var updatedAt = agent && agent.updated_at ? String(agent.updated_at) : '';
+            if (!updatedAt) return label;
+            var parsed = new Date(updatedAt.replace(' ', 'T'));
+            if (isNaN(parsed.getTime())) return label;
+            var timeLabel = parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            return label + ' (last seen ' + timeLabel + ')';
+        }
+
+        var namesWithTime = agents.map(formatAgentWithLastSeen);
 
         if ($supportAvailabilityBadge.length) {
             $supportAvailabilityBadge.removeClass('is-online is-offline').addClass(available ? 'is-online' : 'is-offline');
@@ -340,16 +353,16 @@ $(document).ready(function() {
         }
 
         if ($supportAvailabilityAgents.length) {
-            if (available && names.length > 0) {
-                $supportAvailabilityAgents.text('Available: ' + names.join(', '));
+            if (available && namesWithTime.length > 0) {
+                $supportAvailabilityAgents.text('Available: ' + namesWithTime.join(', '));
             } else {
                 $supportAvailabilityAgents.text('Leave a message via contact form; we will respond as soon as possible.');
             }
         }
 
         if ($supportChatAvailabilityLabel.length) {
-            if (available && names.length > 0) {
-                $supportChatAvailabilityLabel.text('Online: ' + names.join(', '));
+            if (available && namesWithTime.length > 0) {
+                $supportChatAvailabilityLabel.text('Online: ' + namesWithTime.join(', '));
             } else {
                 $supportChatAvailabilityLabel.text('No agent currently online; message will be queued.');
             }

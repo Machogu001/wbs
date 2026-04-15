@@ -192,9 +192,22 @@ $custom_scripts = <<<HTML
         }
 
         var names = Array.isArray(resp.available_names) ? resp.available_names : [];
+        var agents = Array.isArray(resp.agents) ? resp.agents : [];
         if (namesEl) {
-            if (names.length > 0) {
-                namesEl.textContent = names.join(', ');
+            if (agents.length > 0) {
+                var details = agents.map(function(agent) {
+                    var label = agent && agent.name ? String(agent.name) : 'Support';
+                    var updatedAt = agent && agent.updated_at ? String(agent.updated_at) : '';
+                    var timeLabel = '';
+                    if (updatedAt) {
+                        var parsed = new Date(updatedAt.replace(' ', 'T'));
+                        if (!isNaN(parsed.getTime())) {
+                            timeLabel = parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        }
+                    }
+                    return timeLabel ? (label + ' (last seen ' + timeLabel + ')') : label;
+                });
+                namesEl.textContent = details.join(', ');
                 namesEl.classList.remove('text-muted');
                 namesEl.classList.add('text-success');
             } else {
