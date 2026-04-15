@@ -51,6 +51,7 @@ return [
     'admin/chat' => 'pages/admin/chat.php',
     'messaging' => 'pages/admin/messaging.php',
     'admin/messaging' => 'pages/admin/messaging.php',
+    'admin/support-inquiries' => 'pages/admin/support_inquiries.php',
     'admin/demand-notices' => 'pages/admin/demand_notices.php',
     'admin/approvals' => 'pages/admin/approvals.php',
     'admin/integration-health' => 'pages/admin/integration_health.php',

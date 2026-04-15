@@ -145,7 +145,7 @@ if (!isset($appName) || $appName === '') {
                         <!-- Admin/Staff: Monitoring dropdown -->
                         <?php if ($navIsStaff): ?>
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/integration-health','/admin/messaging','/activity_log','/system-logs','/chat','/internal-chat']) ? ' active' : ''; ?>"
+                            <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/integration-health','/admin/messaging','/admin/support-inquiries','/activity_log','/system-logs','/chat','/internal-chat']) ? ' active' : ''; ?>"
                                href="#" id="navbarMonitoring" role="button"
                                <?php if (!empty($is_admin_page)): ?>
                                    onclick="(function(el){var m=el.nextElementSibling;if(!m)return;var shown=m.classList.contains('show');var open=document.querySelectorAll('.dropdown-menu.show');open.forEach(function(mm){mm.classList.remove('show');});if(!shown){m.classList.add('show');}})(this); return false;"
@@ -160,6 +160,7 @@ if (!isset($appName) || $appName === '') {
                                     <li><hr class="dropdown-divider"></li>
                                 <?php endif; ?>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/messaging' ? ' active' : ''; ?>" href="/admin/messaging"><i class="bi bi-chat-dots"></i> Messaging</a></li>
+                                <li><a class="dropdown-item<?php echo $currentPath === '/admin/support-inquiries' ? ' active' : ''; ?>" href="/admin/support-inquiries"><i class="bi bi-inbox"></i> Support Inquiries</a></li>
                                 <?php if ($navIsAdmin): ?>
                                     <li><a class="dropdown-item<?php echo $currentPath === '/activity_log' ? ' active' : ''; ?>" href="/activity_log"><i class="bi bi-clipboard-check"></i> Activity Log</a></li>
                                     <li><a class="dropdown-item<?php echo $currentPath === '/system-logs' ? ' active' : ''; ?>" href="/system-logs"><i class="bi bi-terminal"></i> System Logs</a></li>
