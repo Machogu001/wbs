@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../includes/ActivityLog.php';
 require_once __DIR__ . '/../../includes/CreditNote.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
 require_once __DIR__ . '/../../includes/Etims.php';
+require_once __DIR__ . '/../../includes/Accounting.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -97,6 +98,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 					$stmt->bindParam(':created_at', $now);
 					$stmt->execute();
 					$paymentId = (int)$db->lastInsertId();
+
+					try {
+						$accounting = new Accounting($db);
+						$paymentRow = [
+							'id' => $paymentId,
+							'amount' => $amount,
+							'transaction_date' => $paidDateTime,
+							'bill_id' => $billId,
+						];
+						$accounting->postPaymentReceived($paymentId, $paymentRow, $billRow, 'Manual payment received', (int)($_SESSION['user_id'] ?? 0));
+					} catch (Throwable $e) {
+						// Accounting should not block manual receipt entry.
+					}
 
 					// If full amount paid, mark bill as paid; otherwise leave as pending/overdue (partial payment / balance remains)
 					if (abs($billAmount - $amount) <= 0.01) {

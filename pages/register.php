@@ -16,11 +16,12 @@ $settings = $settingsService->getSettings();
 $registrationFee = isset($settings['registration_fee']) ? (float)$settings['registration_fee'] : 0.00;
 
 $countryCodeOptions = [
-    '254' => 'Kenya (+254)',
-    '256' => 'Uganda (+256)',
-    '255' => 'Tanzania (+255)',
-    '1' => 'USA/Canada (+1)',
-    '44' => 'United Kingdom (+44)'
+    ['value' => '254', 'label' => 'Kenya (+254)'],
+    ['value' => '256', 'label' => 'Uganda (+256)'],
+    ['value' => '255', 'label' => 'Tanzania (+255)'],
+    ['value' => '1', 'label' => 'United States (+1)'],
+    ['value' => '1', 'label' => 'Canada (+1)'],
+    ['value' => '44', 'label' => 'United Kingdom (+44)']
 ];
 try {
     if ($db) {
@@ -119,7 +120,9 @@ require_once __DIR__ . '/../templates/header.php';
                                     <div class="input-group">
                                         <span class="input-group-text">+</span>
                                         <select class="form-select" id="phone_country_code" name="phone_country_code" style="max-width: 190px;" required>
-                                            <?php foreach ($countryCodeOptions as $code => $label): ?>
+                                            <?php foreach ($countryCodeOptions as $option): ?>
+                                                <?php $code = (string)($option['value'] ?? ''); ?>
+                                                <?php $label = (string)($option['label'] ?? ''); ?>
                                                 <option value="<?php echo htmlspecialchars($code); ?>" <?php echo $code === '254' ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option>
                                             <?php endforeach; ?>
                                         </select>

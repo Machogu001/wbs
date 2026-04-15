@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../includes/Accounting.php';
+
 if($_SERVER['REQUEST_METHOD'] != 'POST') {
     header('Location: install.php');
     exit;
@@ -471,6 +473,8 @@ try {
         INDEX idx_service_checked (service_name, checked_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    Accounting::ensureTables($conn);
+
     // IP geo-lookup cache table (used by activity log)
     $conn->exec("CREATE TABLE IF NOT EXISTS activity_ip_lookup (
         ip_address VARCHAR(45) PRIMARY KEY,
@@ -489,7 +493,8 @@ try {
         dial_code VARCHAR(8) NOT NULL,
         is_active TINYINT(1) NOT NULL DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_dial_code (dial_code),
+        UNIQUE KEY uniq_iso2 (iso2),
+        KEY idx_dial_code (dial_code),
         KEY idx_country_name (country_name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
@@ -710,7 +715,7 @@ class Database {
                         <ul>
                             <li>Change the admin password immediately after login</li>
                             <li>Delete the <code>install/</code> directory for security</li>
-                            <li>Configure M-Pesa credentials in <code>.env</code> (MPESA_ENV, MPESA_SHORTCODE, MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_PASSKEY, MPESA_CALLBACK_URL)</li>
+                            <li>Configure M-Pesa credentials in <code>.env</code> (MPESA_ENV, MPESA_SHORTCODE or MPESA_SHORT_CODE, MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_PASSKEY, MPESA_CALLBACK_URL)</li>
                             <li>Ensure <code>PAYMENT_LINK_SECRET</code> is set in <code>.env</code></li>
                         </ul>
                         <p class="mb-1"><strong>.env setup:</strong> ' . htmlspecialchars($envSetupStatus) . '</p>

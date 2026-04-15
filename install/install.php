@@ -101,7 +101,7 @@ if ($isInstalled) {
                     </div>
                     <div class="card-body">
                         <div class="alert alert-info">
-                            This installer will set up the Water Billing System.
+                            This installer will set up the Water Billing System and prepare core `.env` defaults for M-Pesa and payment-link settings when possible.
                         </div>
                         
                         <form method="POST" action="install_process.php">
@@ -164,7 +164,7 @@ if ($isInstalled) {
                             </div>
                             
                             <div class="alert alert-warning">
-                                <strong>Important:</strong> Change the default admin password after installation.
+                                <strong>Important:</strong> Change the default admin password after installation and delete the <code>install/</code> directory once setup is complete.
                             </div>
                             
                             <div class="text-center">

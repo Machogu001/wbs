@@ -38,6 +38,9 @@ return [
     // Financial reports
     'reports' => 'pages/admin/reports.php',
     'admin/reports' => 'pages/admin/reports.php',
+    // Accounting management
+    'accounting' => 'pages/admin/accounting.php',
+    'admin/accounting' => 'pages/admin/accounting.php',
     // Complaints admin alias
     'admin/complaints' => 'pages/admin/complaints.php',
     // Activity log & support chat

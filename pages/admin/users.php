@@ -61,7 +61,14 @@ function splitPhoneForForm($rawPhone, $countryOptions)
 		return ['country_code' => '254', 'local_number' => ''];
 	}
 
-	$codes = array_keys($countryOptions);
+	$codes = [];
+	foreach ($countryOptions as $option) {
+		$code = preg_replace('/\D+/', '', (string)($option['value'] ?? ''));
+		if ($code !== '') {
+			$codes[$code] = $code;
+		}
+	}
+	$codes = array_values($codes);
 	usort($codes, function ($a, $b) {
 		return strlen($b) <=> strlen($a);
 	});
@@ -82,6 +89,23 @@ function splitPhoneForForm($rawPhone, $countryOptions)
 	return ['country_code' => '254', 'local_number' => $phone];
 }
 
+function hasCountryCodeOption(array $countryOptions, string $countryCode): bool
+{
+	$normalized = preg_replace('/\D+/', '', $countryCode);
+	if ($normalized === '') {
+		return false;
+	}
+
+	foreach ($countryOptions as $option) {
+		$code = preg_replace('/\D+/', '', (string)($option['value'] ?? ''));
+		if ($code === $normalized) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 function normalizePhoneFromForm($countryCode, $localNumber)
 {
 	$code = preg_replace('/\D+/', '', (string)$countryCode);
@@ -94,11 +118,12 @@ function normalizePhoneFromForm($countryCode, $localNumber)
 }
 
 $countryCodeOptions = [
-	'254' => 'Kenya (+254)',
-	'256' => 'Uganda (+256)',
-	'255' => 'Tanzania (+255)',
-	'1' => 'USA/Canada (+1)',
-	'44' => 'United Kingdom (+44)'
+	['value' => '254', 'label' => 'Kenya (+254)'],
+	['value' => '256', 'label' => 'Uganda (+256)'],
+	['value' => '255', 'label' => 'Tanzania (+255)'],
+	['value' => '1', 'label' => 'United States (+1)'],
+	['value' => '1', 'label' => 'Canada (+1)'],
+	['value' => '44', 'label' => 'United Kingdom (+44)']
 ];
 try {
 	if ($db) {
@@ -493,7 +518,7 @@ $formMiddleName = isset($_POST['middle_name']) ? trim((string)$_POST['middle_nam
 $formLastName = isset($_POST['last_name']) ? trim((string)$_POST['last_name']) : ($editNameParts['last_name'] ?? '');
 $editPhoneParts = splitPhoneForForm((string)($editUser['phone_number'] ?? ''), $countryCodeOptions);
 $formPhoneCountryCode = isset($_POST['phone_country_code']) ? preg_replace('/\D+/', '', (string)$_POST['phone_country_code']) : ($editPhoneParts['country_code'] ?? '254');
-if (!isset($countryCodeOptions[$formPhoneCountryCode])) {
+if (!hasCountryCodeOption($countryCodeOptions, $formPhoneCountryCode)) {
 	$formPhoneCountryCode = '254';
 }
 $formPhoneLocalNumber = isset($_POST['phone_number_local']) ? preg_replace('/\D+/', '', (string)$_POST['phone_number_local']) : ($editPhoneParts['local_number'] ?? '');
@@ -717,7 +742,9 @@ require_once __DIR__ . '/../../templates/header.php';
 								<div class="input-group">
 									<span class="input-group-text">+</span>
 									<select class="form-select" id="phone_country_code" name="phone_country_code" style="max-width: 190px;" required>
-										<?php foreach ($countryCodeOptions as $code => $label): ?>
+										<?php foreach ($countryCodeOptions as $option): ?>
+											<?php $code = (string)($option['value'] ?? ''); ?>
+											<?php $label = (string)($option['label'] ?? ''); ?>
 											<option value="<?php echo htmlspecialchars($code); ?>" <?php echo $formPhoneCountryCode === $code ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option>
 										<?php endforeach; ?>
 									</select>

@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/Accounting.php';
+
 class Bill {
 	private $conn;
 	private $table = "bills";
@@ -61,6 +63,20 @@ class Bill {
 			// Deduct from credit
 			$credit->deductCredit($user_id, $amount);
 
+			try {
+				$accounting = new Accounting($this->conn);
+				$accounting->postInvoiceIssued(
+					(int)$bill_id,
+					(int)$user_id,
+					(float)$amount,
+					'Water bill issued for ' . (string)$account_number,
+					'water',
+					(int)$user_id
+				);
+			} catch (\Throwable $e) {
+				// Accounting should not block bill creation.
+			}
+
 			return [
 				'success' => true,
 				'bill_id' => $bill_id,
@@ -105,6 +121,20 @@ class Bill {
 		$stmt->bindParam(":status", $status);
 
 		if ($stmt->execute()) {
+			try {
+				$accounting = new Accounting($this->conn);
+				$accounting->postInvoiceIssued(
+					(int)$this->conn->lastInsertId(),
+					(int)$user_id,
+					(float)$amount,
+					'Registration fee bill issued for ' . (string)$account_number,
+					'registration',
+					(int)$user_id
+				);
+			} catch (\Throwable $e) {
+				// Accounting should not block registration billing.
+			}
+
 			return $this->conn->lastInsertId();
 		}
 

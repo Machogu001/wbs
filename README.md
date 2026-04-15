@@ -9,6 +9,7 @@ A comprehensive water billing management system with M-Pesa payment integration 
 - Customer Account Management
 - Water Bill Generation
 - M-Pesa Payment Integration
+- Accounting module with chart of accounts, journal entries, and trial balance
 - SMS Notifications
 - Admin Dashboard
 - Payment History Tracking
@@ -30,9 +31,10 @@ A comprehensive water billing management system with M-Pesa payment integration 
 1. Upload files to web server
 2. Navigate to `yourdomain.com/install/install.php`
 3. Follow installation wizard
-4. Configure M-Pesa credentials in `config/mpesa_config.php`
-5. Configure SMS credentials in `config/sms_config.php` and `.env`
+4. Configure M-Pesa credentials in `.env`
+5. Configure SMS credentials in `.env`
 6. Configure email (SMTP) credentials in `.env`
+7. Remove the `install/` directory after installation
 
 ## Configuration
 
@@ -42,6 +44,13 @@ Key settings used by this system include:
 
 - Database:
 	- `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`
+- M-Pesa:
+	- `MPESA_ENV`
+	- `MPESA_SHORTCODE` or legacy `MPESA_SHORT_CODE`
+	- `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET`
+	- `MPESA_PASSKEY`
+	- `MPESA_CALLBACK_URL`
+	- `PAYMENT_LINK_SECRET`
 - SMS / MobileSasa:
 	- `SMS_API_TOKEN`, `SMS_SENDER_ID`
 - Email (SMTP):
@@ -51,7 +60,7 @@ Key settings used by this system include:
 	- `EMAIL_SCHEME` / `EMAIL_ENCRYPTION` (e.g. `ssl` or `tls`)
 	- `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`
 
-The app will automatically load `.env` via lightweight helpers in the `config` classes.
+The app will automatically load `.env` via lightweight helpers in the `config` classes. The installer also prepares default M-Pesa and payment-link values when `.env` is writable.
 
 ### Two-step Verification (2FA)
 
@@ -67,7 +76,9 @@ The app will automatically load `.env` via lightweight helpers in the `config` c
 	- A short cooldown is enforced between resend attempts; during this time, the UI shows a countdown and disables resend links.
 
 ## Default Admin Credentials
-- Phone: 254700000001
+- Name: System Administrator
+- Phone: 254717996492
+- Email: admin@bremac.co.ke
 - Password: admin123
 
 ## Support

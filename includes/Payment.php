@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/Accounting.php';
+
 class Payment {
 	private $conn;
 	private $table = 'payments';
@@ -111,6 +113,32 @@ class Payment {
 		$stmt->bindParam(':mpesa_receipt', $mpesa_receipt);
 		$stmt->bindParam(':result_code', $result_code);
 		$stmt->bindParam(':result_desc', $result_desc);
-		return $stmt->execute();
+		if (!$stmt->execute()) {
+			return false;
+		}
+
+		if ($status === 'completed') {
+			try {
+				$accounting = new Accounting($this->conn);
+				$paymentRow = $this->getById($id);
+				$billRow = null;
+				if ($paymentRow && !empty($paymentRow['bill_id'])) {
+					$stmtBill = $this->conn->prepare('SELECT * FROM bills WHERE id = :id LIMIT 1');
+					$stmtBill->bindParam(':id', $paymentRow['bill_id'], PDO::PARAM_INT);
+					$stmtBill->execute();
+					$billRow = $stmtBill->fetch(PDO::FETCH_ASSOC) ?: null;
+				}
+				$accounting->postPaymentReceived(
+					(int)$id,
+					$paymentRow,
+					$billRow,
+					'Payment received'
+				);
+			} catch (\Throwable $e) {
+				// Accounting should not block payment posting.
+			}
+		}
+
+		return true;
 	}
 }

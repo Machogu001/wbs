@@ -9,7 +9,7 @@ class CountryDialCode
     {
         $this->conn = $db;
         $this->ensureTable();
-        $this->seedIfEmpty();
+        $this->seedDefaults();
     }
 
     public function listActive(): array
@@ -25,13 +25,23 @@ class CountryDialCode
             if ($code === '' || $country === '') {
                 continue;
             }
-            $options[$code] = $country . ' (+' . $code . ')';
+            $options[] = [
+                'value' => $code,
+                'label' => $country . ' (+' . $code . ')'
+            ];
         }
 
         // Keep Kenya as the default option by always placing +254 first.
-        $kenyaLabel = $options['254'] ?? 'Kenya (+254)';
-        unset($options['254']);
-        $options = ['254' => $kenyaLabel] + $options;
+        usort($options, static function (array $left, array $right): int {
+            if (($left['value'] ?? '') === '254') {
+                return -1;
+            }
+            if (($right['value'] ?? '') === '254') {
+                return 1;
+            }
+
+            return strcmp((string)($left['label'] ?? ''), (string)($right['label'] ?? ''));
+        });
 
         return $options;
     }
@@ -45,22 +55,47 @@ class CountryDialCode
             dial_code VARCHAR(8) NOT NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_dial_code (dial_code),
+            UNIQUE KEY uniq_iso2 (iso2),
+            KEY idx_dial_code (dial_code),
             KEY idx_country_name (country_name)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
         $this->conn->exec($sql);
-    }
 
-    private function seedIfEmpty(): void
-    {
-        $countStmt = $this->conn->query("SELECT COUNT(*) AS total FROM {$this->table}");
-        $countRow = $countStmt ? $countStmt->fetch(PDO::FETCH_ASSOC) : ['total' => 0];
-        $total = (int)($countRow['total'] ?? 0);
-        if ($total > 0) {
-            return;
+        $legacyUniqueDial = $this->indexExists('uniq_dial_code');
+        if ($legacyUniqueDial) {
+            $this->conn->exec("ALTER TABLE {$this->table} DROP INDEX uniq_dial_code");
         }
 
+        if (!$this->indexExists('uniq_iso2')) {
+            $this->conn->exec("ALTER TABLE {$this->table} ADD UNIQUE KEY uniq_iso2 (iso2)");
+        }
+
+        if (!$this->indexExists('idx_dial_code')) {
+            $this->conn->exec("ALTER TABLE {$this->table} ADD KEY idx_dial_code (dial_code)");
+        }
+    }
+
+    private function indexExists(string $indexName): bool
+    {
+        $stmt = $this->conn->prepare(
+            "SELECT COUNT(*) AS total
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = :table_name
+              AND index_name = :index_name"
+        );
+        $stmt->bindValue(':table_name', $this->table);
+        $stmt->bindValue(':index_name', $indexName);
+        $stmt->execute();
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return (int)($row['total'] ?? 0) > 0;
+    }
+
+    private function seedDefaults(): void
+    {
         $codes = [
             ['Afghanistan', 'AF', '93'],
             ['Albania', 'AL', '355'],
@@ -190,11 +225,25 @@ class CountryDialCode
             ['Zimbabwe', 'ZW', '263']
         ];
 
+        $existingIso2 = [];
+        $existingStmt = $this->conn->query("SELECT iso2 FROM {$this->table} WHERE iso2 IS NOT NULL AND iso2 <> ''");
+        $existingRows = $existingStmt ? ($existingStmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        foreach ($existingRows as $row) {
+            $iso2 = strtoupper(trim((string)($row['iso2'] ?? '')));
+            if ($iso2 !== '') {
+                $existingIso2[$iso2] = true;
+            }
+        }
+
         $sql = "INSERT INTO {$this->table} (country_name, iso2, dial_code, is_active) VALUES (:country_name, :iso2, :dial_code, 1)";
         $stmt = $this->conn->prepare($sql);
 
         foreach ($codes as $item) {
             [$country, $iso2, $dial] = $item;
+            if (isset($existingIso2[$iso2])) {
+                continue;
+            }
+
             $stmt->bindValue(':country_name', $country);
             $stmt->bindValue(':iso2', $iso2);
             $stmt->bindValue(':dial_code', $dial);
