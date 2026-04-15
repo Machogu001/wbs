@@ -12,6 +12,7 @@ class SupportChat
     {
         $this->conn = $db;
         $this->ensureTables();
+        $this->ensureAvailabilityTable();
         $this->cleanupOldThreads(24);
     }
 
@@ -58,18 +59,38 @@ class SupportChat
 
             $this->conn->exec($sqlTyping);
 
+        } catch (\PDOException $e) {
+            // Do not break the app if chat tables cannot be created
+        }
+    }
+
+    private function ensureAvailabilityTable(): void
+    {
+        try {
+            // Keep this table FK-free for compatibility with legacy user table engines.
             $sqlAvailability = "CREATE TABLE IF NOT EXISTS {$this->availabilityTable} (
                 user_id INT NOT NULL PRIMARY KEY,
                 is_available TINYINT(1) NOT NULL DEFAULT 0,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                INDEX idx_available (is_available),
-                CONSTRAINT fk_support_availability_user FOREIGN KEY (user_id)
-                    REFERENCES users(id) ON DELETE CASCADE
+                INDEX idx_available (is_available)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
-
             $this->conn->exec($sqlAvailability);
         } catch (\PDOException $e) {
-            // Do not break the app if chat tables cannot be created
+            // Ignore here; callers will fail gracefully if the table is unavailable.
+        }
+    }
+
+    private function hasColumn(string $tableName, string $columnName): bool
+    {
+        try {
+            $stmt = $this->conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :table_name AND column_name = :column_name");
+            $stmt->execute([
+                ':table_name' => $tableName,
+                ':column_name' => $columnName,
+            ]);
+            return (int)$stmt->fetchColumn() > 0;
+        } catch (\PDOException $e) {
+            return false;
         }
     }
 
@@ -78,6 +99,8 @@ class SupportChat
         if ($userId <= 0) {
             return false;
         }
+
+        $this->ensureAvailabilityTable();
 
         try {
             $stmt = $this->conn->prepare("INSERT INTO {$this->availabilityTable} (user_id, is_available)
@@ -100,6 +123,8 @@ class SupportChat
             return false;
         }
 
+        $this->ensureAvailabilityTable();
+
         try {
             $stmt = $this->conn->prepare("SELECT is_available FROM {$this->availabilityTable} WHERE user_id = :uid LIMIT 1");
             $stmt->execute([':uid' => $userId]);
@@ -112,14 +137,21 @@ class SupportChat
 
     public function getAvailableAgents(): array
     {
+        $this->ensureAvailabilityTable();
+
         try {
-            $stmt = $this->conn->query("SELECT a.user_id, a.updated_at, u.full_name, u.role
+            $hasStatus = $this->hasColumn('users', 'status');
+            $sql = "SELECT a.user_id, a.updated_at, u.full_name, u.role
                 FROM {$this->availabilityTable} a
                 INNER JOIN users u ON u.id = a.user_id
                 WHERE a.is_available = 1
-                  AND u.role IN ('admin', 'support')
-                  AND u.status = 'active'
-                ORDER BY u.role = 'admin' DESC, u.full_name ASC");
+                  AND u.role IN ('admin', 'support')";
+            if ($hasStatus) {
+                $sql .= " AND u.status = 'active'";
+            }
+            $sql .= " ORDER BY u.role = 'admin' DESC, u.full_name ASC";
+
+            $stmt = $this->conn->query($sql);
             return $stmt ? ($stmt->fetchAll() ?: []) : [];
         } catch (\PDOException $e) {
             return [];

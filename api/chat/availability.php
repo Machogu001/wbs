@@ -77,6 +77,9 @@ try {
         'available_names' => $names,
         'agents' => $agentPayload,
         'current_user_available' => $currentUserAvailable,
+        'message' => (count($agentPayload) > 0)
+            ? 'Support team availability loaded.'
+            : 'No support team members are currently visible as available.',
     ]);
 } catch (Throwable $e) {
     http_response_code(500);
