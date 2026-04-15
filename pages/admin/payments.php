@@ -450,6 +450,40 @@ include __DIR__ . '/../../templates/header.php';
 					<?php endif; ?>
 				</div>
 			</div>
+
+			<div class="card mb-3">
+				<div class="card-header admin-section-title">Open Bills</div>
+				<div class="card-body p-0">
+					<?php if (!$currentUser || empty($userBills)): ?>
+						<p class="text-muted mb-0 p-3">No open bills to display for this account.</p>
+					<?php else: ?>
+						<div class="table-responsive">
+							<table class="table table-sm align-middle mb-0">
+								<thead>
+									<tr>
+										<th>ID</th>
+										<th>Billing Month</th>
+										<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
+										<th>Status</th>
+										<th>Actions</th>
+									</tr>
+								</thead>
+								<tbody>
+								<?php foreach ($userBills as $b): ?>
+									<tr>
+										<td>#<?php echo (int)$b['id']; ?></td>
+										<td><?php echo htmlspecialchars(date('M Y', strtotime((string)$b['billing_month']))); ?></td>
+										<td class="text-end"><?php echo number_format((float)$b['amount'], 2); ?></td>
+										<td><?php echo htmlspecialchars(ucfirst((string)$b['status'])); ?></td>
+										<td><a href="/admin/bill-detail?bill_id=<?php echo (int)$b['id']; ?>" class="btn btn-sm btn-outline-dark">View Detail</a></td>
+									</tr>
+								<?php endforeach; ?>
+								</tbody>
+							</table>
+						</div>
+					<?php endif; ?>
+				</div>
+			</div>
 		</div>
 	</div>
 </div>

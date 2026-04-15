@@ -4,6 +4,8 @@ require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/Bill.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
+require_once __DIR__ . '/../../includes/FinanceApproval.php';
+require_once __DIR__ . '/../../includes/InstallmentPlan.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -24,6 +26,75 @@ $billService = new Bill($db);
 $bill = $billService->getById($billId, null);
 if (!$bill) {
     header('Location: /admin/payments');
+    exit;
+}
+
+if (empty($_SESSION['bill_detail_csrf'])) {
+    $_SESSION['bill_detail_csrf'] = bin2hex(random_bytes(32));
+}
+
+$flashMessage = '';
+$flashType = 'success';
+if (!empty($_SESSION['bill_detail_flash']) && is_array($_SESSION['bill_detail_flash'])) {
+    $flashMessage = (string)($_SESSION['bill_detail_flash']['message'] ?? '');
+    $flashType = (string)($_SESSION['bill_detail_flash']['type'] ?? 'success');
+    unset($_SESSION['bill_detail_flash']);
+}
+
+$financeApproval = new FinanceApproval($db);
+$installmentService = new InstallmentPlan($db);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token = (string)($_POST['csrf_token'] ?? '');
+    if (!hash_equals($_SESSION['bill_detail_csrf'], $token)) {
+        $_SESSION['bill_detail_flash'] = [
+            'message' => 'Security validation failed. Please try again.',
+            'type' => 'danger',
+        ];
+    } else {
+        $action = trim((string)($_POST['action'] ?? ''));
+        $submittedBy = (int)($_SESSION['user_id'] ?? 0);
+        $result = false;
+
+        if (in_array($action, ['request_writeoff', 'request_waiver'], true)) {
+            $amount = (float)($_POST['request_amount'] ?? 0);
+            $reason = trim((string)($_POST['reason'] ?? ''));
+            $result = $financeApproval->createBillWriteOffRequest(
+                $billId,
+                $amount,
+                $submittedBy,
+                $reason,
+                $action === 'request_waiver' ? 'waiver' : 'writeoff'
+            );
+            $_SESSION['bill_detail_flash'] = [
+                'message' => $result ? 'Approval request submitted successfully.' : 'Could not submit approval request. Ensure amount is valid and bill has outstanding balance.',
+                'type' => $result ? 'success' : 'danger',
+            ];
+        } elseif ($action === 'request_installment') {
+            $amount = (float)($_POST['plan_amount'] ?? 0);
+            $count = (int)($_POST['installment_count'] ?? 3);
+            $frequency = trim((string)($_POST['frequency'] ?? 'monthly'));
+            $startDate = trim((string)($_POST['start_date'] ?? date('Y-m-d')));
+            $reason = trim((string)($_POST['plan_reason'] ?? ''));
+
+            $result = $financeApproval->createInstallmentPlanRequest(
+                $billId,
+                $submittedBy,
+                $amount,
+                $count,
+                $frequency,
+                $startDate,
+                $reason
+            );
+            $_SESSION['bill_detail_flash'] = [
+                'message' => $result ? 'Installment approval request submitted successfully.' : 'Could not submit installment request. Check amount, dates, and outstanding balance.',
+                'type' => $result ? 'success' : 'danger',
+            ];
+        }
+    }
+
+    $redirect = '/admin/bill-detail?bill_id=' . $billId;
+    header('Location: ' . $redirect);
     exit;
 }
 
@@ -67,6 +138,7 @@ foreach ($payments as $payment) {
     }
 }
 $outstanding = max(0, $totalAmount - $totalPaid);
+$activeInstallmentPlan = $installmentService->getActivePlanByBillId($billId);
 
 $is_admin_page = true;
 $page_title = 'Bill Detail';
@@ -74,6 +146,13 @@ require_once __DIR__ . '/../../templates/header.php';
 ?>
 
 <div class="container-fluid mt-4 admin-shell">
+    <?php if ($flashMessage !== ''): ?>
+        <div class="alert alert-<?php echo htmlspecialchars($flashType); ?> alert-dismissible fade show" role="alert">
+            <?php echo htmlspecialchars($flashMessage); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <?php endif; ?>
+
     <div class="admin-page-header mb-4 d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div>
             <h2 class="mb-1">Bill Detail #<?php echo (int)$billId; ?></h2>
@@ -117,6 +196,115 @@ require_once __DIR__ . '/../../templates/header.php';
             </div>
         </div>
     </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header"><h5 class="mb-0">Write-off / Waiver Request</h5></div>
+                <div class="card-body">
+                    <?php if ($outstanding <= 0): ?>
+                        <p class="text-success mb-0">This bill has no outstanding amount.</p>
+                    <?php else: ?>
+                        <form method="post" class="row g-2">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['bill_detail_csrf']); ?>">
+                            <div class="col-md-6">
+                                <label class="form-label">Request Amount (<?php echo htmlspecialchars($currency); ?>)</label>
+                                <input type="number" name="request_amount" class="form-control" min="0.01" max="<?php echo htmlspecialchars((string)number_format($outstanding, 2, '.', '')); ?>" step="0.01" value="<?php echo htmlspecialchars((string)number_format($outstanding, 2, '.', '')); ?>" required>
+                                <small class="text-muted">Outstanding: <?php echo htmlspecialchars($currency); ?> <?php echo number_format($outstanding, 2); ?></small>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Reason</label>
+                                <input type="text" name="reason" class="form-control" maxlength="255" placeholder="Brief justification">
+                            </div>
+                            <div class="col-12 d-flex gap-2">
+                                <button type="submit" name="action" value="request_writeoff" class="btn btn-outline-danger btn-sm" data-confirm-message="Submit write-off request for approval?">Request Write-off</button>
+                                <button type="submit" name="action" value="request_waiver" class="btn btn-outline-warning btn-sm" data-confirm-message="Submit waiver request for approval?">Request Waiver</button>
+                                <a href="/admin/approvals?status=pending#finance-items" class="btn btn-outline-secondary btn-sm">Open Approvals</a>
+                            </div>
+                        </form>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header"><h5 class="mb-0">Installment Plan Request</h5></div>
+                <div class="card-body">
+                    <?php if ($outstanding <= 0): ?>
+                        <p class="text-success mb-0">No installment plan is needed for a settled bill.</p>
+                    <?php else: ?>
+                        <form method="post" class="row g-2">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['bill_detail_csrf']); ?>">
+                            <div class="col-md-4">
+                                <label class="form-label">Amount</label>
+                                <input type="number" name="plan_amount" class="form-control" min="0.01" max="<?php echo htmlspecialchars((string)number_format($outstanding, 2, '.', '')); ?>" step="0.01" value="<?php echo htmlspecialchars((string)number_format($outstanding, 2, '.', '')); ?>" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Installments</label>
+                                <input type="number" name="installment_count" class="form-control" min="2" max="36" value="3" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Frequency</label>
+                                <select name="frequency" class="form-select">
+                                    <option value="monthly" selected>Monthly</option>
+                                    <option value="weekly">Weekly</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Start Date</label>
+                                <input type="date" name="start_date" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Reason</label>
+                                <input type="text" name="plan_reason" class="form-control" maxlength="255" placeholder="Installment rationale">
+                            </div>
+                            <div class="col-12 d-flex gap-2">
+                                <button type="submit" name="action" value="request_installment" class="btn btn-outline-primary btn-sm" data-confirm-message="Submit installment plan request for approval?">Request Installment Plan</button>
+                                <a href="/admin/approvals?status=pending#finance-items" class="btn btn-outline-secondary btn-sm">Open Approvals</a>
+                            </div>
+                        </form>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <?php if ($activeInstallmentPlan): ?>
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Active Installment Plan #<?php echo (int)$activeInstallmentPlan['id']; ?></h5>
+                <span class="badge bg-info text-dark"><?php echo htmlspecialchars(ucfirst((string)$activeInstallmentPlan['frequency'])); ?></span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Due Date</th>
+                                <th class="text-end">Installment</th>
+                                <th class="text-end">Allocated</th>
+                                <th class="text-end">Balance</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach (($activeInstallmentPlan['items'] ?? []) as $planItem): ?>
+                                <tr>
+                                    <td><?php echo (int)$planItem['sequence_no']; ?></td>
+                                    <td><?php echo htmlspecialchars(date('d-m-Y', strtotime((string)$planItem['due_date']))); ?></td>
+                                    <td class="text-end"><?php echo number_format((float)$planItem['due_amount'], 2); ?></td>
+                                    <td class="text-end"><?php echo number_format((float)($planItem['allocated_amount'] ?? 0), 2); ?></td>
+                                    <td class="text-end"><?php echo number_format((float)($planItem['balance_amount'] ?? 0), 2); ?></td>
+                                    <td><?php echo htmlspecialchars(ucfirst((string)($planItem['item_status'] ?? 'pending'))); ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <div class="card mb-4">
         <div class="card-header"><h5 class="mb-0">Bill Line Items</h5></div>

@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/ApprovalWorkflow.php';
 require_once __DIR__ . '/../../includes/FinanceApproval.php';
+require_once __DIR__ . '/../../includes/InstallmentPlan.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -19,6 +20,7 @@ if (empty($_SESSION['approvals_csrf'])) {
 
 ApprovalWorkflow::ensureTables($db);
 $finance = new FinanceApproval($db);
+$installments = new InstallmentPlan($db);
 $message = '';
 $messageType = 'success';
 
@@ -37,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $itemId = (int)($_POST['item_id'] ?? 0);
         $action = trim((string)($_POST['action'] ?? ''));
         if ($itemId > 0 && in_array($action, ['approve', 'reject'], true)) {
-            if ($finance->updateStatus($itemId, $action === 'approve' ? 'approved' : 'rejected', (int)($_SESSION['user_id'] ?? 0), trim((string)($_POST['comments'] ?? '')))) {
+            if ($finance->decideItem($itemId, $action, (int)($_SESSION['user_id'] ?? 0), trim((string)($_POST['comments'] ?? '')))) {
                 $message = 'Approval item updated.';
             } else {
                 $message = 'Could not update approval item.';
@@ -70,6 +72,27 @@ if (!in_array($selectedStatus, $allowedStatuses, true)) {
 }
 
 $financeItems = $finance->getItems($selectedStatus, 200);
+$financeItemsByBillId = [];
+foreach ($financeItems as $item) {
+    $type = (string)($item['entity_type'] ?? '');
+    if (!in_array($type, ['bill_writeoff', 'bill_waiver', 'bill_installment'], true)) {
+        continue;
+    }
+    $billId = (int)($item['entity_id'] ?? 0);
+    if ($billId <= 0) {
+        continue;
+    }
+    $financeItemsByBillId[$billId] = true;
+}
+
+$billInstallmentPlans = [];
+foreach (array_keys($financeItemsByBillId) as $billId) {
+    $plan = $installments->getActivePlanByBillId((int)$billId);
+    if ($plan) {
+        $billInstallmentPlans[(int)$billId] = $plan;
+    }
+}
+
 $meterWorkflows = $db->query("SELECT aw.*, mr.account_number, mr.meter_number
     FROM approval_workflows aw
     LEFT JOIN meter_readings mr ON mr.id = aw.meter_reading_id
@@ -133,15 +156,45 @@ include __DIR__ . '/../../templates/header.php';
                                     <?php foreach ($financeItems as $item): ?>
                                         <tr>
                                             <td><?php echo htmlspecialchars($item['reference_no'] ?? ('#' . (int)$item['entity_id'])); ?></td>
-                                            <td><?php echo htmlspecialchars($item['title']); ?></td>
+                                            <td>
+                                                <div class="fw-semibold"><?php echo htmlspecialchars($item['title']); ?></div>
+                                                <?php
+                                                    $metadata = [];
+                                                    if (!empty($item['metadata_json']) && is_string($item['metadata_json'])) {
+                                                        $decoded = json_decode($item['metadata_json'], true);
+                                                        if (is_array($decoded)) {
+                                                            $metadata = $decoded;
+                                                        }
+                                                    }
+                                                    $entityType = (string)($item['entity_type'] ?? '');
+                                                    $billId = (int)($item['entity_id'] ?? 0);
+                                                ?>
+                                                <?php if ($billId > 0 && in_array($entityType, ['bill_writeoff', 'bill_waiver', 'bill_installment'], true)): ?>
+                                                    <div class="small text-muted">
+                                                        <a href="/admin/bill-detail?bill_id=<?php echo $billId; ?>">Bill #<?php echo $billId; ?></a>
+                                                        <?php if (!empty($metadata['reason'])): ?>
+                                                            | Reason: <?php echo htmlspecialchars((string)$metadata['reason']); ?>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                                <?php if ($entityType === 'bill_installment' && !empty($metadata)): ?>
+                                                    <div class="small text-muted">
+                                                        Plan: <?php echo (int)($metadata['installment_count'] ?? 0); ?> installments, <?php echo htmlspecialchars((string)($metadata['frequency'] ?? 'monthly')); ?>, start <?php echo htmlspecialchars((string)($metadata['start_date'] ?? '-')); ?>
+                                                    </div>
+                                                    <?php if (($item['status'] ?? '') === 'approved' && isset($billInstallmentPlans[$billId])): ?>
+                                                        <div class="small text-success">Active plan #<?php echo (int)$billInstallmentPlans[$billId]['id']; ?> in progress</div>
+                                                    <?php endif; ?>
+                                                <?php endif; ?>
+                                            </td>
                                             <td>KES <?php echo number_format((float)$item['amount'], 2); ?></td>
                                             <td><span class="badge bg-<?php echo ($item['status'] === 'approved') ? 'success' : (($item['status'] === 'rejected') ? 'danger' : 'warning text-dark'); ?>"><?php echo htmlspecialchars(ucfirst((string)$item['status'])); ?></span></td>
                                             <td><?php echo htmlspecialchars($item['submitted_by_name'] ?? 'System'); ?></td>
                                             <td>
                                                 <?php if (($item['status'] ?? '') === 'pending'): ?>
-                                                    <form method="post" class="d-flex gap-2">
+                                                    <form method="post" class="d-flex gap-2 align-items-center flex-wrap">
                                                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['approvals_csrf']); ?>">
                                                         <input type="hidden" name="item_id" value="<?php echo (int)$item['id']; ?>">
+                                                        <input type="text" name="comments" class="form-control form-control-sm" placeholder="Decision note (optional)" style="min-width: 180px;">
                                                         <button type="submit" name="action" value="approve" class="btn btn-sm btn-outline-success" data-confirm-message="Approve this finance approval item?">Approve</button>
                                                         <button type="submit" name="action" value="reject" class="btn btn-sm btn-outline-danger" data-confirm-message="Reject this finance approval item?">Reject</button>
                                                     </form>

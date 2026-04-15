@@ -176,6 +176,57 @@ try {
         CONSTRAINT fk_bill_line_items_bill FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    $conn->exec("CREATE TABLE IF NOT EXISTS financial_approval_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        entity_type VARCHAR(50) NOT NULL,
+        entity_id INT NOT NULL,
+        reference_no VARCHAR(50) NULL,
+        title VARCHAR(191) NOT NULL,
+        amount DECIMAL(10,2) DEFAULT 0.00,
+        submitted_by INT NULL,
+        current_approver_role VARCHAR(50) DEFAULT 'finance',
+        status ENUM('pending','approved','rejected') DEFAULT 'pending',
+        metadata_json LONGTEXT NULL,
+        comments TEXT NULL,
+        approved_by INT NULL,
+        approved_at TIMESTAMP NULL,
+        rejected_at TIMESTAMP NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_entity (entity_type, entity_id),
+        INDEX idx_status_role (status, current_approver_role),
+        INDEX idx_created_at (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS installment_plans (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        bill_id INT NOT NULL,
+        user_id INT NOT NULL,
+        total_amount DECIMAL(10,2) NOT NULL,
+        installment_count INT NOT NULL,
+        frequency ENUM('weekly','monthly') NOT NULL DEFAULT 'monthly',
+        start_date DATE NOT NULL,
+        status ENUM('active','completed','cancelled') NOT NULL DEFAULT 'active',
+        created_by INT NULL,
+        approved_item_id INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_bill_active (bill_id, status),
+        INDEX idx_user_status (user_id, status),
+        INDEX idx_bill (bill_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS installment_plan_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        plan_id INT NOT NULL,
+        sequence_no INT NOT NULL,
+        due_date DATE NOT NULL,
+        due_amount DECIMAL(10,2) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_plan_sequence (plan_id, sequence_no),
+        INDEX idx_plan_due (plan_id, due_date),
+        CONSTRAINT fk_installment_items_plan FOREIGN KEY (plan_id) REFERENCES installment_plans(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
     // Payments table
     $conn->exec("CREATE TABLE IF NOT EXISTS payments (
         id INT PRIMARY KEY AUTO_INCREMENT,

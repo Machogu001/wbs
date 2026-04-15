@@ -653,4 +653,24 @@ class Accounting {
 			['account_id' => $receivableId, 'debit' => 0, 'credit' => $amount, 'memo' => $billRow ? ('Bill #' . (int)$billRow['id']) : 'Customer payment'],
 		], 'payment', $paymentId, $postedBy);
 	}
+
+	public function postReceivableReduction(string $referenceType, int $referenceId, int $billId, int $userId, float $amount, string $memo = 'Receivable reduction', ?int $postedBy = null): ?int {
+		if ($amount <= 0) {
+			return null;
+		}
+
+		$existing = $this->getPostedEntryByReference($referenceType, $referenceId);
+		if ($existing) {
+			return (int)$existing['id'];
+		}
+
+		$badDebtExpenseId = $this->resolveSystemAccount('5400', 'Bad Debt Expense', 'expense', 'debit');
+		$receivableId = $this->resolveSystemAccount('1100', 'Accounts Receivable', 'asset', 'debit');
+		$entryDate = date('Y-m-d');
+
+		return $this->postJournalEntry($entryDate, $memo, [
+			['account_id' => $badDebtExpenseId, 'debit' => $amount, 'credit' => 0, 'memo' => 'Bill #' . $billId . ' user #' . $userId],
+			['account_id' => $receivableId, 'debit' => 0, 'credit' => $amount, 'memo' => $memo],
+		], $referenceType, $referenceId, $postedBy);
+	}
 }
