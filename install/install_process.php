@@ -100,10 +100,14 @@ try {
         consumption DECIMAL(10,2) NOT NULL,
         rate_per_unit DECIMAL(10,2) DEFAULT 50.00,
         service_charge DECIMAL(10,2) DEFAULT 0.00,
+        base_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        tax_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+        tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
         amount DECIMAL(10,2) NOT NULL,
         due_date DATE NOT NULL,
         penalty DECIMAL(10,2) DEFAULT 0,
         status ENUM('pending', 'paid', 'overdue', 'cancelled') DEFAULT 'pending',
+        tariff_plan_id INT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         INDEX idx_user (user_id),
@@ -130,6 +134,46 @@ try {
         etims_api_key VARCHAR(255) NULL,
         etims_taxation_type_code VARCHAR(10) NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS tariff_plans (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        category ENUM('domestic', 'commercial', 'industrial', 'all') NOT NULL DEFAULT 'all',
+        effective_from DATE NOT NULL,
+        effective_to DATE NULL,
+        base_rate_per_unit DECIMAL(10,4) NOT NULL DEFAULT 0.0000,
+        service_charge DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        vat_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_tariff_dates (effective_from, effective_to),
+        INDEX idx_tariff_category_active (category, is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS tariff_blocks (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tariff_plan_id INT NOT NULL,
+        from_unit DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        to_unit DECIMAL(10,2) NULL,
+        rate_per_unit DECIMAL(10,4) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_plan_from_unit (tariff_plan_id, from_unit),
+        CONSTRAINT fk_tariff_blocks_plan FOREIGN KEY (tariff_plan_id) REFERENCES tariff_plans(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS bill_line_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        bill_id INT NOT NULL,
+        line_type ENUM('usage','service_charge','registration_fee','tax','penalty','adjustment') NOT NULL,
+        description VARCHAR(255) NOT NULL,
+        quantity DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        unit_rate DECIMAL(10,4) NOT NULL DEFAULT 0.0000,
+        line_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_bill_line (bill_id),
+        CONSTRAINT fk_bill_line_items_bill FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     // Payments table
@@ -567,6 +611,26 @@ try {
             ':locale_code'   => $locale_code,
             ':timezone_name' => $timezone_name,
         ]);
+    }
+
+    $tariffCount = $conn->query("SELECT COUNT(*) as count FROM tariff_plans")->fetch(PDO::FETCH_ASSOC);
+    if (!$tariffCount || (int)$tariffCount['count'] === 0) {
+        $stmtTariff = $conn->prepare("INSERT INTO tariff_plans
+            (name, category, effective_from, base_rate_per_unit, service_charge, vat_rate, is_active)
+            VALUES
+            ('Default Standard Tariff', 'all', :effective_from, 50.0000, 0.00, 0.00, 1)");
+        $stmtTariff->execute([
+            ':effective_from' => date('Y-m-01'),
+        ]);
+
+        $defaultTariffId = (int)$conn->lastInsertId();
+        if ($defaultTariffId > 0) {
+            $stmtTariffBlock = $conn->prepare("INSERT INTO tariff_blocks (tariff_plan_id, from_unit, to_unit, rate_per_unit)
+                VALUES (:tariff_plan_id, 0.00, NULL, 50.0000)");
+            $stmtTariffBlock->execute([
+                ':tariff_plan_id' => $defaultTariffId,
+            ]);
+        }
     }
 
     $password_hash = password_hash($admin_pass, PASSWORD_BCRYPT);

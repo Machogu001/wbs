@@ -29,6 +29,7 @@ if (!$bill) {
     header("Location: /bills");
     exit;
 }
+$billLineItems = $billService->getBillLineItems((int)$bill_id);
 
 $user = $_SESSION['user_data'] ?? [];
 
@@ -65,6 +66,30 @@ if ($bill['status'] === 'paid') {
     $statusColor = '#16a34a';
 } elseif (in_array($bill['status'], ['pending'], true)) {
     $statusColor = '#eab308';
+}
+
+$baseAmount = isset($bill['base_amount']) ? (float)$bill['base_amount'] : (float)$bill['amount'];
+$taxRate = isset($bill['tax_rate']) ? (float)$bill['tax_rate'] : 0.0;
+$taxAmount = isset($bill['tax_amount']) ? (float)$bill['tax_amount'] : 0.0;
+$totalAmount = (float)$bill['amount'];
+
+$lineRowsHtml = '';
+if (empty($billLineItems)) {
+    $lineRowsHtml = '<tr>'
+        . '<td>Water consumption for ' . htmlspecialchars(date('M Y', strtotime($bill['billing_month']))) . '</td>'
+        . '<td class="text-right">' . number_format((float)$bill['consumption'], 2) . '</td>'
+        . '<td class="text-right">' . number_format((float)$bill['rate_per_unit'], 2) . '</td>'
+        . '<td class="text-right">' . number_format((float)$bill['amount'], 2) . '</td>'
+        . '</tr>';
+} else {
+    foreach ($billLineItems as $lineItem) {
+        $lineRowsHtml .= '<tr>'
+            . '<td>' . htmlspecialchars((string)($lineItem['description'] ?? 'Line item')) . '</td>'
+            . '<td class="text-right">' . number_format((float)($lineItem['quantity'] ?? 0), 2) . '</td>'
+            . '<td class="text-right">' . number_format((float)($lineItem['unit_rate'] ?? 0), 2) . '</td>'
+            . '<td class="text-right">' . number_format((float)($lineItem['line_amount'] ?? 0), 2) . '</td>'
+            . '</tr>';
+    }
 }
 
 $html = '<!DOCTYPE html>
@@ -164,25 +189,12 @@ $html = '<!DOCTYPE html>
                     <thead>
                         <tr>
                             <th style="color:#ca8a04; border-bottom-color:#ca8a04;">Description</th>
-                            <th class="text-right" style="color:#7c3aed; border-bottom-color:#7c3aed;">Previous (m³)</th>
-                            <th class="text-right" style="color:#7c3aed; border-bottom-color:#7c3aed;">Current (m³)</th>
-                            <th class="text-right" style="color:#db2777; border-bottom-color:#db2777;">Consumption (m³)</th>
-                            <th class="text-right" style="color:#0284c7; border-bottom-color:#0284c7;">Rate (' . htmlspecialchars($currency) . '/m³)</th>
-                            <th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Service Charge (' . htmlspecialchars($currency) . ')</th>
+                            <th class="text-right" style="color:#db2777; border-bottom-color:#db2777;">Qty</th>
+                            <th class="text-right" style="color:#0284c7; border-bottom-color:#0284c7;">Rate (' . htmlspecialchars($currency) . ')</th>
                             <th class="text-right" style="color:#e11d48; border-bottom-color:#e11d48;">Amount (' . htmlspecialchars($currency) . ')</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <tr>
-                            <td>Water consumption for ' . htmlspecialchars(date('M Y', strtotime($bill['billing_month']))) . '</td>
-                            <td class="text-right">' . number_format($bill['previous_reading'], 2) . '</td>
-                            <td class="text-right">' . number_format($bill['current_reading'], 2) . '</td>
-                            <td class="text-right">' . number_format($bill['consumption'], 2) . '</td>
-                            <td class="text-right">' . number_format($bill['rate_per_unit'], 2) . '</td>
-                            <td class="text-right">' . number_format($bill['service_charge'], 2) . '</td>
-                            <td class="text-right">' . number_format($bill['amount'], 2) . '</td>
-                        </tr>
-                    </tbody>
+                    <tbody>' . $lineRowsHtml . '</tbody>
                 </table>
             </div>
 
@@ -192,11 +204,15 @@ $html = '<!DOCTYPE html>
                     <table class="summary-table" style="margin-left:auto;">
                         <tr>
                             <td class="summary-label">Subtotal:</td>
-                            <td class="summary-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($bill['amount'], 2) . '</td>
+                            <td class="summary-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($baseAmount, 2) . '</td>
+                        </tr>
+                        <tr>
+                            <td class="summary-label">VAT (' . number_format($taxRate, 2) . '%):</td>
+                            <td class="summary-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($taxAmount, 2) . '</td>
                         </tr>
                         <tr>
                             <td class="summary-total-label">Total Due:</td>
-                            <td class="summary-total-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($bill['amount'], 2) . '</td>
+                            <td class="summary-total-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($totalAmount, 2) . '</td>
                         </tr>
                     </table>
                 </div>

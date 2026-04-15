@@ -129,6 +129,198 @@ class BillingSettings {
         return $stmt->execute();
     }
 
+    public function listTariffPlans(bool $activeOnly = false): array {
+        $sql = "SELECT * FROM tariff_plans";
+        if ($activeOnly) {
+            $sql .= " WHERE is_active = 1";
+        }
+        $sql .= " ORDER BY effective_from DESC, id DESC";
+        $stmt = $this->conn->query($sql);
+        return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    }
+
+    public function getActiveTariffPlan(?string $billingDate = null, string $connectionType = 'domestic'): ?array {
+        $billingDate = $billingDate ?: date('Y-m-d');
+        $stmt = $this->conn->prepare("SELECT * FROM tariff_plans
+            WHERE is_active = 1
+                AND effective_from <= :billing_date
+                AND (effective_to IS NULL OR effective_to >= :billing_date)
+                AND category IN ('all', :category)
+            ORDER BY CASE WHEN category = :category2 THEN 0 ELSE 1 END, effective_from DESC, id DESC
+            LIMIT 1");
+        $stmt->execute([
+            ':billing_date' => $billingDate,
+            ':category' => $connectionType,
+            ':category2' => $connectionType,
+        ]);
+        $plan = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$plan) {
+            return null;
+        }
+
+        $blockStmt = $this->conn->prepare("SELECT * FROM tariff_blocks WHERE tariff_plan_id = :tariff_plan_id ORDER BY from_unit ASC");
+        $blockStmt->execute([':tariff_plan_id' => (int)$plan['id']]);
+        $plan['blocks'] = $blockStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        return $plan;
+    }
+
+    public function getTariffPlanById(int $planId): ?array {
+        if ($planId <= 0) {
+            return null;
+        }
+
+        $stmt = $this->conn->prepare("SELECT * FROM tariff_plans WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $planId]);
+        $plan = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$plan) {
+            return null;
+        }
+
+        $blockStmt = $this->conn->prepare("SELECT * FROM tariff_blocks WHERE tariff_plan_id = :tariff_plan_id ORDER BY from_unit ASC");
+        $blockStmt->execute([':tariff_plan_id' => $planId]);
+        $plan['blocks'] = $blockStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        return $plan;
+    }
+
+    public function saveTariffPlan(array $data, array $blocks): int {
+        $name = trim((string)($data['name'] ?? ''));
+        $category = trim((string)($data['category'] ?? 'all'));
+        $effectiveFrom = trim((string)($data['effective_from'] ?? ''));
+        $effectiveTo = trim((string)($data['effective_to'] ?? ''));
+        $baseRate = (float)($data['base_rate_per_unit'] ?? 0);
+        $serviceCharge = (float)($data['service_charge'] ?? 0);
+        $vatRate = (float)($data['vat_rate'] ?? 0);
+        $isActive = !empty($data['is_active']) ? 1 : 0;
+        $planId = (int)($data['id'] ?? 0);
+
+        $allowedCategories = ['domestic', 'commercial', 'industrial', 'all'];
+        if ($name === '') {
+            throw new InvalidArgumentException('Tariff name is required.');
+        }
+        if (!in_array($category, $allowedCategories, true)) {
+            throw new InvalidArgumentException('Invalid tariff category.');
+        }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $effectiveFrom)) {
+            throw new InvalidArgumentException('Effective from date is required.');
+        }
+        if ($effectiveTo !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $effectiveTo)) {
+            throw new InvalidArgumentException('Effective to date format is invalid.');
+        }
+        if ($baseRate < 0 || $serviceCharge < 0 || $vatRate < 0) {
+            throw new InvalidArgumentException('Rates and charges cannot be negative.');
+        }
+
+        $normalizedBlocks = [];
+        foreach ($blocks as $block) {
+            $from = (float)($block['from_unit'] ?? 0);
+            $toRaw = $block['to_unit'] ?? null;
+            $to = ($toRaw === null || $toRaw === '') ? null : (float)$toRaw;
+            $rate = (float)($block['rate_per_unit'] ?? 0);
+            if ($rate < 0) {
+                continue;
+            }
+            if ($to !== null && $to <= $from) {
+                continue;
+            }
+            $normalizedBlocks[] = [
+                'from_unit' => $from,
+                'to_unit' => $to,
+                'rate_per_unit' => $rate,
+            ];
+        }
+
+        if (empty($normalizedBlocks)) {
+            $normalizedBlocks[] = [
+                'from_unit' => 0,
+                'to_unit' => null,
+                'rate_per_unit' => $baseRate,
+            ];
+        }
+
+        usort($normalizedBlocks, static function (array $a, array $b): int {
+            return ($a['from_unit'] <=> $b['from_unit']);
+        });
+
+        $this->conn->beginTransaction();
+        try {
+            if ($planId > 0) {
+                $stmt = $this->conn->prepare("UPDATE tariff_plans
+                    SET name = :name,
+                        category = :category,
+                        effective_from = :effective_from,
+                        effective_to = :effective_to,
+                        base_rate_per_unit = :base_rate_per_unit,
+                        service_charge = :service_charge,
+                        vat_rate = :vat_rate,
+                        is_active = :is_active,
+                        updated_at = NOW()
+                    WHERE id = :id");
+                $stmt->execute([
+                    ':name' => $name,
+                    ':category' => $category,
+                    ':effective_from' => $effectiveFrom,
+                    ':effective_to' => $effectiveTo !== '' ? $effectiveTo : null,
+                    ':base_rate_per_unit' => $baseRate,
+                    ':service_charge' => $serviceCharge,
+                    ':vat_rate' => $vatRate,
+                    ':is_active' => $isActive,
+                    ':id' => $planId,
+                ]);
+
+                $del = $this->conn->prepare("DELETE FROM tariff_blocks WHERE tariff_plan_id = :tariff_plan_id");
+                $del->execute([':tariff_plan_id' => $planId]);
+            } else {
+                $stmt = $this->conn->prepare("INSERT INTO tariff_plans
+                    (name, category, effective_from, effective_to, base_rate_per_unit, service_charge, vat_rate, is_active)
+                    VALUES (:name, :category, :effective_from, :effective_to, :base_rate_per_unit, :service_charge, :vat_rate, :is_active)");
+                $stmt->execute([
+                    ':name' => $name,
+                    ':category' => $category,
+                    ':effective_from' => $effectiveFrom,
+                    ':effective_to' => $effectiveTo !== '' ? $effectiveTo : null,
+                    ':base_rate_per_unit' => $baseRate,
+                    ':service_charge' => $serviceCharge,
+                    ':vat_rate' => $vatRate,
+                    ':is_active' => $isActive,
+                ]);
+                $planId = (int)$this->conn->lastInsertId();
+            }
+
+            $stmtBlock = $this->conn->prepare("INSERT INTO tariff_blocks (tariff_plan_id, from_unit, to_unit, rate_per_unit)
+                VALUES (:tariff_plan_id, :from_unit, :to_unit, :rate_per_unit)");
+            foreach ($normalizedBlocks as $block) {
+                $stmtBlock->execute([
+                    ':tariff_plan_id' => $planId,
+                    ':from_unit' => (float)$block['from_unit'],
+                    ':to_unit' => $block['to_unit'] !== null ? (float)$block['to_unit'] : null,
+                    ':rate_per_unit' => (float)$block['rate_per_unit'],
+                ]);
+            }
+
+            $this->conn->commit();
+            return $planId;
+        } catch (Throwable $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    public function setTariffPlanStatus(int $planId, int $isActive): bool {
+        if ($planId <= 0) {
+            return false;
+        }
+
+        $stmt = $this->conn->prepare("UPDATE tariff_plans SET is_active = :is_active, updated_at = NOW() WHERE id = :id");
+        return $stmt->execute([
+            ':is_active' => $isActive ? 1 : 0,
+            ':id' => $planId,
+        ]);
+    }
+
     private function createDefault() {
           $default_rate = 50.00;
           $default_service = 0.00;
@@ -262,6 +454,63 @@ class BillingSettings {
             $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN enforce_location_accuracy TINYINT(1) NOT NULL DEFAULT 0");
         } catch (\PDOException $e) {
             // Ignore if column already exists
+        }
+
+        $this->ensureTariffTables();
+    }
+
+    private function ensureTariffTables(): void {
+        $this->conn->exec("CREATE TABLE IF NOT EXISTS tariff_plans (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(120) NOT NULL,
+            category ENUM('domestic', 'commercial', 'industrial', 'all') NOT NULL DEFAULT 'all',
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+            base_rate_per_unit DECIMAL(10,4) NOT NULL DEFAULT 0.0000,
+            service_charge DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            vat_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_tariff_dates (effective_from, effective_to),
+            INDEX idx_tariff_category_active (category, is_active)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $this->conn->exec("CREATE TABLE IF NOT EXISTS tariff_blocks (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            tariff_plan_id INT NOT NULL,
+            from_unit DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            to_unit DECIMAL(10,2) NULL,
+            rate_per_unit DECIMAL(10,4) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_plan_from_unit (tariff_plan_id, from_unit),
+            CONSTRAINT fk_tariff_blocks_plan FOREIGN KEY (tariff_plan_id) REFERENCES tariff_plans(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $countStmt = $this->conn->query("SELECT COUNT(*) FROM tariff_plans");
+        $count = $countStmt ? (int)$countStmt->fetchColumn() : 0;
+        if ($count === 0) {
+            $settings = $this->getSettings();
+            $stmt = $this->conn->prepare("INSERT INTO tariff_plans
+                (name, category, effective_from, base_rate_per_unit, service_charge, vat_rate, is_active)
+                VALUES (:name, 'all', :effective_from, :base_rate_per_unit, :service_charge, :vat_rate, 1)");
+            $stmt->execute([
+                ':name' => 'Default Standard Tariff',
+                ':effective_from' => date('Y-m-01'),
+                ':base_rate_per_unit' => (float)($settings['rate_per_unit'] ?? 50.0),
+                ':service_charge' => (float)($settings['service_charge'] ?? 0.0),
+                ':vat_rate' => (float)($settings['vat_rate'] ?? 0.0),
+            ]);
+
+            $planId = (int)$this->conn->lastInsertId();
+            if ($planId > 0) {
+                $blockStmt = $this->conn->prepare("INSERT INTO tariff_blocks (tariff_plan_id, from_unit, to_unit, rate_per_unit)
+                    VALUES (:tariff_plan_id, 0.00, NULL, :rate_per_unit)");
+                $blockStmt->execute([
+                    ':tariff_plan_id' => $planId,
+                    ':rate_per_unit' => (float)($settings['rate_per_unit'] ?? 50.0),
+                ]);
+            }
         }
     }
 }

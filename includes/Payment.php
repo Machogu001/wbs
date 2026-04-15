@@ -96,6 +96,10 @@ class Payment {
 	}
 
 	public function updatePaymentStatus($id, $status, $mpesa_receipt = null, $result_code = null, $result_desc = null) {
+		$existingPayment = $this->getById($id);
+		$previousStatus = (string)($existingPayment['status'] ?? '');
+		$isTransitionToCompleted = ($status === 'completed' && $previousStatus !== 'completed');
+
 		$setParts = [
 			"status = :status",
 			"mpesa_receipt = :mpesa_receipt",
@@ -103,7 +107,7 @@ class Payment {
 			"result_desc = :result_desc"
 		];
 		// For successful payments, record transaction date
-		if ($status === 'completed') {
+		if ($isTransitionToCompleted) {
 			$setParts[] = "transaction_date = NOW()";
 		}
 		$query = "UPDATE " . $this->table . " SET " . implode(', ', $setParts) . " WHERE id = :id";
@@ -117,7 +121,7 @@ class Payment {
 			return false;
 		}
 
-		if ($status === 'completed') {
+		if ($isTransitionToCompleted) {
 			try {
 				$accounting = new Accounting($this->conn);
 				$paymentRow = $this->getById($id);
@@ -135,7 +139,7 @@ class Payment {
 					'Payment received'
 				);
 			} catch (\Throwable $e) {
-				// Accounting should not block payment posting.
+				error_log('Payment accounting posting failed for payment #' . (int)$id . ': ' . $e->getMessage());
 			}
 		}
 

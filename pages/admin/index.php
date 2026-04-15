@@ -87,6 +87,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 		}
 	}
 
+	if (isset($_POST['action']) && $_POST['action'] === 'save_tariff_plan') {
+		$planId = (int)($_POST['tariff_plan_id'] ?? 0);
+		$name = trim((string)($_POST['tariff_name'] ?? ''));
+		$category = trim((string)($_POST['tariff_category'] ?? 'all'));
+		$effectiveFrom = trim((string)($_POST['effective_from'] ?? ''));
+		$effectiveTo = trim((string)($_POST['effective_to'] ?? ''));
+		$baseRate = (float)($_POST['base_rate_per_unit'] ?? 0);
+		$serviceCharge = (float)($_POST['tariff_service_charge'] ?? 0);
+		$vatRate = (float)($_POST['tariff_vat_rate'] ?? 0);
+		$isActive = isset($_POST['tariff_is_active']) ? 1 : 0;
+
+		$blockFromUnits = $_POST['block_from_unit'] ?? [];
+		$blockToUnits = $_POST['block_to_unit'] ?? [];
+		$blockRates = $_POST['block_rate'] ?? [];
+		$blocks = [];
+		$blockCount = max(count((array)$blockFromUnits), count((array)$blockRates));
+		for ($i = 0; $i < $blockCount; $i++) {
+			$from = trim((string)($blockFromUnits[$i] ?? ''));
+			$to = trim((string)($blockToUnits[$i] ?? ''));
+			$rate = trim((string)($blockRates[$i] ?? ''));
+			if ($from === '' && $to === '' && $rate === '') {
+				continue;
+			}
+			$blocks[] = [
+				'from_unit' => ($from === '' ? 0 : (float)$from),
+				'to_unit' => ($to === '' ? null : (float)$to),
+				'rate_per_unit' => ($rate === '' ? 0 : (float)$rate),
+			];
+		}
+
+		try {
+			$savedId = $settingsService->saveTariffPlan([
+				'id' => $planId,
+				'name' => $name,
+				'category' => $category,
+				'effective_from' => $effectiveFrom,
+				'effective_to' => $effectiveTo,
+				'base_rate_per_unit' => $baseRate,
+				'service_charge' => $serviceCharge,
+				'vat_rate' => $vatRate,
+				'is_active' => $isActive,
+			], $blocks);
+
+			$_SESSION['flash_message'] = $planId > 0
+				? 'Tariff plan updated successfully.'
+				: 'Tariff plan created successfully.';
+			$_SESSION['flash_type'] = 'success';
+			header('Location: /settings?edit_tariff_id=' . (int)$savedId);
+			exit;
+		} catch (Throwable $e) {
+			$message = 'Failed to save tariff plan: ' . $e->getMessage();
+			$message_type = 'danger';
+		}
+	}
+
+	if (isset($_POST['action']) && $_POST['action'] === 'toggle_tariff_plan') {
+		$planId = (int)($_POST['tariff_plan_id'] ?? 0);
+		$isActive = (int)($_POST['is_active'] ?? 0);
+		if ($settingsService->setTariffPlanStatus($planId, $isActive)) {
+			$_SESSION['flash_message'] = $isActive ? 'Tariff plan activated.' : 'Tariff plan deactivated.';
+			$_SESSION['flash_type'] = 'success';
+			header('Location: /settings');
+			exit;
+		}
+		$message = 'Failed to update tariff status.';
+		$message_type = 'danger';
+	}
+
 	if (isset($_POST['action']) && $_POST['action'] === 'add_reading') {
 		$identifier = trim($_POST['account_or_meter']);
 		$current_reading = (float)$_POST['current_reading'];
@@ -315,8 +383,15 @@ $settings = null;
 $pending_readings = [];
 $clients_summary = [];
 $client_list = [];
+$tariff_plans = [];
+$editing_tariff = null;
 if ($db && $settingsService) {
 	$settings = $settingsService->getSettings();
+	$tariff_plans = $settingsService->listTariffPlans(false);
+	$editingTariffId = (int)($_GET['edit_tariff_id'] ?? 0);
+	if ($editingTariffId > 0) {
+		$editing_tariff = $settingsService->getTariffPlanById($editingTariffId);
+	}
 	$readingService = new MeterReading($db);
 	$pending_readings = $readingService->listPending();
 	$billService = new Bill($db);
@@ -531,6 +606,159 @@ require_once __DIR__ . '/../../templates/header.php';
 					</form>
 				</div>
 			</div>
+			<div class="card system-settings-card mt-4">
+				<div class="card-header">
+					<h5 class="mb-0 admin-section-title">Tariff Plan Management</h5>
+				</div>
+				<div class="card-body">
+					<form method="POST" class="row g-3">
+						<input type="hidden" name="action" value="save_tariff_plan">
+						<input type="hidden" name="tariff_plan_id" value="<?php echo (int)($editing_tariff['id'] ?? 0); ?>">
+						<div class="col-md-4">
+							<label class="form-label">Tariff Name</label>
+							<input type="text" class="form-control" name="tariff_name" value="<?php echo htmlspecialchars((string)($editing_tariff['name'] ?? '')); ?>" placeholder="e.g. Domestic 2026 Q2" required>
+						</div>
+						<div class="col-md-2">
+							<label class="form-label">Category</label>
+							<select name="tariff_category" class="form-select" required>
+								<?php $selectedCategory = (string)($editing_tariff['category'] ?? 'all'); ?>
+								<?php foreach (['all' => 'All', 'domestic' => 'Domestic', 'commercial' => 'Commercial', 'industrial' => 'Industrial'] as $catValue => $catLabel): ?>
+									<option value="<?php echo htmlspecialchars($catValue); ?>" <?php echo $selectedCategory === $catValue ? 'selected' : ''; ?>><?php echo htmlspecialchars($catLabel); ?></option>
+								<?php endforeach; ?>
+							</select>
+						</div>
+						<div class="col-md-2">
+							<label class="form-label">Effective From</label>
+							<input type="date" class="form-control" name="effective_from" value="<?php echo htmlspecialchars((string)($editing_tariff['effective_from'] ?? date('Y-m-01'))); ?>" required>
+						</div>
+						<div class="col-md-2">
+							<label class="form-label">Effective To</label>
+							<input type="date" class="form-control" name="effective_to" value="<?php echo htmlspecialchars((string)($editing_tariff['effective_to'] ?? '')); ?>">
+						</div>
+						<div class="col-md-2 d-flex align-items-end">
+							<div class="form-check form-switch">
+								<input class="form-check-input" type="checkbox" name="tariff_is_active" id="tariff_is_active" <?php echo !isset($editing_tariff['is_active']) || !empty($editing_tariff['is_active']) ? 'checked' : ''; ?>>
+								<label class="form-check-label" for="tariff_is_active">Active</label>
+							</div>
+						</div>
+
+						<div class="col-md-4">
+							<label class="form-label">Default Rate (KES/m3)</label>
+							<input type="number" step="0.0001" min="0" class="form-control" name="base_rate_per_unit" value="<?php echo htmlspecialchars((string)($editing_tariff['base_rate_per_unit'] ?? ($settings['rate_per_unit'] ?? '50.0000'))); ?>" required>
+						</div>
+						<div class="col-md-4">
+							<label class="form-label">Service Charge (KES)</label>
+							<input type="number" step="0.01" min="0" class="form-control" name="tariff_service_charge" value="<?php echo htmlspecialchars((string)($editing_tariff['service_charge'] ?? ($settings['service_charge'] ?? '0.00'))); ?>" required>
+						</div>
+						<div class="col-md-4">
+							<label class="form-label">VAT Rate (%)</label>
+							<input type="number" step="0.01" min="0" max="100" class="form-control" name="tariff_vat_rate" value="<?php echo htmlspecialchars((string)($editing_tariff['vat_rate'] ?? ($settings['vat_rate'] ?? '0.00'))); ?>" required>
+						</div>
+
+						<?php
+						$tariffBlocks = $editing_tariff['blocks'] ?? [
+							['from_unit' => 0, 'to_unit' => 10, 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
+							['from_unit' => 10, 'to_unit' => 20, 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
+							['from_unit' => 20, 'to_unit' => '', 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
+						];
+						if (empty($tariffBlocks)) {
+							$tariffBlocks = [['from_unit' => 0, 'to_unit' => '', 'rate_per_unit' => $settings['rate_per_unit'] ?? 50]];
+						}
+						?>
+						<div class="col-12">
+							<div class="d-flex justify-content-between align-items-center mb-2">
+								<h6 class="mb-0">Tariff Blocks</h6>
+								<button type="button" class="btn btn-sm btn-outline-primary" id="addTariffBlockBtn"><i class="bi bi-plus-circle me-1"></i>Add Block</button>
+							</div>
+							<div id="tariffBlocksContainer">
+								<?php foreach ($tariffBlocks as $idx => $block): ?>
+									<div class="row g-2 align-items-end tariff-block-row mb-2" data-index="<?php echo (int)$idx; ?>">
+										<div class="col-md-3">
+											<label class="form-label">From Unit</label>
+											<input type="number" step="0.01" min="0" class="form-control" name="block_from_unit[]" value="<?php echo htmlspecialchars((string)($block['from_unit'] ?? '')); ?>">
+										</div>
+										<div class="col-md-3">
+											<label class="form-label">To Unit (blank = open)</label>
+											<input type="number" step="0.01" min="0" class="form-control" name="block_to_unit[]" value="<?php echo htmlspecialchars((string)($block['to_unit'] ?? '')); ?>">
+										</div>
+										<div class="col-md-3">
+											<label class="form-label">Rate</label>
+											<input type="number" step="0.0001" min="0" class="form-control" name="block_rate[]" value="<?php echo htmlspecialchars((string)($block['rate_per_unit'] ?? '')); ?>">
+										</div>
+										<div class="col-md-3">
+											<button type="button" class="btn btn-outline-danger w-100 js-remove-tariff-block"><i class="bi bi-trash"></i> Remove</button>
+										</div>
+									</div>
+								<?php endforeach; ?>
+							</div>
+							<template id="tariffBlockTemplate">
+								<div class="row g-2 align-items-end tariff-block-row mb-2">
+									<div class="col-md-3">
+										<label class="form-label">From Unit</label>
+										<input type="number" step="0.01" min="0" class="form-control" name="block_from_unit[]" value="0">
+									</div>
+									<div class="col-md-3">
+										<label class="form-label">To Unit (blank = open)</label>
+										<input type="number" step="0.01" min="0" class="form-control" name="block_to_unit[]" value="">
+									</div>
+									<div class="col-md-3">
+										<label class="form-label">Rate</label>
+										<input type="number" step="0.0001" min="0" class="form-control" name="block_rate[]" value="0">
+									</div>
+									<div class="col-md-3">
+										<button type="button" class="btn btn-outline-danger w-100 js-remove-tariff-block"><i class="bi bi-trash"></i> Remove</button>
+									</div>
+								</div>
+							</template>
+						</div>
+
+						<div class="col-12 d-flex gap-2">
+							<button type="submit" class="btn btn-primary"><?php echo !empty($editing_tariff) ? 'Update Tariff Plan' : 'Create Tariff Plan'; ?></button>
+							<a href="/settings" class="btn btn-outline-secondary">Reset</a>
+						</div>
+					</form>
+
+					<hr class="my-4">
+					<div class="table-responsive">
+						<table class="table table-sm align-middle mb-0">
+							<thead>
+								<tr>
+									<th>Name</th>
+									<th>Category</th>
+									<th>Effective</th>
+									<th>VAT %</th>
+									<th>Status</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody>
+							<?php if (empty($tariff_plans)): ?>
+								<tr><td colspan="6" class="text-center text-muted py-3">No tariff plans found.</td></tr>
+							<?php else: ?>
+								<?php foreach ($tariff_plans as $plan): ?>
+									<tr>
+										<td><?php echo htmlspecialchars((string)$plan['name']); ?></td>
+										<td><?php echo htmlspecialchars(ucfirst((string)$plan['category'])); ?></td>
+										<td><?php echo htmlspecialchars((string)$plan['effective_from']); ?><?php echo !empty($plan['effective_to']) ? ' to ' . htmlspecialchars((string)$plan['effective_to']) : ' onward'; ?></td>
+										<td><?php echo number_format((float)$plan['vat_rate'], 2); ?></td>
+										<td><?php echo !empty($plan['is_active']) ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'; ?></td>
+										<td class="d-flex gap-2 flex-wrap">
+											<a href="/settings?edit_tariff_id=<?php echo (int)$plan['id']; ?>" class="btn btn-sm btn-outline-primary">Edit</a>
+											<form method="POST" class="d-inline">
+												<input type="hidden" name="action" value="toggle_tariff_plan">
+												<input type="hidden" name="tariff_plan_id" value="<?php echo (int)$plan['id']; ?>">
+												<input type="hidden" name="is_active" value="<?php echo !empty($plan['is_active']) ? 0 : 1; ?>">
+												<button type="submit" class="btn btn-sm btn-outline-<?php echo !empty($plan['is_active']) ? 'danger' : 'success'; ?>"><?php echo !empty($plan['is_active']) ? 'Deactivate' : 'Activate'; ?></button>
+											</form>
+										</td>
+									</tr>
+								<?php endforeach; ?>
+							<?php endif; ?>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
 		</div>
 		<div class="col-lg-4 mt-4 mt-lg-0">
 			<div class="card h-100 admin-aside-card system-settings-card system-settings-summary-card">
@@ -608,6 +836,9 @@ require_once __DIR__ . '/../../templates/header.php';
 												<?php if (!empty($client['last_bill_id']) && (int)$client['last_bill_id'] > 0): ?>
 													<?php $clientPayUrl = PaymentLink::generateLink((int)$client['last_bill_id']); ?>
 													<div class="d-flex gap-2 flex-wrap">
+														<a href="/admin/bill-detail?bill_id=<?php echo (int)$client['last_bill_id']; ?>" class="btn btn-sm btn-outline-dark">
+															<i class="bi bi-receipt me-1"></i>Bill
+														</a>
 														<button type="button"
 															class="btn btn-sm btn-outline-primary js-copy-pay-link"
 															data-pay-url="<?php echo htmlspecialchars($clientPayUrl, ENT_QUOTES, 'UTF-8'); ?>">
@@ -759,7 +990,7 @@ require_once __DIR__ . '/../../templates/header.php';
 													<?php echo empty($p['etims_status']) ? 'Send' : 'Retry'; ?>
 												</button>
 											<?php else: ?>
-												<span class="text-muted small">—</span>
+												<a href="/admin/bill-detail?bill_id=<?php echo (int)$p['bill_id']; ?>" class="btn btn-sm btn-outline-dark">Bill</a>
 											<?php endif; ?>
 										</td>
 									</tr>
@@ -1044,6 +1275,36 @@ require_once __DIR__ . '/../../templates/header.php';
 				});
 			});
 		});
+	}
+
+	const addTariffBlockBtn = document.getElementById('addTariffBlockBtn');
+	const tariffBlocksContainer = document.getElementById('tariffBlocksContainer');
+	const tariffBlockTemplate = document.getElementById('tariffBlockTemplate');
+
+	function bindTariffBlockRemoveHandlers() {
+		if (!tariffBlocksContainer) return;
+		tariffBlocksContainer.querySelectorAll('.js-remove-tariff-block').forEach(function(btn) {
+			btn.onclick = function() {
+				const rows = tariffBlocksContainer.querySelectorAll('.tariff-block-row');
+				if (rows.length <= 1) {
+					if (window.showToast) {
+						showToast('At least one tariff block is required.', 'warning');
+					}
+					return;
+				}
+				const row = this.closest('.tariff-block-row');
+				if (row) row.remove();
+			};
+		});
+	}
+
+	if (addTariffBlockBtn && tariffBlocksContainer && tariffBlockTemplate) {
+		addTariffBlockBtn.addEventListener('click', function() {
+			const clone = tariffBlockTemplate.content.cloneNode(true);
+			tariffBlocksContainer.appendChild(clone);
+			bindTariffBlockRemoveHandlers();
+		});
+		bindTariffBlockRemoveHandlers();
 	}
 })();
 </script>

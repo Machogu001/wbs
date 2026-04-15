@@ -64,7 +64,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 	$filename = 'my_bills_' . date('Ymd') . '.csv';
 	header('Content-Disposition: attachment; filename="' . $filename . '"');
 	$out = fopen('php://output', 'w');
-	fputcsv($out, ['Billing Month', 'Previous Reading', 'Current Reading', 'Consumption (m3)', 'Rate (KES/m3)', 'Service Charge (KES)', 'Amount (KES)', 'Status', 'Due Date']);
+	fputcsv($out, ['Billing Month', 'Previous Reading', 'Current Reading', 'Consumption (m3)', 'Rate (KES/m3)', 'Service Charge (KES)', 'Base Amount (KES)', 'Tax Rate (%)', 'Tax Amount (KES)', 'Amount (KES)', 'Status', 'Due Date']);
 	foreach ($billsCsv as $billRow) {
 		fputcsv($out, [
 			$billRow['billing_month'],
@@ -73,6 +73,9 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 			$billRow['consumption'],
 			$billRow['rate_per_unit'],
 			$billRow['service_charge'],
+			isset($billRow['base_amount']) ? $billRow['base_amount'] : $billRow['amount'],
+			isset($billRow['tax_rate']) ? $billRow['tax_rate'] : 0,
+			isset($billRow['tax_amount']) ? $billRow['tax_amount'] : 0,
 			$billRow['amount'],
 			$billRow['status'],
 			$billRow['due_date'],
@@ -234,6 +237,8 @@ if ($db) {
 									<th>Consumption (m³)</th>
 									<th>Rate (KES/m³)</th>
 									<th>Service Charge (KES)</th>
+									<th>Base (KES)</th>
+									<th>Tax (KES)</th>
 									<th>Amount (KES)</th>
 									<th>Status</th>
 									<th>Invoice</th>
@@ -243,10 +248,12 @@ if ($db) {
 							<tbody>
 								<?php if(empty($bills)): ?>
 									<tr>
-										<td colspan="10" class="text-center text-muted">No bills found for this view.</td>
+										<td colspan="12" class="text-center text-muted">No bills found for this view.</td>
 									</tr>
 								<?php else: ?>
 									<?php foreach($bills as $bill): ?>
+										<?php $baseAmount = isset($bill['base_amount']) ? (float)$bill['base_amount'] : (float)$bill['amount']; ?>
+										<?php $taxAmount = isset($bill['tax_amount']) ? (float)$bill['tax_amount'] : 0.0; ?>
 										<tr>
 											<td><?php echo htmlspecialchars(date('M Y', strtotime($bill['billing_month']))); ?></td>
 											<td><?php echo number_format($bill['previous_reading'], 2); ?></td>
@@ -254,6 +261,8 @@ if ($db) {
 											<td><?php echo number_format($bill['consumption'], 2); ?></td>
 											<td><?php echo number_format($bill['rate_per_unit'], 2); ?></td>
 											<td><?php echo number_format($bill['service_charge'], 2); ?></td>
+											<td><?php echo number_format($baseAmount, 2); ?></td>
+											<td><?php echo number_format($taxAmount, 2); ?></td>
 											<td><?php echo number_format($bill['amount'], 2); ?></td>
 											<td>
 												<?php

@@ -30,6 +30,7 @@ return [
     'admin' => 'pages/admin/index.php',
     'admin/payments' => 'pages/admin/payments.php',
     'admin/payment-transactions' => 'pages/admin/payment_transactions.php',
+    'admin/bill-detail' => 'pages/admin/bill_detail.php',
     'admin/users' => 'pages/admin/users.php',
     'admin/staff-users' => 'pages/admin/staff_users.php',
     // Invoicing workspace

@@ -50,7 +50,11 @@ if ($fromDate !== null || $toDate !== null) {
 
 $total_paid = 0.0;
 $total_unpaid = 0.0;
+$total_base = 0.0;
+$total_tax = 0.0;
 foreach ($bills as $bill) {
+	$total_base += isset($bill['base_amount']) ? (float)$bill['base_amount'] : (float)$bill['amount'];
+	$total_tax += isset($bill['tax_amount']) ? (float)$bill['tax_amount'] : 0.0;
     if ($bill['status'] === 'paid') {
         $total_paid += (float)$bill['amount'];
     } elseif (in_array($bill['status'], ['pending', 'overdue'], true)) {
@@ -78,12 +82,16 @@ $filename = 'statement_' . ($user['account_number'] ?? 'account') . $periodToken
 
 $rows = '';
 if (empty($bills)) {
-    $rows = '<tr><td colspan="4" style="text-align:center;">No bills found.</td></tr>';
+	$rows = '<tr><td colspan="6" style="text-align:center;">No bills found.</td></tr>';
 } else {
     foreach ($bills as $bill) {
+		$baseAmount = isset($bill['base_amount']) ? (float)$bill['base_amount'] : (float)$bill['amount'];
+		$taxAmount = isset($bill['tax_amount']) ? (float)$bill['tax_amount'] : 0.0;
         $rows .= '<tr>'
             . '<td>' . htmlspecialchars(date('M Y', strtotime($bill['billing_month']))) . '</td>'
-            . '<td>' . number_format($bill['amount'], 2) . '</td>'
+            . '<td class="text-right">' . number_format($baseAmount, 2) . '</td>'
+            . '<td class="text-right">' . number_format($taxAmount, 2) . '</td>'
+            . '<td class="text-right">' . number_format($bill['amount'], 2) . '</td>'
             . '<td>' . htmlspecialchars(ucfirst($bill['status'])) . '</td>'
             . '<td>' . htmlspecialchars(date('d-m-Y', strtotime($bill['due_date']))) . '</td>'
             . '</tr>';
@@ -184,7 +192,9 @@ $html = '<!DOCTYPE html>
                     <thead>
                         <tr>
                             <th style="color:#e11d48; border-bottom-color:#e11d48;">Billing Month</th>
-                            <th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Amount (' . htmlspecialchars($currency) . ')</th>
+                            <th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Base (' . htmlspecialchars($currency) . ')</th>
+                            <th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Tax (' . htmlspecialchars($currency) . ')</th>
+                            <th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Total (' . htmlspecialchars($currency) . ')</th>
                             <th style="color:#0284c7; border-bottom-color:#0284c7;">Status</th>
                             <th style="color:#7c3aed; border-bottom-color:#7c3aed;">Due Date</th>
                         </tr>
@@ -195,6 +205,14 @@ $html = '<!DOCTYPE html>
 
             <div class="section" style="text-align:right;">
                 <table class="summary-table" style="margin-top:0; margin-left:auto;">
+                    <tr>
+                        <td class="summary-label">Total Base:</td>
+                        <td class="summary-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($total_base, 2) . '</td>
+                    </tr>
+                    <tr>
+                        <td class="summary-label">Total Tax:</td>
+                        <td class="summary-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($total_tax, 2) . '</td>
+                    </tr>
                     <tr>
                         <td class="summary-label">Total Paid:</td>
                         <td class="summary-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($total_paid, 2) . '</td>

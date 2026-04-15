@@ -81,6 +81,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 					['account_id' => $creditAccountId, 'debit' => 0, 'credit' => $amount, 'memo' => $memo],
 				], $referenceType !== '' ? $referenceType : 'manual', $referenceId > 0 ? $referenceId : null, (int)($_SESSION['user_id'] ?? 0));
 				$message = 'Journal entry posted.';
+			} elseif ($action === 'lock_period') {
+				$periodKey = trim((string)($_POST['period_key'] ?? ''));
+				$note = trim((string)($_POST['note'] ?? ''));
+				$accounting->lockPeriod($periodKey, (int)($_SESSION['user_id'] ?? 0), $note !== '' ? $note : null);
+				$message = 'Accounting period ' . $periodKey . ' locked.';
+			} elseif ($action === 'unlock_period') {
+				$periodKey = trim((string)($_POST['period_key'] ?? ''));
+				$note = trim((string)($_POST['note'] ?? ''));
+				$accounting->unlockPeriod($periodKey, (int)($_SESSION['user_id'] ?? 0), $note !== '' ? $note : null);
+				$message = 'Accounting period ' . $periodKey . ' unlocked.';
+			} elseif ($action === 'reverse_entry') {
+				$entryId = (int)($_POST['entry_id'] ?? 0);
+				$reversalDate = trim((string)($_POST['reversal_date'] ?? date('Y-m-d')));
+				$memo = trim((string)($_POST['memo'] ?? ''));
+				if ($entryId <= 0) {
+					throw new InvalidArgumentException('Invalid journal entry for reversal.');
+				}
+
+				$reversalId = $accounting->reverseJournalEntry($entryId, $reversalDate, $memo !== '' ? $memo : null, (int)($_SESSION['user_id'] ?? 0));
+				$message = 'Journal entry reversed (Reversal ID: ' . $reversalId . ').';
 			} else {
 				throw new InvalidArgumentException('Unsupported action.');
 			}
@@ -150,6 +170,16 @@ if ($selectedAccount) {
 }
 
 $trialBalance = $accounting->getTrialBalance();
+$reconFromDate = trim((string)($_GET['recon_from'] ?? date('Y-m-01')));
+$reconToDate = trim((string)($_GET['recon_to'] ?? date('Y-m-d')));
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $reconFromDate)) {
+	$reconFromDate = date('Y-m-01');
+}
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $reconToDate)) {
+	$reconToDate = date('Y-m-d');
+}
+$reconciliation = $accounting->getReconciliationSummary($reconFromDate, $reconToDate);
+$periodLocks = $accounting->getPeriodLocks(24);
 $journalEntries = $accounting->getJournalEntries(20);
 $journalEntryModalData = [];
 foreach ($journalEntries as $entry) {
@@ -416,6 +446,11 @@ include __DIR__ . '/../../templates/header.php';
 		<h2 class="mb-1">Accounting Management</h2>
 		<p class="admin-page-subtitle">Manage the chart of accounts, post journal entries, and review trial balance output.</p>
 	</div>
+	<?php if ($message !== ''): ?>
+		<div class="alert alert-<?php echo htmlspecialchars($messageType); ?> mb-4" role="alert">
+			<?php echo htmlspecialchars($message); ?>
+		</div>
+	<?php endif; ?>
 
 	<div class="row g-3 mb-4">
 		<div class="col-md-4">
@@ -517,6 +552,62 @@ include __DIR__ . '/../../templates/header.php';
 		</div>
 	</div>
 
+	<div class="row g-3 mb-4">
+		<div class="col-lg-5">
+			<div class="card admin-table-card h-100 accounting-panel">
+				<div class="card-header"><h5 class="mb-0">Period Close Controls</h5></div>
+				<div class="card-body">
+					<form method="post" class="row g-2 mb-3">
+						<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['accounting_csrf']); ?>">
+						<div class="col-md-6"><label class="form-label">Period (YYYY-MM)</label><input type="month" name="period_key" class="form-control form-control-sm" value="<?php echo htmlspecialchars(date('Y-m')); ?>" required></div>
+						<div class="col-md-6"><label class="form-label">Note</label><input type="text" name="note" class="form-control form-control-sm" placeholder="Optional reason"></div>
+						<div class="col-6 d-grid"><button type="submit" name="action" value="lock_period" class="btn btn-danger btn-sm">Lock Period</button></div>
+						<div class="col-6 d-grid"><button type="submit" name="action" value="unlock_period" class="btn btn-outline-success btn-sm">Unlock Period</button></div>
+					</form>
+					<div class="table-responsive">
+						<table class="table table-sm align-middle mb-0">
+							<thead><tr><th>Period</th><th>Status</th><th>Note</th></tr></thead>
+							<tbody>
+							<?php if (empty($periodLocks)): ?>
+								<tr><td colspan="3" class="text-center text-muted py-3">No period lock records yet.</td></tr>
+							<?php else: ?>
+								<?php foreach ($periodLocks as $periodLock): ?>
+									<tr>
+										<td><?php echo htmlspecialchars((string)$periodLock['period_key']); ?></td>
+										<td><?php echo ((int)($periodLock['is_locked'] ?? 0) === 1) ? '<span class="badge bg-danger">Locked</span>' : '<span class="badge bg-success">Open</span>'; ?></td>
+										<td><?php echo htmlspecialchars((string)($periodLock['note'] ?? '-')); ?></td>
+									</tr>
+								<?php endforeach; ?>
+							<?php endif; ?>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="col-lg-7">
+			<div class="card admin-table-card h-100 accounting-panel">
+				<div class="card-header"><h5 class="mb-0">Reconciliation Snapshot</h5></div>
+				<div class="card-body">
+					<form method="get" class="row g-2 mb-3">
+						<div class="col-md-4"><label class="form-label">From</label><input type="date" name="recon_from" class="form-control form-control-sm" value="<?php echo htmlspecialchars($reconFromDate); ?>" required></div>
+						<div class="col-md-4"><label class="form-label">To</label><input type="date" name="recon_to" class="form-control form-control-sm" value="<?php echo htmlspecialchars($reconToDate); ?>" required></div>
+						<div class="col-md-4 d-grid align-items-end"><button type="submit" class="btn btn-outline-primary btn-sm mt-4">Refresh</button></div>
+					</form>
+					<div class="row g-2">
+						<div class="col-md-6"><div class="accounting-muted-box p-3"><div class="small text-muted">Bills (Period)</div><div class="fw-semibold"><?php echo number_format((float)$reconciliation['billed_total'], 2); ?></div></div></div>
+						<div class="col-md-6"><div class="accounting-muted-box p-3"><div class="small text-muted">Bill Journals (Period)</div><div class="fw-semibold"><?php echo number_format((float)$reconciliation['journal_bill_total'], 2); ?></div></div></div>
+						<div class="col-md-6"><div class="accounting-muted-box p-3"><div class="small text-muted">Payments (Period)</div><div class="fw-semibold"><?php echo number_format((float)$reconciliation['payments_total'], 2); ?></div></div></div>
+						<div class="col-md-6"><div class="accounting-muted-box p-3"><div class="small text-muted">Payment Journals (Period)</div><div class="fw-semibold"><?php echo number_format((float)$reconciliation['journal_payment_total'], 2); ?></div></div></div>
+						<div class="col-md-6"><div class="accounting-muted-box p-3"><div class="small text-muted">Billing Delta</div><div class="fw-semibold <?php echo ((float)$reconciliation['billing_to_journal_delta'] === 0.0) ? 'text-success' : 'text-danger'; ?>"><?php echo number_format((float)$reconciliation['billing_to_journal_delta'], 2); ?></div></div></div>
+						<div class="col-md-6"><div class="accounting-muted-box p-3"><div class="small text-muted">Payment Delta</div><div class="fw-semibold <?php echo ((float)$reconciliation['payments_to_journal_delta'] === 0.0) ? 'text-success' : 'text-danger'; ?>"><?php echo number_format((float)$reconciliation['payments_to_journal_delta'], 2); ?></div></div></div>
+						<div class="col-12"><div class="accounting-muted-box p-3"><div class="small text-muted">Open Accounts Receivable (as of end date)</div><div class="fw-semibold"><?php echo number_format((float)$reconciliation['open_ar_total'], 2); ?></div></div></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
 	<div class="card admin-table-card mb-4" id="ledger">
 		<div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
 			<h5 class="mb-0">Account Ledger</h5>
@@ -606,10 +697,10 @@ include __DIR__ . '/../../templates/header.php';
 		<div class="card-body p-0">
 			<div class="table-responsive">
 				<table class="table table-striped table-sm mb-0 align-middle">
-					<thead><tr><th>Entry No</th><th>Date</th><th>Memo</th><th>Reference</th><th class="text-end">Debits</th><th class="text-end">Credits</th></tr></thead>
+					<thead><tr><th>Entry No</th><th>Date</th><th>Memo</th><th>Reference</th><th class="text-end">Debits</th><th class="text-end">Credits</th><th>Actions</th></tr></thead>
 					<tbody>
 					<?php if (empty($journalEntries)): ?>
-						<tr><td colspan="6" class="text-center py-4 text-muted">No journal entries posted yet.</td></tr>
+						<tr><td colspan="7" class="text-center py-4 text-muted">No journal entries posted yet.</td></tr>
 					<?php else: ?>
 						<?php foreach ($journalEntries as $entry): ?>
 							<?php $debits = 0.0; $credits = 0.0; foreach ($entry['lines'] as $line) { $debits += (float)$line['debit']; $credits += (float)$line['credit']; } ?>
@@ -631,9 +722,22 @@ include __DIR__ . '/../../templates/header.php';
 								<td><?php echo htmlspecialchars(($entry['reference_type'] ?? '-') . ($entry['reference_id'] ? ' #' . (int)$entry['reference_id'] : '')); ?></td>
 									<td class="text-end accounting-amount-positive"><?php echo number_format($debits, 2); ?></td>
 									<td class="text-end accounting-amount-negative"><?php echo number_format($credits, 2); ?></td>
+									<td>
+										<?php if ((string)($entry['status'] ?? '') === 'posted' && strtolower((string)($entry['reference_type'] ?? '')) !== 'reversal'): ?>
+											<form method="post" class="d-flex gap-1 align-items-center">
+												<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['accounting_csrf']); ?>">
+												<input type="hidden" name="action" value="reverse_entry">
+												<input type="hidden" name="entry_id" value="<?php echo (int)$entry['id']; ?>">
+												<input type="hidden" name="reversal_date" value="<?php echo htmlspecialchars(date('Y-m-d')); ?>">
+												<button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Reverse this journal entry?');">Reverse</button>
+											</form>
+										<?php else: ?>
+											<span class="text-muted small">-</span>
+										<?php endif; ?>
+									</td>
 							</tr>
 							<tr class="table-light <?php echo htmlspecialchars($entryRowClass); ?>">
-								<td colspan="6">
+								<td colspan="7">
 									<div class="small text-muted mb-1">Lines</div>
 									<div class="row g-2">
 										<?php foreach ($entry['lines'] as $line): ?>

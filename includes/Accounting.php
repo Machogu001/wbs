@@ -6,6 +6,7 @@ class Accounting {
 	private $chartTable = 'chart_of_accounts';
 	private $entryTable = 'journal_entries';
 	private $lineTable = 'journal_entry_lines';
+	private $periodLockTable = 'accounting_period_locks';
 
 	public function __construct($db = null) {
 		if ($db === null) {
@@ -63,6 +64,17 @@ class Accounting {
 			INDEX idx_status (status)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+		try {
+			$indexCheck = $db->prepare("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'journal_entries' AND index_name = 'uniq_reference_status'");
+			$indexCheck->execute();
+			$hasIndex = (int)$indexCheck->fetchColumn() > 0;
+			if (!$hasIndex) {
+				$db->exec("ALTER TABLE journal_entries ADD UNIQUE KEY uniq_reference_status (reference_type, reference_id, status)");
+			}
+		} catch (\Throwable $e) {
+			// Best effort: keep backward compatibility when legacy duplicate rows exist.
+		}
+
 		$db->exec("CREATE TABLE IF NOT EXISTS journal_entry_lines (
 			id INT AUTO_INCREMENT PRIMARY KEY,
 			journal_entry_id INT NOT NULL,
@@ -75,6 +87,16 @@ class Accounting {
 			INDEX idx_account (account_id),
 			CONSTRAINT fk_journal_entry_lines_entry FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE CASCADE,
 			CONSTRAINT fk_journal_entry_lines_account FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+		$db->exec("CREATE TABLE IF NOT EXISTS accounting_period_locks (
+			period_key CHAR(7) PRIMARY KEY,
+			is_locked TINYINT(1) NOT NULL DEFAULT 1,
+			locked_by INT NULL,
+			note VARCHAR(255) NULL,
+			locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+			INDEX idx_is_locked (is_locked)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
 		$seedAccounts = [
@@ -323,7 +345,86 @@ class Accounting {
 		return $entry;
 	}
 
+	public function isPeriodLocked(string $entryDate): bool {
+		$periodKey = substr($entryDate, 0, 7);
+		if (!preg_match('/^\d{4}-\d{2}$/', $periodKey)) {
+			return false;
+		}
+
+		$stmt = $this->db->prepare("SELECT is_locked FROM {$this->periodLockTable} WHERE period_key = :period_key LIMIT 1");
+		$stmt->execute([':period_key' => $periodKey]);
+		$row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+		return !empty($row) && (int)($row['is_locked'] ?? 0) === 1;
+	}
+
+	public function lockPeriod(string $periodKey, ?int $lockedBy = null, ?string $note = null): bool {
+		if (!preg_match('/^\d{4}-\d{2}$/', $periodKey)) {
+			throw new InvalidArgumentException('Invalid period format. Use YYYY-MM.');
+		}
+
+		$stmt = $this->db->prepare("INSERT INTO {$this->periodLockTable}
+			(period_key, is_locked, locked_by, note, locked_at)
+			VALUES (:period_key, 1, :locked_by, :note, NOW())
+			ON DUPLICATE KEY UPDATE
+				is_locked = 1,
+				locked_by = VALUES(locked_by),
+				note = VALUES(note),
+				locked_at = NOW()");
+
+		return $stmt->execute([
+			':period_key' => $periodKey,
+			':locked_by' => $lockedBy,
+			':note' => $note,
+		]);
+	}
+
+	public function unlockPeriod(string $periodKey, ?int $lockedBy = null, ?string $note = null): bool {
+		if (!preg_match('/^\d{4}-\d{2}$/', $periodKey)) {
+			throw new InvalidArgumentException('Invalid period format. Use YYYY-MM.');
+		}
+
+		$stmt = $this->db->prepare("INSERT INTO {$this->periodLockTable}
+			(period_key, is_locked, locked_by, note, locked_at)
+			VALUES (:period_key, 0, :locked_by, :note, NOW())
+			ON DUPLICATE KEY UPDATE
+				is_locked = 0,
+				locked_by = VALUES(locked_by),
+				note = VALUES(note),
+				updated_at = NOW()");
+
+		return $stmt->execute([
+			':period_key' => $periodKey,
+			':locked_by' => $lockedBy,
+			':note' => $note,
+		]);
+	}
+
+	public function getPeriodLocks(int $limit = 24): array {
+		$limit = max(1, min(120, $limit));
+		$stmt = $this->db->query("SELECT * FROM {$this->periodLockTable} ORDER BY period_key DESC LIMIT {$limit}");
+		return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+	}
+
+	public function getPostedEntryByReference(string $referenceType, int $referenceId): ?array {
+		$stmt = $this->db->prepare("SELECT * FROM {$this->entryTable}
+			WHERE reference_type = :reference_type
+				AND reference_id = :reference_id
+				AND status = 'posted'
+			LIMIT 1");
+		$stmt->execute([
+			':reference_type' => $referenceType,
+			':reference_id' => $referenceId,
+		]);
+
+		return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+	}
+
 	public function postJournalEntry(string $entryDate, string $memo, array $lines, ?string $referenceType = null, ?int $referenceId = null, ?int $postedBy = null): int {
+		if ($this->isPeriodLocked($entryDate)) {
+			throw new RuntimeException('The accounting period for this entry date is locked.');
+		}
+
 		if (count($lines) < 2) {
 			throw new InvalidArgumentException('A journal entry requires at least two lines.');
 		}
@@ -378,6 +479,119 @@ class Accounting {
 		}
 	}
 
+	public function reverseJournalEntry(int $entryId, string $reversalDate, ?string $memo = null, ?int $postedBy = null): int {
+		$original = $this->getJournalEntryById($entryId);
+		if (!$original) {
+			throw new InvalidArgumentException('Journal entry not found.');
+		}
+		if ((string)($original['status'] ?? '') !== 'posted') {
+			throw new RuntimeException('Only posted journal entries can be reversed.');
+		}
+
+		$existingReversal = $this->getPostedEntryByReference('reversal', $entryId);
+		if ($existingReversal) {
+			return (int)$existingReversal['id'];
+		}
+
+		$lines = $original['lines'] ?? [];
+		if (empty($lines)) {
+			throw new RuntimeException('Cannot reverse an entry without lines.');
+		}
+
+		$reversalLines = [];
+		foreach ($lines as $line) {
+			$reversalLines[] = [
+				'account_id' => (int)$line['account_id'],
+				'debit' => (float)($line['credit'] ?? 0),
+				'credit' => (float)($line['debit'] ?? 0),
+				'memo' => 'Reversal: ' . (string)($line['line_memo'] ?? ''),
+			];
+		}
+
+		$reversalMemo = $memo !== null && trim($memo) !== ''
+			? trim($memo)
+			: ('Reversal of ' . (string)($original['entry_no'] ?? ('entry #' . $entryId)));
+
+		$reversalId = $this->postJournalEntry(
+			$reversalDate,
+			$reversalMemo,
+			$reversalLines,
+			'reversal',
+			$entryId,
+			$postedBy
+		);
+
+		$update = $this->db->prepare("UPDATE {$this->entryTable} SET status = 'reversed' WHERE id = :id AND status = 'posted'");
+		$update->execute([':id' => $entryId]);
+
+		return $reversalId;
+	}
+
+	public function getReconciliationSummary(string $fromDate, string $toDate): array {
+		$totals = [
+			'billed_total' => 0.0,
+			'payments_total' => 0.0,
+			'journal_bill_total' => 0.0,
+			'journal_payment_total' => 0.0,
+			'open_ar_total' => 0.0,
+			'billing_to_journal_delta' => 0.0,
+			'payments_to_journal_delta' => 0.0,
+		];
+
+		$stmtBilled = $this->db->prepare("SELECT COALESCE(SUM(amount), 0) FROM bills WHERE DATE(billing_month) BETWEEN :from_date AND :to_date");
+		$stmtBilled->execute([':from_date' => $fromDate, ':to_date' => $toDate]);
+		$totals['billed_total'] = (float)$stmtBilled->fetchColumn();
+
+		$stmtPayments = $this->db->prepare("SELECT COALESCE(SUM(amount), 0)
+			FROM payments
+			WHERE status = 'completed'
+				AND DATE(COALESCE(transaction_date, created_at)) BETWEEN :from_date AND :to_date");
+		$stmtPayments->execute([':from_date' => $fromDate, ':to_date' => $toDate]);
+		$totals['payments_total'] = (float)$stmtPayments->fetchColumn();
+
+		$stmtJournalBill = $this->db->prepare("SELECT COALESCE(SUM(jel.debit), 0)
+			FROM {$this->entryTable} je
+			INNER JOIN {$this->lineTable} jel ON jel.journal_entry_id = je.id
+			WHERE je.status = 'posted'
+				AND je.reference_type = 'bill'
+				AND je.entry_date BETWEEN :from_date AND :to_date
+				AND jel.debit > 0");
+		$stmtJournalBill->execute([':from_date' => $fromDate, ':to_date' => $toDate]);
+		$totals['journal_bill_total'] = (float)$stmtJournalBill->fetchColumn();
+
+		$stmtJournalPayment = $this->db->prepare("SELECT COALESCE(SUM(jel.debit), 0)
+			FROM {$this->entryTable} je
+			INNER JOIN {$this->lineTable} jel ON jel.journal_entry_id = je.id
+			WHERE je.status = 'posted'
+				AND je.reference_type = 'payment'
+				AND je.entry_date BETWEEN :from_date AND :to_date
+				AND jel.debit > 0");
+		$stmtJournalPayment->execute([':from_date' => $fromDate, ':to_date' => $toDate]);
+		$totals['journal_payment_total'] = (float)$stmtJournalPayment->fetchColumn();
+
+		$stmtOpenAr = $this->db->prepare("SELECT COALESCE(SUM(
+			CASE WHEN b.status IN ('pending','overdue') THEN
+				GREATEST(0, b.amount - COALESCE(pp.paid_amount, 0))
+			ELSE 0 END
+		), 0) AS open_ar
+			FROM bills b
+			LEFT JOIN (
+				SELECT bill_id, SUM(amount) AS paid_amount
+				FROM payments
+				WHERE status = 'completed'
+					AND DATE(COALESCE(transaction_date, created_at)) <= :to_date
+				GROUP BY bill_id
+			) pp ON pp.bill_id = b.id
+			WHERE DATE(b.billing_month) <= :to_date");
+		$stmtOpenAr->execute([':to_date' => $toDate]);
+		$totals['open_ar_total'] = (float)$stmtOpenAr->fetchColumn();
+
+		$totals['billing_to_journal_delta'] = round($totals['billed_total'] - $totals['journal_bill_total'], 2);
+		$totals['payments_to_journal_delta'] = round($totals['payments_total'] - $totals['journal_payment_total'], 2);
+
+		return $totals;
+	}
+
 	private function resolveSystemAccount(string $code, string $name, string $type, string $normalBalance): int {
 		$account = $this->getAccountByCode($code);
 		if ($account) {
@@ -398,6 +612,11 @@ class Accounting {
 			return null;
 		}
 
+		$existing = $this->getPostedEntryByReference('bill', $billId);
+		if ($existing) {
+			return (int)$existing['id'];
+		}
+
 		$accountsReceivableId = $this->resolveSystemAccount('1100', 'Accounts Receivable', 'asset', 'debit');
 		$revenueAccountId = $revenueType === 'registration'
 			? $this->resolveSystemAccount('4100', 'Registration Fee Revenue', 'revenue', 'credit')
@@ -413,6 +632,11 @@ class Accounting {
 	public function postPaymentReceived(int $paymentId, ?array $paymentRow, ?array $billRow, string $memo = 'Payment received', ?int $postedBy = null): ?int {
 		if (!$paymentRow) {
 			return null;
+		}
+
+		$existing = $this->getPostedEntryByReference('payment', $paymentId);
+		if ($existing) {
+			return (int)$existing['id'];
 		}
 
 		$amount = (float)($paymentRow['amount'] ?? 0);
