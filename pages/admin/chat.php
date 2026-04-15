@@ -460,7 +460,7 @@ $custom_scripts = <<<HTML
 
     $('#supportAvailabilityToggle').on('change', function() {
         var isAvailable = $(this).is(':checked') ? 1 : 0;
-        var $toggle = $(this);
+        var availabilityToggle = $(this);
 
         function showAvailabilityToast(message, type) {
             if (window.Swal && typeof window.Swal.fire === 'function') {
@@ -480,7 +480,7 @@ $custom_scripts = <<<HTML
             }
         }
 
-        $toggle.prop('disabled', true);
+        availabilityToggle.prop('disabled', true);
         $.ajax({
             url: '/api/chat/availability',
             method: 'POST',
@@ -496,7 +496,7 @@ $custom_scripts = <<<HTML
         }).fail(function() {
             showAvailabilityToast('Could not update support availability.', 'danger');
         }).always(function() {
-            $toggle.prop('disabled', false);
+            availabilityToggle.prop('disabled', false);
             loadAvailability();
         });
     });
