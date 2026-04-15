@@ -6,11 +6,17 @@ require_once __DIR__ . '/../../includes/Bill.php';
 require_once __DIR__ . '/../../includes/Payment.php';
 require_once __DIR__ . '/../../includes/User.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
+require_once __DIR__ . '/../../includes/FinanceApproval.php';
+require_once __DIR__ . '/../../includes/InstallmentPlan.php';
 use Dompdf\Dompdf;
 
 $database = new Database();
 $db = $database->getConnection();
 $auth = new Auth($db);
+
+// Ensure finance audit tables are available for reports across installs.
+new FinanceApproval($db);
+new InstallmentPlan($db);
 
 if(!$auth->isLoggedIn() || !$auth->isAdmin()) {
 	header("Location: /login");
@@ -275,6 +281,214 @@ if (isset($_GET['export'])) {
 			$dompdf->setPaper('A4', 'portrait');
 			$dompdf->render();
 			$dompdf->stream('usage_report_' . $from_str . '_to_' . $to_str . '.pdf', ['Attachment' => true]);
+		}
+		exit;
+	} elseif (in_array($exportType, ['installment_allocations', 'installment_allocations_pdf'], true)) {
+		$sqlWhere = "WHERE DATE(COALESCE(p.transaction_date, p.created_at)) BETWEEN :from AND :to";
+		if ($search_term !== '') {
+			$sqlWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search OR p.mpesa_receipt LIKE :search OR CAST(b.id AS CHAR) LIKE :search)";
+		}
+
+		$sql = "SELECT
+				COALESCE(p.transaction_date, p.created_at) AS payment_date,
+				p.id AS payment_id,
+				p.mpesa_receipt,
+				p.amount AS payment_amount,
+				ip.id AS plan_id,
+				ip.status AS plan_status,
+				ipi.sequence_no,
+				ipi.due_date,
+				a.allocated_amount,
+				b.id AS bill_id,
+				u.account_number,
+				u.full_name
+			FROM installment_payment_allocations a
+			INNER JOIN installment_plans ip ON ip.id = a.plan_id
+			INNER JOIN installment_plan_items ipi ON ipi.id = a.plan_item_id
+			INNER JOIN payments p ON p.id = a.payment_id
+			INNER JOIN bills b ON b.id = ip.bill_id
+			LEFT JOIN users u ON u.id = b.user_id
+			" . $sqlWhere . "
+			ORDER BY COALESCE(p.transaction_date, p.created_at) DESC, p.id DESC, ipi.sequence_no ASC";
+		$stmt = $db->prepare($sql);
+		$stmt->bindParam(':from', $from_str);
+		$stmt->bindParam(':to', $to_str);
+		if ($search_term !== '') {
+			$like = '%' . $search_term . '%';
+			$stmt->bindParam(':search', $like, PDO::PARAM_STR);
+		}
+		$stmt->execute();
+
+		if ($exportType === 'installment_allocations') {
+			header('Content-Type: text/csv; charset=utf-8');
+			$filename = 'installment_allocations_' . $from_str . '_to_' . $to_str . '.csv';
+			header('Content-Disposition: attachment; filename="' . $filename . '"');
+			$out = fopen('php://output', 'w');
+			fputcsv($out, ['Payment Date', 'Payment ID', 'MPESA Ref', 'Bill ID', 'Account', 'Customer', 'Plan ID', 'Plan Status', 'Item #', 'Item Due Date', 'Allocated Amount (' . $currency . ')', 'Payment Amount (' . $currency . ')']);
+			while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+				fputcsv($out, [
+					$row['payment_date'],
+					$row['payment_id'],
+					$row['mpesa_receipt'],
+					$row['bill_id'],
+					$row['account_number'],
+					$row['full_name'],
+					$row['plan_id'],
+					$row['plan_status'],
+					$row['sequence_no'],
+					$row['due_date'],
+					$row['allocated_amount'],
+					$row['payment_amount'],
+				]);
+			}
+			fclose($out);
+		} else {
+			require_once __DIR__ . '/../../vendor/autoload.php';
+			$dompdf = new Dompdf();
+			$rowsHtml = '';
+			$totalAllocated = 0.0;
+			while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+				$totalAllocated += (float)$row['allocated_amount'];
+				$rowsHtml .= '<tr>'
+					. '<td>' . htmlspecialchars((string)$row['payment_date']) . '</td>'
+					. '<td>#' . (int)$row['payment_id'] . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['mpesa_receipt'] ?? '-')) . '</td>'
+					. '<td>#' . (int)$row['bill_id'] . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['account_number'] ?? '-')) . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['full_name'] ?? '')) . '</td>'
+					. '<td>#' . (int)$row['plan_id'] . '</td>'
+					. '<td>' . htmlspecialchars(ucfirst((string)($row['plan_status'] ?? ''))) . '</td>'
+					. '<td>' . (int)$row['sequence_no'] . '</td>'
+					. '<td>' . htmlspecialchars((string)$row['due_date']) . '</td>'
+					. '<td style="text-align:right;">' . number_format((float)$row['allocated_amount'], 2) . '</td>'
+				. '</tr>';
+			}
+
+			$html = '<html><head><meta charset="UTF-8"><title>Installment Allocation Audit</title>'
+				. '<style>body{font-family:DejaVu Sans,Arial,sans-serif;font-size:10px;color:#111827;}h1{font-size:17px;margin-bottom:4px;}table{width:100%;border-collapse:collapse;margin-top:10px;}th,td{border:1px solid #e5e7eb;padding:4px 5px;}th{background:#f9fafb;text-align:left;font-size:9px;}td{font-size:9px;}</style>'
+				. '</head><body>'
+				. '<h1>Installment Allocation Audit</h1>'
+				. '<p>Period: ' . htmlspecialchars($from_str) . ' to ' . htmlspecialchars($to_str) . '</p>'
+				. '<p>Total Allocated (' . htmlspecialchars($currency) . '): <strong>' . number_format($totalAllocated, 2) . '</strong></p>'
+				. '<table><thead><tr>'
+				. '<th>Payment Date</th><th>Payment</th><th>Ref</th><th>Bill</th><th>Account</th><th>Customer</th><th>Plan</th><th>Status</th><th>Item #</th><th>Due Date</th><th>Allocated (' . htmlspecialchars($currency) . ')</th>'
+				. '</tr></thead><tbody>' . $rowsHtml . '</tbody></table>'
+				. '</body></html>';
+
+			$dompdf->loadHtml($html);
+			$dompdf->setPaper('A4', 'landscape');
+			$dompdf->render();
+			$dompdf->stream('installment_allocations_' . $from_str . '_to_' . $to_str . '.pdf', ['Attachment' => true]);
+		}
+		exit;
+	} elseif (in_array($exportType, ['writeoff_waiver', 'writeoff_waiver_pdf'], true)) {
+		$sqlWhere = "WHERE fai.entity_type IN ('bill_writeoff','bill_waiver') AND fai.status = 'approved' AND DATE(COALESCE(fai.approved_at, fai.created_at)) BETWEEN :from AND :to";
+		if ($search_term !== '') {
+			$sqlWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search OR CAST(fai.entity_id AS CHAR) LIKE :search OR fai.reference_no LIKE :search)";
+		}
+
+		$sql = "SELECT
+				fai.id,
+				fai.entity_type,
+				fai.entity_id AS bill_id,
+				fai.reference_no,
+				fai.amount,
+				fai.comments,
+				fai.metadata_json,
+				COALESCE(fai.approved_at, fai.created_at) AS decided_at,
+				u.account_number,
+				u.full_name,
+				au.full_name AS approver_name
+			FROM financial_approval_items fai
+			LEFT JOIN bills b ON b.id = fai.entity_id
+			LEFT JOIN users u ON u.id = b.user_id
+			LEFT JOIN users au ON au.id = fai.approved_by
+			" . $sqlWhere . "
+			ORDER BY COALESCE(fai.approved_at, fai.created_at) DESC, fai.id DESC";
+		$stmt = $db->prepare($sql);
+		$stmt->bindParam(':from', $from_str);
+		$stmt->bindParam(':to', $to_str);
+		if ($search_term !== '') {
+			$like = '%' . $search_term . '%';
+			$stmt->bindParam(':search', $like, PDO::PARAM_STR);
+		}
+		$stmt->execute();
+
+		if ($exportType === 'writeoff_waiver') {
+			header('Content-Type: text/csv; charset=utf-8');
+			$filename = 'writeoff_waiver_audit_' . $from_str . '_to_' . $to_str . '.csv';
+			header('Content-Disposition: attachment; filename="' . $filename . '"');
+			$out = fopen('php://output', 'w');
+			fputcsv($out, ['Decision Date', 'Approval ID', 'Type', 'Reference', 'Bill ID', 'Account', 'Customer', 'Amount (' . $currency . ')', 'Reason', 'Decision Note', 'Approved By']);
+			while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+				$metadata = [];
+				if (!empty($row['metadata_json']) && is_string($row['metadata_json'])) {
+					$decoded = json_decode($row['metadata_json'], true);
+					if (is_array($decoded)) {
+						$metadata = $decoded;
+					}
+				}
+				$reason = (string)($metadata['reason'] ?? '');
+				fputcsv($out, [
+					$row['decided_at'],
+					$row['id'],
+					$row['entity_type'] === 'bill_waiver' ? 'Waiver' : 'Write-off',
+					$row['reference_no'],
+					$row['bill_id'],
+					$row['account_number'],
+					$row['full_name'],
+					$row['amount'],
+					$reason,
+					$row['comments'],
+					$row['approver_name'],
+				]);
+			}
+			fclose($out);
+		} else {
+			require_once __DIR__ . '/../../vendor/autoload.php';
+			$dompdf = new Dompdf();
+			$rowsHtml = '';
+			$totalAdjusted = 0.0;
+			while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+				$metadata = [];
+				if (!empty($row['metadata_json']) && is_string($row['metadata_json'])) {
+					$decoded = json_decode($row['metadata_json'], true);
+					if (is_array($decoded)) {
+						$metadata = $decoded;
+					}
+				}
+				$reason = (string)($metadata['reason'] ?? '');
+				$totalAdjusted += (float)$row['amount'];
+				$rowsHtml .= '<tr>'
+					. '<td>' . htmlspecialchars((string)$row['decided_at']) . '</td>'
+					. '<td>#' . (int)$row['id'] . '</td>'
+					. '<td>' . htmlspecialchars($row['entity_type'] === 'bill_waiver' ? 'Waiver' : 'Write-off') . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['reference_no'] ?? '')) . '</td>'
+					. '<td>#' . (int)$row['bill_id'] . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['account_number'] ?? '-')) . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['full_name'] ?? '')) . '</td>'
+					. '<td style="text-align:right;">' . number_format((float)$row['amount'], 2) . '</td>'
+					. '<td>' . htmlspecialchars($reason) . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['comments'] ?? '')) . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['approver_name'] ?? 'System')) . '</td>'
+				. '</tr>';
+			}
+
+			$html = '<html><head><meta charset="UTF-8"><title>Write-off and Waiver Audit</title>'
+				. '<style>body{font-family:DejaVu Sans,Arial,sans-serif;font-size:10px;color:#111827;}h1{font-size:17px;margin-bottom:4px;}table{width:100%;border-collapse:collapse;margin-top:10px;}th,td{border:1px solid #e5e7eb;padding:4px 5px;}th{background:#f9fafb;text-align:left;font-size:9px;}td{font-size:9px;}</style>'
+				. '</head><body>'
+				. '<h1>Write-off and Waiver Audit</h1>'
+				. '<p>Period: ' . htmlspecialchars($from_str) . ' to ' . htmlspecialchars($to_str) . '</p>'
+				. '<p>Total Approved Adjustments (' . htmlspecialchars($currency) . '): <strong>' . number_format($totalAdjusted, 2) . '</strong></p>'
+				. '<table><thead><tr>'
+				. '<th>Date</th><th>Approval</th><th>Type</th><th>Ref</th><th>Bill</th><th>Account</th><th>Customer</th><th>Amount (' . htmlspecialchars($currency) . ')</th><th>Reason</th><th>Decision Note</th><th>Approved By</th>'
+				. '</tr></thead><tbody>' . $rowsHtml . '</tbody></table>'
+				. '</body></html>';
+
+			$dompdf->loadHtml($html);
+			$dompdf->setPaper('A4', 'landscape');
+			$dompdf->render();
+			$dompdf->stream('writeoff_waiver_audit_' . $from_str . '_to_' . $to_str . '.pdf', ['Attachment' => true]);
 		}
 		exit;
 	}
@@ -679,6 +893,29 @@ require_once __DIR__ . '/../../templates/header.php';
 						</a>
 						<a href="<?php echo $usageExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm">
 							<i class="bi bi-file-earmark-pdf"></i> Download Usage PDF
+						</a>
+					</div>
+				</div>
+				<div class="card shadow-sm usage-exports-card mt-3">
+					<div class="card-header d-flex justify-content-between align-items-center">
+						<h6 class="card-title mb-0"><i class="bi bi-shield-check me-1"></i> Finance Audit Exports</h6>
+					</div>
+					<div class="card-body py-3 d-flex flex-wrap gap-2">
+						<?php $allocExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'installment_allocations']))); ?>
+						<?php $allocExportPdfUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'installment_allocations_pdf']))); ?>
+						<?php $adjustExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'writeoff_waiver']))); ?>
+						<?php $adjustExportPdfUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'writeoff_waiver_pdf']))); ?>
+						<a href="<?php echo $allocExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm">
+							<i class="bi bi-download"></i> Installment Allocations CSV
+						</a>
+						<a href="<?php echo $allocExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm">
+							<i class="bi bi-file-earmark-pdf"></i> Installment Allocations PDF
+						</a>
+						<a href="<?php echo $adjustExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm">
+							<i class="bi bi-download"></i> Write-off/Waiver CSV
+						</a>
+						<a href="<?php echo $adjustExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm">
+							<i class="bi bi-file-earmark-pdf"></i> Write-off/Waiver PDF
 						</a>
 					</div>
 				</div>
