@@ -25,32 +25,31 @@ try {
         exit;
     }
 
-    // Only admin users can clear/delete chat messages
     if (!$auth->isAdmin()) {
         http_response_code(403);
-        echo json_encode(['success' => false, 'message' => 'Only admin can delete messages']);
+        echo json_encode(['success' => false, 'message' => 'Only admin can clear conversations']);
         exit;
     }
 
-    $input = $_POST;
-    $messageId = isset($input['message_id']) ? (int)$input['message_id'] : 0;
-
-    if ($messageId <= 0) {
+    $scope = isset($_POST['scope']) ? trim((string)$_POST['scope']) : 'open';
+    if (!in_array($scope, ['open', 'closed', 'all'], true)) {
         http_response_code(422);
-        echo json_encode(['success' => false, 'message' => 'Message ID is required']);
+        echo json_encode(['success' => false, 'message' => 'Invalid clear scope']);
         exit;
     }
 
     $chat = new SupportChat($db);
-    $ok = $chat->deleteMessage($messageId);
-
-    if (!$ok) {
-        http_response_code(404);
-        echo json_encode(['success' => false, 'message' => 'Message not found or could not be deleted']);
-        exit;
+    if ($scope === 'all') {
+        $deleted = $chat->clearThreads(null);
+    } else {
+        $deleted = $chat->clearThreads($scope);
     }
 
-    echo json_encode(['success' => true]);
+    echo json_encode([
+        'success' => true,
+        'deleted' => (int)$deleted,
+        'message' => 'Conversations cleared: ' . (int)$deleted,
+    ]);
 } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Server error']);

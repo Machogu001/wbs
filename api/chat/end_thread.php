@@ -25,32 +25,29 @@ try {
         exit;
     }
 
-    // Only admin users can clear/delete chat messages
-    if (!$auth->isAdmin()) {
+    if (!($auth->isAdmin() || $auth->hasRole('support'))) {
         http_response_code(403);
-        echo json_encode(['success' => false, 'message' => 'Only admin can delete messages']);
+        echo json_encode(['success' => false, 'message' => 'Forbidden']);
         exit;
     }
 
-    $input = $_POST;
-    $messageId = isset($input['message_id']) ? (int)$input['message_id'] : 0;
-
-    if ($messageId <= 0) {
+    $threadId = isset($_POST['thread_id']) ? (int)$_POST['thread_id'] : 0;
+    if ($threadId <= 0) {
         http_response_code(422);
-        echo json_encode(['success' => false, 'message' => 'Message ID is required']);
+        echo json_encode(['success' => false, 'message' => 'Thread is required']);
         exit;
     }
 
     $chat = new SupportChat($db);
-    $ok = $chat->deleteMessage($messageId);
+    $ok = $chat->closeThread($threadId);
 
     if (!$ok) {
         http_response_code(404);
-        echo json_encode(['success' => false, 'message' => 'Message not found or could not be deleted']);
+        echo json_encode(['success' => false, 'message' => 'Conversation not found or already closed']);
         exit;
     }
 
-    echo json_encode(['success' => true]);
+    echo json_encode(['success' => true, 'message' => 'Conversation ended.']);
 } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Server error']);

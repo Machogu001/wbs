@@ -335,10 +335,14 @@ $(document).ready(function() {
         var available = !!resp.available;
         var names = Array.isArray(resp.available_names) ? resp.available_names : [];
         var agents = Array.isArray(resp.agents) ? resp.agents : [];
+        var recentAgents = Array.isArray(resp.recent_agents) ? resp.recent_agents : [];
         var namesSignature = names.join('|');
 
-        function formatAgentWithLastSeen(agent) {
+        function formatAgentPresence(agent, forceOfflineLabel) {
             var label = agent && agent.name ? String(agent.name) : 'Support';
+            if (!forceOfflineLabel && agent && agent.is_available) {
+                return label + ' (online)';
+            }
             var updatedAt = agent && agent.updated_at ? String(agent.updated_at) : '';
             if (!updatedAt) return label;
             var parsed = new Date(updatedAt.replace(' ', 'T'));
@@ -347,7 +351,12 @@ $(document).ready(function() {
             return label + ' (last seen ' + timeLabel + ')';
         }
 
-        var namesWithTime = agents.map(formatAgentWithLastSeen);
+        var namesWithPresence = agents.map(function(agent) {
+            return formatAgentPresence(agent, false);
+        });
+        var offlinePresence = recentAgents.map(function(agent) {
+            return formatAgentPresence(agent, true);
+        });
 
         if ($supportAvailabilityBadge.length) {
             $supportAvailabilityBadge.removeClass('is-online is-offline').addClass(available ? 'is-online' : 'is-offline');
@@ -358,24 +367,30 @@ $(document).ready(function() {
         }
 
         if ($supportAvailabilityAgents.length) {
-            if (available && namesWithTime.length > 0) {
-                $supportAvailabilityAgents.text('Available: ' + namesWithTime.join(', '));
+            if (available && namesWithPresence.length > 0) {
+                $supportAvailabilityAgents.text('Available: ' + namesWithPresence.join(', '));
+            } else if (offlinePresence.length > 0) {
+                $supportAvailabilityAgents.text('Offline. ' + offlinePresence.join(', '));
             } else {
                 $supportAvailabilityAgents.text('Leave a message via contact form; we will respond as soon as possible.');
             }
         }
 
         if ($supportChatAvailabilityLabel.length) {
-            if (available && namesWithTime.length > 0) {
-                $supportChatAvailabilityLabel.text('Online: ' + namesWithTime.join(', '));
+            if (available && namesWithPresence.length > 0) {
+                $supportChatAvailabilityLabel.text('Online: ' + namesWithPresence.join(', '));
+            } else if (offlinePresence.length > 0) {
+                $supportChatAvailabilityLabel.text('Offline: ' + offlinePresence.join(', '));
             } else {
                 $supportChatAvailabilityLabel.text('No agent currently online; message will be queued.');
             }
         }
 
         if ($guestAvailabilityLabel.length) {
-            if (available && namesWithTime.length > 0) {
-                $guestAvailabilityLabel.text('Team online: ' + namesWithTime.join(', '));
+            if (available && namesWithPresence.length > 0) {
+                $guestAvailabilityLabel.text('Team online: ' + namesWithPresence.join(', '));
+            } else if (offlinePresence.length > 0) {
+                $guestAvailabilityLabel.text('Team offline: ' + offlinePresence.join(', '));
             } else {
                 $guestAvailabilityLabel.text('Team offline now, but your inquiry will still be received.');
             }

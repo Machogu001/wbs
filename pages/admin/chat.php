@@ -18,6 +18,7 @@ $is_admin_page = true;
 
 // Current admin/support user id for aligning messages correctly
 $currentAdminId = (int)($auth->getUserId() ?? 0);
+$isAdminUser = $auth->isAdmin();
 
 $chatService = new SupportChat($db);
 $threads = $chatService->getThreadsForAdmin(50);
@@ -114,6 +115,13 @@ require_once __DIR__ . '/../../templates/header.php';
                         </div>
                     </div>
                     <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="adminChatEndThreadBtn" disabled>
+                            <i class="bi bi-x-circle"></i> End chat
+                        </button>
+                        <?php if ($isAdminUser): ?>
+                        <button type="button" class="btn btn-outline-warning btn-sm" id="adminChatClearActiveBtn">
+                            <i class="bi bi-eraser"></i> Clear active
+                        </button>
                         <div class="form-check mb-0 small">
                             <input class="form-check-input" type="checkbox" id="adminChatSelectAll" disabled>
                             <label class="form-check-label" for="adminChatSelectAll">Select all</label>
@@ -121,6 +129,7 @@ require_once __DIR__ . '/../../templates/header.php';
                         <button type="button" class="btn btn-outline-danger btn-sm" id="adminChatDeleteSelected" disabled>
                             <i class="bi bi-trash"></i> Delete selected
                         </button>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <div class="card-body p-2" id="adminChatMessages" style="max-height: 420px; overflow-y: auto;"></div>
@@ -161,10 +170,13 @@ require_once __DIR__ . '/../../templates/header.php';
     // Output the delete confirmation modal markup so it is available for JS
     echo $deleteModalHtml;
 
+    $isAdminJs = $isAdminUser ? 'true' : 'false';
+
 $custom_scripts = <<<HTML
 <script>
 (function(){
     var ADMIN_USER_ID = {$currentAdminId};
+    var IS_ADMIN_USER = {$isAdminJs};
     var currentThreadId = null;
     var lastMessageId = null;
     var pollTimer = null;
@@ -204,9 +216,18 @@ $custom_scripts = <<<HTML
 
         var names = Array.isArray(resp.available_names) ? resp.available_names : [];
         var agents = Array.isArray(resp.agents) ? resp.agents : [];
+        var recentAgents = Array.isArray(resp.recent_agents) ? resp.recent_agents : [];
         if (namesEl) {
             if (agents.length > 0) {
                 var details = agents.map(function(agent) {
+                    var label = agent && agent.name ? String(agent.name) : 'Support';
+                    return label + ' (online)';
+                });
+                namesEl.textContent = details.join(', ');
+                namesEl.classList.remove('text-muted');
+                namesEl.classList.add('text-success');
+            } else if (recentAgents.length > 0) {
+                var offlineDetails = recentAgents.map(function(agent) {
                     var label = agent && agent.name ? String(agent.name) : 'Support';
                     var updatedAt = agent && agent.updated_at ? String(agent.updated_at) : '';
                     var timeLabel = '';
@@ -218,9 +239,9 @@ $custom_scripts = <<<HTML
                     }
                     return timeLabel ? (label + ' (last seen ' + timeLabel + ')') : label;
                 });
-                namesEl.textContent = details.join(', ');
-                namesEl.classList.remove('text-muted');
-                namesEl.classList.add('text-success');
+                namesEl.textContent = offlineDetails.join(', ');
+                namesEl.classList.remove('text-success');
+                namesEl.classList.add('text-muted');
             } else {
                 namesEl.textContent = 'No support agents currently available.';
                 namesEl.classList.remove('text-success');
@@ -296,17 +317,19 @@ $custom_scripts = <<<HTML
                 wrapper.setAttribute('data-message-id', m.id);
             }
 
-            // Selection checkbox for bulk actions
-            var selectWrapper = document.createElement('div');
-            selectWrapper.className = 'form-check me-1';
-            var select = document.createElement('input');
-            select.type = 'checkbox';
-            select.className = 'form-check-input admin-chat-select';
-            if (m.id) {
-                select.setAttribute('data-message-id', m.id);
+            // Admin-only selection checkbox for bulk clear actions
+            if (IS_ADMIN_USER) {
+                var selectWrapper = document.createElement('div');
+                selectWrapper.className = 'form-check me-1';
+                var select = document.createElement('input');
+                select.type = 'checkbox';
+                select.className = 'form-check-input admin-chat-select';
+                if (m.id) {
+                    select.setAttribute('data-message-id', m.id);
+                }
+                selectWrapper.appendChild(select);
+                wrapper.appendChild(selectWrapper);
             }
-            selectWrapper.appendChild(select);
-            wrapper.appendChild(selectWrapper);
             var bubble = document.createElement('div');
             bubble.className = 'support-chat-bubble';
             var safe = (m.message || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
@@ -321,8 +344,8 @@ $custom_scripts = <<<HTML
             } else {
                 wrapper.appendChild(bubble);
             }
-            // Delete button for admin/support users to remove a message
-            if (m.id) {
+            // Delete button for admin users only
+            if (IS_ADMIN_USER && m.id) {
                 var delBtn = document.createElement('button');
                 delBtn.type = 'button';
                 delBtn.className = 'btn btn-link btn-sm text-danger p-0 ms-1 admin-chat-delete';
@@ -336,6 +359,8 @@ $custom_scripts = <<<HTML
     }
 
     function refreshBulkControls() {
+        if (!IS_ADMIN_USER) return;
+
         var btn = document.getElementById('adminChatDeleteSelected');
         var selectAll = document.getElementById('adminChatSelectAll');
         var totalCheckboxes = $('#adminChatMessages .admin-chat-select').length;
@@ -419,6 +444,7 @@ $custom_scripts = <<<HTML
         selectedMessageIds = [];
         $('#adminChatSelectAll').prop('checked', false).prop('disabled', true);
         refreshBulkControls();
+        $('#adminChatEndThreadBtn').prop('disabled', false);
         $('#adminChatTitle').text('Conversation #' + tid);
         $('#adminChatMessageInput').prop('disabled', false);
         $('#adminChatSendBtn').prop('disabled', false);
@@ -436,6 +462,100 @@ $custom_scripts = <<<HTML
             startPolling();
         }).always(function(){
             isLoadingThread = false;
+        });
+    });
+
+    $('#adminChatEndThreadBtn').on('click', function(){
+        if (!currentThreadId) return;
+        var btn = $(this);
+        btn.prop('disabled', true);
+
+        $.ajax({
+            url: '/api/chat/end_thread',
+            method: 'POST',
+            dataType: 'json',
+            data: { thread_id: currentThreadId }
+        }).done(function(resp){
+            if (resp && resp.success) {
+                $('#adminChatThreads .admin-chat-thread[data-thread-id="' + currentThreadId + '"]').remove();
+                if ($('#adminChatThreads .admin-chat-thread').length === 0) {
+                    $('#adminChatThreads').html('<li class="list-group-item text-muted small">No conversations yet.</li>');
+                }
+
+                stopPolling();
+                currentThreadId = null;
+                lastMessageId = null;
+                lastDateKey = null;
+                selectedMessageIds = [];
+
+                $('#adminChatTitle').text('Select a conversation');
+                $('#adminChatMessages').empty();
+                $('#adminChatTypingIndicator').hide();
+                $('#adminChatMessageInput').val('').prop('disabled', true);
+                $('#adminChatSendBtn').prop('disabled', true);
+                $('#adminChatSelectAll').prop('checked', false).prop('disabled', true);
+                refreshBulkControls();
+
+                if (window.showToast) {
+                    showToast((resp && resp.message) || 'Conversation ended.', 'success');
+                }
+            } else {
+                if (window.showToast) {
+                    showToast((resp && resp.message) || 'Could not end conversation.', 'danger');
+                }
+            }
+        }).fail(function(){
+            if (window.showToast) {
+                showToast('Could not end conversation. Please try again.', 'danger');
+            }
+        }).always(function(){
+            btn.prop('disabled', currentThreadId ? false : true);
+        });
+    });
+
+    $('#adminChatClearActiveBtn').on('click', function(){
+        if (!IS_ADMIN_USER) return;
+        if (!confirm('Clear all active conversations from the database? This cannot be undone.')) {
+            return;
+        }
+
+        var btn = $(this);
+        btn.prop('disabled', true);
+        $.ajax({
+            url: '/api/chat/clear_threads',
+            method: 'POST',
+            dataType: 'json',
+            data: { scope: 'open' }
+        }).done(function(resp){
+            if (resp && resp.success) {
+                stopPolling();
+                currentThreadId = null;
+                lastMessageId = null;
+                lastDateKey = null;
+                selectedMessageIds = [];
+
+                $('#adminChatThreads').html('<li class="list-group-item text-muted small">No conversations yet.</li>');
+                $('#adminChatTitle').text('Select a conversation');
+                $('#adminChatMessages').empty();
+                $('#adminChatTypingIndicator').hide();
+                $('#adminChatMessageInput').val('').prop('disabled', true);
+                $('#adminChatSendBtn').prop('disabled', true);
+                $('#adminChatEndThreadBtn').prop('disabled', true);
+                $('#adminChatSelectAll').prop('checked', false).prop('disabled', true);
+                refreshBulkControls();
+
+                if (window.showToast) {
+                    showToast((resp && resp.message) || 'Active conversations cleared.', 'success');
+                }
+            } else if (window.showToast) {
+                showToast((resp && resp.message) || 'Could not clear conversations.', 'danger');
+            }
+        }).fail(function(){
+            if (window.showToast) {
+                showToast('Could not clear conversations. Please try again.', 'danger');
+            }
+        }).always(function(){
+            btn.prop('disabled', false);
         });
     });
 

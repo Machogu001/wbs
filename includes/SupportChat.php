@@ -13,7 +13,7 @@ class SupportChat
         $this->conn = $db;
         $this->ensureTables();
         $this->ensureAvailabilityTable();
-        $this->cleanupOldThreads(24);
+        $this->cleanupOldThreads(48);
     }
 
     private function ensureTables(): void
@@ -153,6 +153,30 @@ class SupportChat
 
             $stmt = $this->conn->query($sql);
             return $stmt ? ($stmt->fetchAll() ?: []) : [];
+        } catch (\PDOException $e) {
+            return [];
+        }
+    }
+
+    public function getLastSeenAgents(int $limit = 5): array
+    {
+        $this->ensureAvailabilityTable();
+
+        try {
+            $hasStatus = $this->hasColumn('users', 'status');
+            $sql = "SELECT a.user_id, a.is_available, a.updated_at, u.full_name, u.role
+                FROM {$this->availabilityTable} a
+                INNER JOIN users u ON u.id = a.user_id
+                WHERE u.role IN ('admin', 'support')";
+            if ($hasStatus) {
+                $sql .= " AND u.status = 'active'";
+            }
+            $sql .= " ORDER BY a.updated_at DESC, u.role = 'admin' DESC, u.full_name ASC LIMIT :lim";
+
+            $stmt = $this->conn->prepare($sql);
+            $stmt->bindValue(':lim', max(1, $limit), \PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll() ?: [];
         } catch (\PDOException $e) {
             return [];
         }
@@ -304,6 +328,7 @@ class SupportChat
             $stmt = $this->conn->prepare("SELECT t.*, u.account_number, u.full_name
                 FROM {$this->threadsTable} t
                 LEFT JOIN users u ON t.user_id = u.id
+                WHERE t.status = 'open'
                 ORDER BY (t.last_message_at IS NULL), t.last_message_at DESC, t.id DESC
                 LIMIT :lim");
             $stmt->bindValue(':lim', $limit, \PDO::PARAM_INT);
@@ -358,7 +383,7 @@ class SupportChat
         }
     }
 
-    public function cleanupOldThreads(int $hours = 24): void
+    public function cleanupOldThreads(int $hours = 48): void
     {
         if ($hours <= 0) {
             return;
@@ -372,6 +397,45 @@ class SupportChat
             $stmt->execute([':cutoff' => $cutoff]);
         } catch (\PDOException $e) {
             // ignore cleanup errors
+        }
+    }
+
+    public function closeThread(int $threadId): bool
+    {
+        if ($threadId <= 0) {
+            return false;
+        }
+
+        try {
+            $stmt = $this->conn->prepare("UPDATE {$this->threadsTable}
+                SET status = 'closed', updated_at = NOW()
+                WHERE id = :id");
+            $stmt->execute([':id' => $threadId]);
+            return $stmt->rowCount() > 0;
+        } catch (\PDOException $e) {
+            return false;
+        }
+    }
+
+    public function clearThreads(?string $status = null): int
+    {
+        try {
+            if ($status === null) {
+                $stmt = $this->conn->prepare("DELETE FROM {$this->threadsTable}");
+                $stmt->execute();
+                return (int)$stmt->rowCount();
+            }
+
+            $allowed = ['open', 'closed'];
+            if (!in_array($status, $allowed, true)) {
+                return 0;
+            }
+
+            $stmt = $this->conn->prepare("DELETE FROM {$this->threadsTable} WHERE status = :status");
+            $stmt->execute([':status' => $status]);
+            return (int)$stmt->rowCount();
+        } catch (\PDOException $e) {
+            return 0;
         }
     }
 }

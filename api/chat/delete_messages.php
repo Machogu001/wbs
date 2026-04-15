@@ -25,10 +25,10 @@ try {
         exit;
     }
 
-    // Only admin or support users can delete chat messages
-    if (!($auth->isAdmin() || $auth->hasRole('support'))) {
+    // Only admin users can clear/delete chat messages
+    if (!$auth->isAdmin()) {
         http_response_code(403);
-        echo json_encode(['success' => false, 'message' => 'Forbidden']);
+        echo json_encode(['success' => false, 'message' => 'Only admin can delete messages']);
         exit;
     }
 

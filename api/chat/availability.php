@@ -47,7 +47,9 @@ try {
     }
 
     $agents = $chat->getAvailableAgents();
+    $recentAgents = $chat->getLastSeenAgents(5);
     $agentPayload = [];
+    $recentAgentPayload = [];
     $names = [];
     foreach ($agents as $agent) {
         $fullName = trim((string)($agent['full_name'] ?? ''));
@@ -56,9 +58,22 @@ try {
             'id' => (int)($agent['user_id'] ?? 0),
             'name' => $name,
             'role' => (string)($agent['role'] ?? 'support'),
+            'is_available' => true,
             'updated_at' => (string)($agent['updated_at'] ?? ''),
         ];
         $names[] = $name;
+    }
+
+    foreach ($recentAgents as $agent) {
+        $fullName = trim((string)($agent['full_name'] ?? ''));
+        $name = $fullName !== '' ? $fullName : ('Support #' . (int)($agent['user_id'] ?? 0));
+        $recentAgentPayload[] = [
+            'id' => (int)($agent['user_id'] ?? 0),
+            'name' => $name,
+            'role' => (string)($agent['role'] ?? 'support'),
+            'is_available' => (int)($agent['is_available'] ?? 0) === 1,
+            'updated_at' => (string)($agent['updated_at'] ?? ''),
+        ];
     }
 
     $currentUserAvailable = false;
@@ -76,6 +91,7 @@ try {
         'available_count' => count($agentPayload),
         'available_names' => $names,
         'agents' => $agentPayload,
+        'recent_agents' => $recentAgentPayload,
         'current_user_available' => $currentUserAvailable,
         'message' => (count($agentPayload) > 0)
             ? 'Support team availability loaded.'
