@@ -1368,12 +1368,13 @@ require_once __DIR__ . '/../../templates/header.php';
 									<th>Plan</th>
 									<th>Item #</th>
 									<th class="text-end">Allocated (<?php echo htmlspecialchars($currency); ?>)</th>
+									<th>Action</th>
 								</tr>
 							</thead>
 							<tbody>
 							<?php if (empty($allocations)): ?>
 								<tr>
-									<td colspan="8" class="text-center text-muted py-3">No installment allocations found for this period.</td>
+									<td colspan="9" class="text-center text-muted py-3">No installment allocations found for this period.</td>
 								</tr>
 							<?php else: ?>
 								<?php foreach ($allocations as $alloc): ?>
@@ -1386,6 +1387,7 @@ require_once __DIR__ . '/../../templates/header.php';
 										<td data-label="Plan">#<?php echo (int)$alloc['plan_id']; ?> (<?php echo htmlspecialchars((string)$alloc['plan_status']); ?>)</td>
 										<td data-label="Item #"><?php echo (int)$alloc['sequence_no']; ?> (due <?php echo htmlspecialchars(date('d-m-Y', strtotime((string)$alloc['due_date']))); ?>)</td>
 										<td data-label="Allocated" class="text-end"><?php echo number_format((float)$alloc['allocated_amount'], 2); ?></td>
+										<td data-label="Action"><a class="btn btn-outline-dark btn-sm" href="/admin/bill-detail?bill_id=<?php echo (int)$alloc['bill_id']; ?>">Open Bill</a></td>
 									</tr>
 								<?php endforeach; ?>
 							<?php endif; ?>
@@ -1453,12 +1455,13 @@ require_once __DIR__ . '/../../templates/header.php';
 									<th>Customer</th>
 									<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
 									<th>Approved By</th>
+									<th>Action</th>
 								</tr>
 							</thead>
 							<tbody>
 							<?php if (empty($adjustments)): ?>
 								<tr>
-									<td colspan="8" class="text-center text-muted py-3">No approved write-off or waiver records found for this period.</td>
+									<td colspan="9" class="text-center text-muted py-3">No approved write-off or waiver records found for this period.</td>
 								</tr>
 							<?php else: ?>
 								<?php foreach ($adjustments as $adj): ?>
@@ -1481,6 +1484,10 @@ require_once __DIR__ . '/../../templates/header.php';
 										<td data-label="Customer"><?php echo htmlspecialchars((string)($adj['full_name'] ?? '')); ?></td>
 										<td data-label="Amount" class="text-end"><?php echo number_format((float)$adj['amount'], 2); ?></td>
 										<td data-label="Approved By"><?php echo htmlspecialchars((string)($adj['approver_name'] ?? 'System')); ?></td>
+										<td data-label="Action" class="d-flex gap-1 flex-wrap">
+											<a class="btn btn-outline-dark btn-sm" href="/admin/bill-detail?bill_id=<?php echo (int)$adj['bill_id']; ?>">Bill</a>
+											<a class="btn btn-outline-secondary btn-sm" href="/admin/approvals?status=approved#finance-items">Approval</a>
+										</td>
 									</tr>
 								<?php endforeach; ?>
 							<?php endif; ?>
