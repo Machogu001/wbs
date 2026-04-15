@@ -3,6 +3,7 @@ session_start();
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/Auth.php';
+require_once __DIR__ . '/../../includes/Email.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -20,6 +21,24 @@ $isAdminUser = $auth->isAdmin();
 $flashMessage = '';
 $flashType = 'success';
 
+function ensureSupportInquiryTable(PDO $db): void
+{
+    $db->exec("CREATE TABLE IF NOT EXISTS support_inquiries (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        email VARCHAR(190) NOT NULL,
+        phone VARCHAR(60) DEFAULT NULL,
+        message TEXT NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        email_sent TINYINT(1) NOT NULL DEFAULT 0,
+        email_error TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_support_inquiries_status (status),
+        INDEX idx_support_inquiries_created_at (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
 if (!empty($_SESSION['support_inquiries_flash']) && is_array($_SESSION['support_inquiries_flash'])) {
     $flashMessage = (string)($_SESSION['support_inquiries_flash']['message'] ?? '');
     $flashType = (string)($_SESSION['support_inquiries_flash']['type'] ?? 'success');
@@ -31,25 +50,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
     $inquiryId = isset($_POST['inquiry_id']) ? (int)$_POST['inquiry_id'] : 0;
 
     try {
-        $db->exec("CREATE TABLE IF NOT EXISTS support_inquiries (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(120) NOT NULL,
-            email VARCHAR(190) NOT NULL,
-            phone VARCHAR(60) DEFAULT NULL,
-            message TEXT NOT NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'pending',
-            email_sent TINYINT(1) NOT NULL DEFAULT 0,
-            email_error TEXT DEFAULT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_support_inquiries_status (status),
-            INDEX idx_support_inquiries_created_at (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        ensureSupportInquiryTable($db);
     } catch (Throwable $e) {
         $_SESSION['support_inquiries_flash'] = [
             'message' => 'Could not prepare support inquiries storage.',
             'type' => 'danger',
         ];
+        header('Location: /admin/support-inquiries');
+        exit;
+    }
+
+    if ($inquiryId > 0 && $action === 'reply_email') {
+        $replySubject = trim((string)($_POST['reply_subject'] ?? ''));
+        $replyMessage = trim((string)($_POST['reply_message'] ?? ''));
+
+        if ($replySubject === '' || $replyMessage === '') {
+            $_SESSION['support_inquiries_flash'] = [
+                'message' => 'Reply subject and message are required.',
+                'type' => 'danger',
+            ];
+            header('Location: /admin/support-inquiries');
+            exit;
+        }
+
+        $stmt = $db->prepare('SELECT * FROM support_inquiries WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $inquiryId]);
+        $inquiry = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+        if (!$inquiry) {
+            $_SESSION['support_inquiries_flash'] = [
+                'message' => 'Inquiry not found.',
+                'type' => 'danger',
+            ];
+            header('Location: /admin/support-inquiries');
+            exit;
+        }
+
+        $visitorEmail = trim((string)($inquiry['email'] ?? ''));
+        if ($visitorEmail === '' || !filter_var($visitorEmail, FILTER_VALIDATE_EMAIL)) {
+            $_SESSION['support_inquiries_flash'] = [
+                'message' => 'Visitor email address is invalid.',
+                'type' => 'danger',
+            ];
+            header('Location: /admin/support-inquiries');
+            exit;
+        }
+
+        $body = $replyMessage . "\n\n---\nOriginal inquiry from " . (string)$inquiry['name'] . ":\n" . (string)$inquiry['message'];
+        $mailer = new Email();
+        $sendResult = $mailer->send($visitorEmail, $replySubject, $body);
+
+        if (!empty($sendResult['success'])) {
+            $update = $db->prepare("UPDATE support_inquiries
+                SET status = 'handled', updated_at = NOW()
+                WHERE id = :id");
+            $update->execute([':id' => $inquiryId]);
+
+            $_SESSION['support_inquiries_flash'] = [
+                'message' => 'Reply sent to ' . $visitorEmail . '.',
+                'type' => 'success',
+            ];
+        } else {
+            $_SESSION['support_inquiries_flash'] = [
+                'message' => (string)($sendResult['message'] ?? 'Could not send reply email.'),
+                'type' => 'danger',
+            ];
+        }
+
         header('Location: /admin/support-inquiries');
         exit;
     }
@@ -98,20 +165,7 @@ $summary = [
 
 if ($db) {
     try {
-        $db->exec("CREATE TABLE IF NOT EXISTS support_inquiries (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(120) NOT NULL,
-            email VARCHAR(190) NOT NULL,
-            phone VARCHAR(60) DEFAULT NULL,
-            message TEXT NOT NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'pending',
-            email_sent TINYINT(1) NOT NULL DEFAULT 0,
-            email_error TEXT DEFAULT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_support_inquiries_status (status),
-            INDEX idx_support_inquiries_created_at (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        ensureSupportInquiryTable($db);
 
         $summaryQuery = $db->query("SELECT
             SUM(CASE WHEN status IN ('pending', 'queued', 'sent') THEN 1 ELSE 0 END) AS open_count,
@@ -210,6 +264,9 @@ require_once __DIR__ . '/../../templates/header.php';
                                     </td>
                                     <td class="text-end">
                                         <div class="d-flex justify-content-end gap-2 flex-wrap">
+                                            <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="collapse" data-bs-target="#replyInquiry<?php echo (int)$inquiry['id']; ?>" aria-expanded="false" aria-controls="replyInquiry<?php echo (int)$inquiry['id']; ?>">
+                                                Reply by email
+                                            </button>
                                             <form method="post" class="d-inline">
                                                 <input type="hidden" name="inquiry_id" value="<?php echo (int)$inquiry['id']; ?>">
                                                 <?php if ($isHandled): ?>
@@ -227,6 +284,32 @@ require_once __DIR__ . '/../../templates/header.php';
                                                     <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
                                                 </form>
                                             <?php endif; ?>
+                                        </div>
+                                        <div class="collapse mt-2 text-start" id="replyInquiry<?php echo (int)$inquiry['id']; ?>">
+                                            <form method="post" class="border rounded p-2 bg-light">
+                                                <input type="hidden" name="action" value="reply_email">
+                                                <input type="hidden" name="inquiry_id" value="<?php echo (int)$inquiry['id']; ?>">
+                                                <div class="mb-2">
+                                                    <label class="form-label small mb-1">To</label>
+                                                    <input type="text" class="form-control form-control-sm" value="<?php echo htmlspecialchars((string)$inquiry['email']); ?>" disabled>
+                                                </div>
+                                                <div class="mb-2">
+                                                    <label for="reply_subject_<?php echo (int)$inquiry['id']; ?>" class="form-label small mb-1">Subject</label>
+                                                    <input type="text" class="form-control form-control-sm" id="reply_subject_<?php echo (int)$inquiry['id']; ?>" name="reply_subject" value="Re: Your support inquiry" required>
+                                                </div>
+                                                <div class="mb-2">
+                                                    <label for="reply_message_<?php echo (int)$inquiry['id']; ?>" class="form-label small mb-1">Reply</label>
+                                                    <textarea class="form-control form-control-sm" id="reply_message_<?php echo (int)$inquiry['id']; ?>" name="reply_message" rows="4" required>Hello <?php echo htmlspecialchars((string)$inquiry['name']); ?>,
+
+Thank you for contacting us. Here is our response to your inquiry.
+
+Regards,
+Support Team</textarea>
+                                                </div>
+                                                <div class="d-flex justify-content-end">
+                                                    <button type="submit" class="btn btn-primary btn-sm">Send email reply</button>
+                                                </div>
+                                            </form>
                                         </div>
                                     </td>
                                 </tr>
