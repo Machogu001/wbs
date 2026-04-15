@@ -17,6 +17,7 @@ if (!$auth->isLoggedIn() || !($auth->isAdmin() || $auth->hasRole('support'))) {
 $page_title = 'Support Inquiries';
 $is_admin_page = true;
 $isAdminUser = $auth->isAdmin();
+$currentUserId = (int)($auth->getUserId() ?? 0);
 
 $flashMessage = '';
 $flashType = 'success';
@@ -37,6 +38,25 @@ function ensureSupportInquiryTable(PDO $db): void
         INDEX idx_support_inquiries_status (status),
         INDEX idx_support_inquiries_created_at (created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $requiredColumns = [
+        'reply_subject' => "ALTER TABLE support_inquiries ADD COLUMN reply_subject VARCHAR(191) DEFAULT NULL AFTER email_error",
+        'reply_message' => "ALTER TABLE support_inquiries ADD COLUMN reply_message TEXT DEFAULT NULL AFTER reply_subject",
+        'replied_at' => "ALTER TABLE support_inquiries ADD COLUMN replied_at TIMESTAMP NULL DEFAULT NULL AFTER reply_message",
+        'replied_by_user_id' => "ALTER TABLE support_inquiries ADD COLUMN replied_by_user_id INT DEFAULT NULL AFTER replied_at",
+    ];
+
+    $columnCheck = $db->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :table_name AND column_name = :column_name');
+    foreach ($requiredColumns as $columnName => $alterSql) {
+        $columnCheck->execute([
+            ':table_name' => 'support_inquiries',
+            ':column_name' => $columnName,
+        ]);
+
+        if ((int)$columnCheck->fetchColumn() === 0) {
+            $db->exec($alterSql);
+        }
+    }
 }
 
 if (!empty($_SESSION['support_inquiries_flash']) && is_array($_SESSION['support_inquiries_flash'])) {
@@ -102,9 +122,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
 
         if (!empty($sendResult['success'])) {
             $update = $db->prepare("UPDATE support_inquiries
-                SET status = 'handled', updated_at = NOW()
+                SET status = 'handled',
+                    reply_subject = :reply_subject,
+                    reply_message = :reply_message,
+                    replied_at = NOW(),
+                    replied_by_user_id = :replied_by_user_id,
+                    updated_at = NOW()
                 WHERE id = :id");
-            $update->execute([':id' => $inquiryId]);
+            $update->execute([
+                ':reply_subject' => $replySubject,
+                ':reply_message' => $replyMessage,
+                ':replied_by_user_id' => $currentUserId > 0 ? $currentUserId : null,
+                ':id' => $inquiryId,
+            ]);
 
             $_SESSION['support_inquiries_flash'] = [
                 'message' => 'Reply sent to ' . $visitorEmail . '.',
@@ -255,6 +285,9 @@ require_once __DIR__ . '/../../templates/header.php';
                                     <td>
                                         <div><?php echo htmlspecialchars((string)$inquiry['created_at']); ?></div>
                                         <div class="text-muted small">Updated: <?php echo htmlspecialchars((string)$inquiry['updated_at']); ?></div>
+                                        <?php if (!empty($inquiry['replied_at'])): ?>
+                                            <div class="text-success small">Replied: <?php echo htmlspecialchars((string)$inquiry['replied_at']); ?></div>
+                                        <?php endif; ?>
                                     </td>
                                     <td>
                                         <div><?php echo htmlspecialchars((string)$inquiry['email']); ?></div>
@@ -311,6 +344,15 @@ Support Team</textarea>
                                                 </div>
                                             </form>
                                         </div>
+                                        <?php if (!empty($inquiry['reply_message'])): ?>
+                                            <div class="mt-2 p-2 border rounded bg-light text-start">
+                                                <div class="small fw-semibold mb-1">Last reply</div>
+                                                <?php if (!empty($inquiry['reply_subject'])): ?>
+                                                    <div class="small text-muted mb-1">Subject: <?php echo htmlspecialchars((string)$inquiry['reply_subject']); ?></div>
+                                                <?php endif; ?>
+                                                <div class="small" style="white-space: pre-wrap;"><?php echo htmlspecialchars((string)$inquiry['reply_message']); ?></div>
+                                            </div>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
