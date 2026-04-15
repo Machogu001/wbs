@@ -118,6 +118,52 @@ class InstallmentPlan {
         return $plan;
     }
 
+    public function getLatestPlanByBillId(int $billId, array $statuses = ['active', 'completed']): ?array {
+        if ($billId <= 0) {
+            return null;
+        }
+
+        $allowed = ['active', 'completed', 'cancelled'];
+        $statuses = array_values(array_filter($statuses, static function ($status) use ($allowed) {
+            return in_array((string)$status, $allowed, true);
+        }));
+        if (empty($statuses)) {
+            $statuses = ['active', 'completed'];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($statuses), '?'));
+        $params = array_merge([$billId], $statuses);
+        $stmt = $this->db->prepare("SELECT * FROM installment_plans WHERE bill_id = ? AND status IN ({$placeholders}) ORDER BY id DESC LIMIT 1");
+        $stmt->execute($params);
+        $plan = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$plan) {
+            return null;
+        }
+
+        $plan['items'] = $this->getPlanItemsWithAllocation((int)$plan['id']);
+        return $plan;
+    }
+
+    public function getAllocationLedgerByPlanId(int $planId): array {
+        if ($planId <= 0) {
+            return [];
+        }
+
+        $stmt = $this->db->prepare("SELECT a.*, i.sequence_no, i.due_date, i.due_amount,
+                p.amount AS payment_amount,
+                p.status AS payment_status,
+                p.mpesa_receipt,
+                COALESCE(p.transaction_date, p.created_at) AS payment_date
+            FROM installment_payment_allocations a
+            INNER JOIN installment_plan_items i ON i.id = a.plan_item_id
+            INNER JOIN payments p ON p.id = a.payment_id
+            WHERE a.plan_id = :plan_id
+            ORDER BY COALESCE(p.transaction_date, p.created_at) ASC, p.id ASC, i.sequence_no ASC, a.id ASC");
+        $stmt->execute([':plan_id' => $planId]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
     public function getPlanItemsWithAllocation(int $planId): array {
         $stmtPlan = $this->db->prepare("SELECT * FROM installment_plans WHERE id = :id LIMIT 1");
         $stmtPlan->execute([':id' => $planId]);

@@ -87,7 +87,7 @@ foreach ($financeItems as $item) {
 
 $billInstallmentPlans = [];
 foreach (array_keys($financeItemsByBillId) as $billId) {
-    $plan = $installments->getActivePlanByBillId((int)$billId);
+    $plan = $installments->getLatestPlanByBillId((int)$billId, ['active', 'completed']);
     if ($plan) {
         $billInstallmentPlans[(int)$billId] = $plan;
     }
@@ -182,7 +182,7 @@ include __DIR__ . '/../../templates/header.php';
                                                         Plan: <?php echo (int)($metadata['installment_count'] ?? 0); ?> installments, <?php echo htmlspecialchars((string)($metadata['frequency'] ?? 'monthly')); ?>, start <?php echo htmlspecialchars((string)($metadata['start_date'] ?? '-')); ?>
                                                     </div>
                                                     <?php if (($item['status'] ?? '') === 'approved' && isset($billInstallmentPlans[$billId])): ?>
-                                                        <div class="small text-success">Active plan #<?php echo (int)$billInstallmentPlans[$billId]['id']; ?> in progress</div>
+                                                        <div class="small text-success">Plan #<?php echo (int)$billInstallmentPlans[$billId]['id']; ?> is <?php echo htmlspecialchars((string)$billInstallmentPlans[$billId]['status']); ?></div>
                                                     <?php endif; ?>
                                                 <?php endif; ?>
                                             </td>

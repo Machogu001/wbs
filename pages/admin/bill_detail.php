@@ -138,7 +138,11 @@ foreach ($payments as $payment) {
     }
 }
 $outstanding = max(0, $totalAmount - $totalPaid);
-$activeInstallmentPlan = $installmentService->getActivePlanByBillId($billId);
+$latestInstallmentPlan = $installmentService->getLatestPlanByBillId($billId, ['active', 'completed']);
+$installmentAllocationLedger = [];
+if ($latestInstallmentPlan) {
+    $installmentAllocationLedger = $installmentService->getAllocationLedgerByPlanId((int)$latestInstallmentPlan['id']);
+}
 
 $is_admin_page = true;
 $page_title = 'Bill Detail';
@@ -269,11 +273,15 @@ require_once __DIR__ . '/../../templates/header.php';
         </div>
     </div>
 
-    <?php if ($activeInstallmentPlan): ?>
+    <?php if ($latestInstallmentPlan): ?>
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Active Installment Plan #<?php echo (int)$activeInstallmentPlan['id']; ?></h5>
-                <span class="badge bg-info text-dark"><?php echo htmlspecialchars(ucfirst((string)$activeInstallmentPlan['frequency'])); ?></span>
+                <h5 class="mb-0">Installment Plan #<?php echo (int)$latestInstallmentPlan['id']; ?></h5>
+                <div class="d-flex gap-2 align-items-center">
+                    <span class="badge bg-info text-dark"><?php echo htmlspecialchars(ucfirst((string)$latestInstallmentPlan['frequency'])); ?></span>
+                    <?php $planStatus = (string)($latestInstallmentPlan['status'] ?? 'active'); ?>
+                    <span class="badge bg-<?php echo $planStatus === 'completed' ? 'success' : 'primary'; ?>"><?php echo htmlspecialchars(ucfirst($planStatus)); ?></span>
+                </div>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -289,7 +297,7 @@ require_once __DIR__ . '/../../templates/header.php';
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach (($activeInstallmentPlan['items'] ?? []) as $planItem): ?>
+                            <?php foreach (($latestInstallmentPlan['items'] ?? []) as $planItem): ?>
                                 <tr>
                                     <td><?php echo (int)$planItem['sequence_no']; ?></td>
                                     <td><?php echo htmlspecialchars(date('d-m-Y', strtotime((string)$planItem['due_date']))); ?></td>
@@ -302,6 +310,67 @@ require_once __DIR__ . '/../../templates/header.php';
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($latestInstallmentPlan): ?>
+        <div class="card mb-4">
+            <div class="card-header"><h5 class="mb-0">Installment Allocation Audit</h5></div>
+            <div class="card-body p-0">
+                <?php if (empty($installmentAllocationLedger)): ?>
+                    <p class="text-muted p-3 mb-0">No payment allocations have been posted for this plan yet.</p>
+                <?php else: ?>
+                    <?php
+                        $paymentTotals = [];
+                        $itemTotals = [];
+                        foreach ($installmentAllocationLedger as $allocRow) {
+                            $paymentKey = (int)($allocRow['payment_id'] ?? 0);
+                            $itemKey = (int)($allocRow['plan_item_id'] ?? 0);
+                            $allocAmount = (float)($allocRow['allocated_amount'] ?? 0);
+                            if (!isset($paymentTotals[$paymentKey])) {
+                                $paymentTotals[$paymentKey] = 0.0;
+                            }
+                            if (!isset($itemTotals[$itemKey])) {
+                                $itemTotals[$itemKey] = 0.0;
+                            }
+                            $paymentTotals[$paymentKey] += $allocAmount;
+                            $itemTotals[$itemKey] += $allocAmount;
+                        }
+                    ?>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Payment</th>
+                                    <th>Receipt</th>
+                                    <th>Item #</th>
+                                    <th>Due Date</th>
+                                    <th class="text-end">Allocated</th>
+                                    <th class="text-end">Payment Total Allocated</th>
+                                    <th class="text-end">Item Total Allocated</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach ($installmentAllocationLedger as $row): ?>
+                                <?php
+                                    $payId = (int)($row['payment_id'] ?? 0);
+                                    $itemId = (int)($row['plan_item_id'] ?? 0);
+                                ?>
+                                <tr>
+                                    <td>#<?php echo $payId; ?> <span class="text-muted">(<?php echo htmlspecialchars(date('d-m-Y H:i', strtotime((string)($row['payment_date'] ?? 'now')))); ?>)</span></td>
+                                    <td><?php echo htmlspecialchars((string)($row['mpesa_receipt'] ?? '-')); ?></td>
+                                    <td><?php echo (int)($row['sequence_no'] ?? 0); ?></td>
+                                    <td><?php echo htmlspecialchars(date('d-m-Y', strtotime((string)($row['due_date'] ?? 'now')))); ?></td>
+                                    <td class="text-end"><?php echo number_format((float)($row['allocated_amount'] ?? 0), 2); ?></td>
+                                    <td class="text-end"><?php echo number_format((float)($paymentTotals[$payId] ?? 0), 2); ?></td>
+                                    <td class="text-end"><?php echo number_format((float)($itemTotals[$itemId] ?? 0), 2); ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
     <?php endif; ?>
