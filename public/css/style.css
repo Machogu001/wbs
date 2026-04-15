@@ -251,14 +251,14 @@ main > .container {
 .support-availability-badge {
   position: fixed;
   right: 24px;
-  bottom: 24px;
+  color: #15803d;
   z-index: 9998;
   min-width: 250px;
   max-width: min(80vw, 360px);
   background: transparent;
   border-radius: 12px;
   border: none;
-  box-shadow: none;
+  color: #166534;
   padding: 0.48rem 0.65rem;
 }
 
