@@ -7,6 +7,18 @@ require_once __DIR__ . '/../../includes/SupportChat.php';
 
 header('Content-Type: application/json');
 
+function getGuestChatUserId(): int
+{
+    if (!isset($_SESSION['guest_chat_uid']) || (int)$_SESSION['guest_chat_uid'] >= 0) {
+        $seed = session_id();
+        if ($seed === '') {
+            $seed = bin2hex(random_bytes(8));
+        }
+        $_SESSION['guest_chat_uid'] = -1 * (abs(crc32($seed)) + 1);
+    }
+    return (int)$_SESSION['guest_chat_uid'];
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'Method not allowed']);
@@ -18,13 +30,6 @@ try {
     $db = $database->getConnection();
     $auth = new Auth($db);
 
-    $user = $auth->check();
-    if (!$user) {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'Not authenticated']);
-        exit;
-    }
-
     $threadId = isset($_POST['thread_id']) ? (int)$_POST['thread_id'] : 0;
     $isTyping = isset($_POST['is_typing']) ? (int)$_POST['is_typing'] === 1 : false;
 
@@ -34,12 +39,18 @@ try {
         exit;
     }
 
-    $actor = 'user';
-    if ($auth->isAdmin() || $auth->hasRole('support')) {
-        $actor = 'admin';
+    $chat = new SupportChat($db);
+    $user = $auth->check();
+    $isStaff = $user && ($auth->isAdmin() || $auth->hasRole('support'));
+    $ownerId = $user ? (int)$user['id'] : getGuestChatUserId();
+
+    if (!$isStaff && !$chat->isThreadOwnedByUser($threadId, $ownerId)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Forbidden']);
+        exit;
     }
 
-    $chat = new SupportChat($db);
+    $actor = $isStaff ? 'admin' : 'user';
     $chat->setTyping($threadId, $actor, $isTyping);
 
     echo json_encode(['success' => true]);

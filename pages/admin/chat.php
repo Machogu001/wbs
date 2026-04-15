@@ -73,11 +73,22 @@ require_once __DIR__ . '/../../templates/header.php';
                                         <div class="fw-semibold" style="font-size:0.9rem;">
                                             <?php
                                             $fullName = isset($t['full_name']) ? trim((string)$t['full_name']) : '';
-                                            echo htmlspecialchars($fullName !== '' ? $fullName : 'Customer #' . $t['user_id']);
+                                            $threadUserId = isset($t['user_id']) ? (int)$t['user_id'] : 0;
+                                            if ($fullName !== '') {
+                                                echo htmlspecialchars($fullName);
+                                            } elseif ($threadUserId < 0) {
+                                                echo 'Guest Visitor';
+                                            } else {
+                                                echo htmlspecialchars('Customer #' . $threadUserId);
+                                            }
                                             ?>
                                         </div>
                                         <div class="text-muted" style="font-size:0.8rem;">
-                                            <?php echo !empty($t['account_number']) ? 'Account ' . htmlspecialchars($t['account_number']) : ''; ?>
+                                            <?php if ($threadUserId < 0): ?>
+                                                Visitor chat session
+                                            <?php else: ?>
+                                                <?php echo !empty($t['account_number']) ? 'Account ' . htmlspecialchars($t['account_number']) : ''; ?>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                     <small class="text-muted" style="font-size:0.75rem;">

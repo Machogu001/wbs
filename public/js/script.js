@@ -387,9 +387,16 @@ $(document).ready(function() {
             if (isSupportChatAuthenticated) {
                 title = available ? 'Live chat with support (online)' : 'Live chat with support (offline - messages still delivered)';
             } else {
-                title = available ? 'Contact support (team online now)' : 'Contact support (team currently offline)';
+                title = available ? 'Live chat with support (online now)' : 'Leave an inquiry for support (team currently offline)';
             }
             $chatToggle.attr('title', title).attr('aria-label', title);
+        }
+
+        // Guest mode: switch panel mode by availability without auto-closing the active panel.
+        if (!isSupportChatAuthenticated && !$chatWindow.is(':visible')) {
+            if (available && $guestInquiryWindow.length && $guestInquiryWindow.is(':visible')) {
+                $guestInquiryWindow.hide();
+            }
         }
 
         if (withToast && window.showToast) {
@@ -598,11 +605,25 @@ $(document).ready(function() {
 
     $chatToggle.on('click', function() {
         if (!isSupportChatAuthenticated) {
-            if ($guestInquiryWindow.length) {
-                if ($guestInquiryWindow.is(':visible')) {
+            if (lastSupportAvailable === true) {
+                if ($guestInquiryWindow.length && $guestInquiryWindow.is(':visible')) {
                     $guestInquiryWindow.hide();
+                }
+                if ($chatWindow.is(':visible')) {
+                    closeSupportChat();
                 } else {
-                    $guestInquiryWindow.show();
+                    openSupportChat();
+                }
+            } else {
+                if ($chatWindow.is(':visible')) {
+                    closeSupportChat();
+                }
+                if ($guestInquiryWindow.length) {
+                    if ($guestInquiryWindow.is(':visible')) {
+                        $guestInquiryWindow.hide();
+                    } else {
+                        $guestInquiryWindow.show();
+                    }
                 }
             }
             return;
@@ -699,6 +720,14 @@ $(document).ready(function() {
                 $chatInput.val('');
                 if (resp.message_data) {
                     appendChatMessages([resp.message_data]);
+                }
+            } else if (resp && resp.offline && !isSupportChatAuthenticated) {
+                if (window.showToast) {
+                    showToast((resp && resp.message) || 'Support is offline. Please leave an inquiry message.', 'warning');
+                }
+                closeSupportChat();
+                if ($guestInquiryWindow.length) {
+                    $guestInquiryWindow.show();
                 }
             } else if (window.showToast) {
                 showToast((resp && resp.message) || 'Could not send message.', 'danger');

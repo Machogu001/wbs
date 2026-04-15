@@ -221,6 +221,40 @@ class SupportChat
         }
     }
 
+    public function getThreadById(int $threadId): ?array
+    {
+        if ($threadId <= 0) {
+            return null;
+        }
+
+        try {
+            $stmt = $this->conn->prepare("SELECT * FROM {$this->threadsTable} WHERE id = :id LIMIT 1");
+            $stmt->execute([':id' => $threadId]);
+            $row = $stmt->fetch();
+            return $row ?: null;
+        } catch (\PDOException $e) {
+            return null;
+        }
+    }
+
+    public function isThreadOwnedByUser(int $threadId, int $userId): bool
+    {
+        if ($threadId <= 0 || $userId === 0) {
+            return false;
+        }
+
+        try {
+            $stmt = $this->conn->prepare("SELECT 1 FROM {$this->threadsTable} WHERE id = :id AND user_id = :uid LIMIT 1");
+            $stmt->execute([
+                ':id' => $threadId,
+                ':uid' => $userId,
+            ]);
+            return (bool)$stmt->fetchColumn();
+        } catch (\PDOException $e) {
+            return false;
+        }
+    }
+
     public function addMessage(int $threadId, string $senderType, ?int $senderId, string $message): bool
     {
         if ($message === '') {

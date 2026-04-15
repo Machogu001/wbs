@@ -625,36 +625,36 @@
         <i class="bi bi-chat-dots" style="font-size: 1.3rem;"></i>
     </button>
 
-    <?php if ($isFooterChatAuthenticated): ?>
-        <div class="support-chat-window" id="supportChatWindow" aria-live="polite" aria-label="Support chat window"
-            style="position:fixed;right:24px;bottom:290px;z-index:9999;display:none;">
-            <div class="support-chat-header">
-                <div class="d-flex align-items-center gap-2">
-                    <i class="bi bi-headset"></i>
-                    <div>
-                        <div class="small fw-semibold">Support Chat</div>
-                        <div class="small" style="font-size: 0.75rem; opacity: 0.85;">We usually reply in a few minutes</div>
-                        <div class="small" id="supportChatAvailabilityLabel" style="font-size: 0.72rem; opacity: 0.95;"></div>
-                    </div>
+    <div class="support-chat-window" id="supportChatWindow" aria-live="polite" aria-label="Support chat window"
+        style="position:fixed;right:24px;bottom:290px;z-index:9999;display:none;">
+        <div class="support-chat-header">
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-headset"></i>
+                <div>
+                    <div class="small fw-semibold">Support Chat</div>
+                    <div class="small" style="font-size: 0.75rem; opacity: 0.85;">We usually reply in a few minutes</div>
+                    <div class="small" id="supportChatAvailabilityLabel" style="font-size: 0.72rem; opacity: 0.95;"></div>
                 </div>
-                <button type="button" class="btn btn-sm btn-light" id="supportChatClose" aria-label="Close chat">
-                    <i class="bi bi-x"></i>
-                </button>
             </div>
-            <div class="support-chat-body" id="supportChatMessages"></div>
-            <div class="support-chat-input">
-                <div class="support-chat-typing" id="supportChatTypingIndicator" style="display:none;">
-                    <small><i class="bi bi-three-dots"></i> Support is typing...</small>
-                </div>
-                <form id="supportChatForm" class="d-flex align-items-center gap-2">
-                    <input type="text" class="form-control form-control-sm" id="supportChatMessageInput" placeholder="Type your message..." autocomplete="off">
-                    <button type="submit" class="btn btn-primary btn-sm" id="supportChatSendBtn">
-                        <i class="bi bi-send"></i>
-                    </button>
-                </form>
-            </div>
+            <button type="button" class="btn btn-sm btn-light" id="supportChatClose" aria-label="Close chat">
+                <i class="bi bi-x"></i>
+            </button>
         </div>
-    <?php else: ?>
+        <div class="support-chat-body" id="supportChatMessages"></div>
+        <div class="support-chat-input">
+            <div class="support-chat-typing" id="supportChatTypingIndicator" style="display:none;">
+                <small><i class="bi bi-three-dots"></i> Support is typing...</small>
+            </div>
+            <form id="supportChatForm" class="d-flex align-items-center gap-2">
+                <input type="text" class="form-control form-control-sm" id="supportChatMessageInput" placeholder="Type your message..." autocomplete="off">
+                <button type="submit" class="btn btn-primary btn-sm" id="supportChatSendBtn">
+                    <i class="bi bi-send"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <?php if (!$isFooterChatAuthenticated): ?>
         <div class="support-chat-window" id="supportGuestInquiryWindow" aria-live="polite" aria-label="Support inquiry window"
             style="position:fixed;right:24px;bottom:290px;z-index:9999;display:none;">
             <div class="support-chat-header">
