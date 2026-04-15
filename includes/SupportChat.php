@@ -6,6 +6,7 @@ class SupportChat
     private $threadsTable = 'support_threads';
     private $messagesTable = 'support_messages';
     private $typingTable = 'support_typing';
+    private $availabilityTable = 'support_agent_availability';
 
     public function __construct($db)
     {
@@ -56,8 +57,72 @@ class SupportChat
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
 
             $this->conn->exec($sqlTyping);
+
+            $sqlAvailability = "CREATE TABLE IF NOT EXISTS {$this->availabilityTable} (
+                user_id INT NOT NULL PRIMARY KEY,
+                is_available TINYINT(1) NOT NULL DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_available (is_available),
+                CONSTRAINT fk_support_availability_user FOREIGN KEY (user_id)
+                    REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
+
+            $this->conn->exec($sqlAvailability);
         } catch (\PDOException $e) {
             // Do not break the app if chat tables cannot be created
+        }
+    }
+
+    public function setAgentAvailability(int $userId, bool $isAvailable): bool
+    {
+        if ($userId <= 0) {
+            return false;
+        }
+
+        try {
+            $stmt = $this->conn->prepare("INSERT INTO {$this->availabilityTable} (user_id, is_available)
+                VALUES (:uid, :available)
+                ON DUPLICATE KEY UPDATE
+                    is_available = VALUES(is_available),
+                    updated_at = CURRENT_TIMESTAMP");
+            return $stmt->execute([
+                ':uid' => $userId,
+                ':available' => $isAvailable ? 1 : 0,
+            ]);
+        } catch (\PDOException $e) {
+            return false;
+        }
+    }
+
+    public function isAgentAvailable(int $userId): bool
+    {
+        if ($userId <= 0) {
+            return false;
+        }
+
+        try {
+            $stmt = $this->conn->prepare("SELECT is_available FROM {$this->availabilityTable} WHERE user_id = :uid LIMIT 1");
+            $stmt->execute([':uid' => $userId]);
+            $row = $stmt->fetch();
+            return !empty($row) && (int)($row['is_available'] ?? 0) === 1;
+        } catch (\PDOException $e) {
+            return false;
+        }
+    }
+
+    public function getAvailableAgents(): array
+    {
+        try {
+            $stmt = $this->conn->query("SELECT a.user_id, a.updated_at, u.full_name, u.role
+                FROM {$this->availabilityTable} a
+                INNER JOIN users u ON u.id = a.user_id
+                WHERE a.is_available = 1
+                  AND u.role IN ('admin', 'support')
+                  AND u.status = 'active'
+                ORDER BY u.role = 'admin' DESC, u.full_name ASC");
+            return $stmt ? ($stmt->fetchAll() ?: []) : [];
+        } catch (\PDOException $e) {
+            return [];
         }
     }
 

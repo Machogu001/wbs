@@ -607,6 +607,11 @@
         <i class="bi bi-envelope" style="font-size: 1.4rem;"></i>
     </button>
 
+    <div class="support-availability-badge is-offline" id="supportAvailabilityBadge" aria-live="polite">
+        <div class="support-availability-title" id="supportAvailabilityStatus">Checking support availability...</div>
+        <div class="support-availability-agents" id="supportAvailabilityAgents"></div>
+    </div>
+
     <!-- Floating Live Chat toggle (logged-in users) -->
     <?php if (isset($_SESSION['user_id'])): ?>
         <button type="button"
@@ -626,6 +631,7 @@
                     <div>
                         <div class="small fw-semibold">Support Chat</div>
                         <div class="small" style="font-size: 0.75rem; opacity: 0.85;">We usually reply in a few minutes</div>
+                        <div class="small" id="supportChatAvailabilityLabel" style="font-size: 0.72rem; opacity: 0.95;"></div>
                     </div>
                 </div>
                 <button type="button" class="btn btn-sm btn-light" id="supportChatClose" aria-label="Close chat">

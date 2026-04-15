@@ -305,8 +305,96 @@ $(document).ready(function() {
     var chatPollTimer = null;
     var chatTypingTimeout = null;
     var chatTypingState = false;
+    var supportAvailabilityTimer = null;
+    var lastSupportAvailable = null;
+    var lastSupportNamesSignature = '';
 
     var chatLastDateKey = null;
+
+    var $supportAvailabilityBadge = $('#supportAvailabilityBadge');
+    var $supportAvailabilityStatus = $('#supportAvailabilityStatus');
+    var $supportAvailabilityAgents = $('#supportAvailabilityAgents');
+    var $supportChatAvailabilityLabel = $('#supportChatAvailabilityLabel');
+
+    function renderSupportAvailability(resp, withToast) {
+        if (!resp || !resp.success) {
+            if ($supportAvailabilityStatus.length) {
+                $supportAvailabilityStatus.text('Support status unavailable right now');
+            }
+            if ($supportAvailabilityAgents.length) {
+                $supportAvailabilityAgents.text('Please try again in a moment.');
+            }
+            return;
+        }
+
+        var available = !!resp.available;
+        var names = Array.isArray(resp.available_names) ? resp.available_names : [];
+        var namesSignature = names.join('|');
+
+        if ($supportAvailabilityBadge.length) {
+            $supportAvailabilityBadge.removeClass('is-online is-offline').addClass(available ? 'is-online' : 'is-offline');
+        }
+
+        if ($supportAvailabilityStatus.length) {
+            $supportAvailabilityStatus.text(available ? 'Support team is online now' : 'Support team currently offline');
+        }
+
+        if ($supportAvailabilityAgents.length) {
+            if (available && names.length > 0) {
+                $supportAvailabilityAgents.text('Available: ' + names.join(', '));
+            } else {
+                $supportAvailabilityAgents.text('Leave a message via contact form; we will respond as soon as possible.');
+            }
+        }
+
+        if ($supportChatAvailabilityLabel.length) {
+            if (available && names.length > 0) {
+                $supportChatAvailabilityLabel.text('Online: ' + names.join(', '));
+            } else {
+                $supportChatAvailabilityLabel.text('No agent currently online; message will be queued.');
+            }
+        }
+
+        if ($chatToggle.length) {
+            $chatToggle.removeClass('is-online is-offline').addClass(available ? 'is-online' : 'is-offline');
+            var title = available ? 'Live chat with support (online)' : 'Live chat with support (offline - messages still delivered)';
+            $chatToggle.attr('title', title).attr('aria-label', title);
+        }
+
+        if (withToast && window.showToast) {
+            if (lastSupportAvailable !== null && lastSupportAvailable !== available) {
+                if (available) {
+                    var label = names.length ? names.join(', ') : 'Support team';
+                    showToast('Support is now available: ' + label, 'success');
+                } else {
+                    showToast('Support is currently offline. You can still leave a message.', 'warning');
+                }
+            } else if (available && lastSupportAvailable === true && lastSupportNamesSignature !== namesSignature && names.length > 0) {
+                showToast('Available support team: ' + names.join(', '), 'info');
+            }
+        }
+
+        lastSupportAvailable = available;
+        lastSupportNamesSignature = namesSignature;
+    }
+
+    function fetchSupportAvailability(withToast) {
+        $.ajax({
+            url: '/api/chat/availability',
+            method: 'GET',
+            dataType: 'json',
+            cache: false
+        }).done(function(resp) {
+            renderSupportAvailability(resp, !!withToast);
+        });
+    }
+
+    function startSupportAvailabilityPolling() {
+        if (supportAvailabilityTimer) return;
+        supportAvailabilityTimer = setInterval(function() {
+            fetchSupportAvailability(true);
+        }, 10000);
+    }
 
     function formatTimeFromString(str) {
         if (!str) return '';
@@ -536,6 +624,9 @@ $(document).ready(function() {
             $chatSendBtn.prop('disabled', false);
         });
     });
+
+    fetchSupportAvailability(false);
+    startSupportAvailabilityPolling();
 });
 
 // Format currency

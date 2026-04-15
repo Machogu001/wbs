@@ -32,6 +32,32 @@ require_once __DIR__ . '/../../templates/header.php';
             <p class="text-muted mb-0" style="font-size:0.9rem;">Chat live with customers and see messages as they arrive.</p>
         </div>
     </div>
+
+    <div class="row mb-3 g-2 align-items-center">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-body py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <div class="fw-semibold" style="font-size:0.92rem;">Support availability</div>
+                        <div class="text-muted" style="font-size:0.8rem;">Enable to appear online to customers and visitors.</div>
+                    </div>
+                    <div class="form-check form-switch m-0">
+                        <input class="form-check-input" type="checkbox" id="supportAvailabilityToggle">
+                        <label class="form-check-label" for="supportAvailabilityToggle" id="supportAvailabilityToggleLabel">Offline</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-body py-2">
+                    <div class="fw-semibold mb-1" style="font-size:0.92rem;">Available team members</div>
+                    <div id="supportAvailabilityNames" class="text-muted" style="font-size:0.82rem;">Checking availability...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row g-3">
         <div class="col-md-4">
             <div class="card h-100">
@@ -135,6 +161,7 @@ $custom_scripts = <<<HTML
     var typingState = false;
     var lastDateKey = null;
     var isLoadingThread = false;
+    var availabilityPollTimer = null;
     var deleteMode = 'single'; // 'single' or 'bulk'
     var deleteTargetMessageId = null;
     var deleteTargetElement = null;
@@ -153,6 +180,52 @@ $custom_scripts = <<<HTML
         if (h.length === 1) h = '0' + h;
         if (m.length === 1) m = '0' + m;
         return h + ':' + m;
+    }
+
+    function renderAvailability(resp) {
+        var namesEl = document.getElementById('supportAvailabilityNames');
+        var toggle = document.getElementById('supportAvailabilityToggle');
+        var toggleLabel = document.getElementById('supportAvailabilityToggleLabel');
+        if (!resp || !resp.success) {
+            if (namesEl) namesEl.textContent = 'Could not load availability right now.';
+            return;
+        }
+
+        var names = Array.isArray(resp.available_names) ? resp.available_names : [];
+        if (namesEl) {
+            if (names.length > 0) {
+                namesEl.textContent = names.join(', ');
+                namesEl.classList.remove('text-muted');
+                namesEl.classList.add('text-success');
+            } else {
+                namesEl.textContent = 'No support agents currently available.';
+                namesEl.classList.remove('text-success');
+                namesEl.classList.add('text-muted');
+            }
+        }
+
+        if (toggle) {
+            toggle.checked = !!resp.current_user_available;
+        }
+        if (toggleLabel) {
+            toggleLabel.textContent = resp.current_user_available ? 'Online' : 'Offline';
+        }
+    }
+
+    function loadAvailability() {
+        $.ajax({
+            url: '/api/chat/availability',
+            method: 'GET',
+            dataType: 'json',
+            cache: false
+        }).done(function(resp) {
+            renderAvailability(resp);
+        });
+    }
+
+    function startAvailabilityPolling() {
+        if (availabilityPollTimer) return;
+        availabilityPollTimer = setInterval(loadAvailability, 10000);
     }
 
     function getDateKey(str) {
@@ -371,6 +444,34 @@ $custom_scripts = <<<HTML
         });
     });
 
+    $('#supportAvailabilityToggle').on('change', function() {
+        var isAvailable = $(this).is(':checked') ? 1 : 0;
+        var $toggle = $(this);
+        $toggle.prop('disabled', true);
+        $.ajax({
+            url: '/api/chat/availability',
+            method: 'POST',
+            dataType: 'json',
+            data: { available: isAvailable }
+        }).done(function(resp) {
+            if (resp && resp.success) {
+                renderAvailability(resp);
+                if (window.showToast) {
+                    showToast(isAvailable ? 'You are now available for live support.' : 'You are now offline for live support.', 'success');
+                }
+            } else if (window.showToast) {
+                showToast((resp && resp.message) || 'Could not update support availability.', 'danger');
+            }
+        }).fail(function() {
+            if (window.showToast) {
+                showToast('Could not update support availability.', 'danger');
+            }
+        }).always(function() {
+            $toggle.prop('disabled', false);
+            loadAvailability();
+        });
+    });
+
     $('#adminChatMessageInput').on('input keydown', function(){
         if (!currentThreadId) return;
         setTyping(true);
@@ -541,6 +642,9 @@ $custom_scripts = <<<HTML
             });
         }
     });
+
+    loadAvailability();
+    startAvailabilityPolling();
 })();
 </script>
 HTML;
