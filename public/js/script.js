@@ -315,6 +315,7 @@ $(document).ready(function() {
     var $supportAvailabilityStatus = $('#supportAvailabilityStatus');
     var $supportAvailabilityAgents = $('#supportAvailabilityAgents');
     var $supportChatAvailabilityLabel = $('#supportChatAvailabilityLabel');
+    var isSupportChatAuthenticated = String($chatToggle.data('authenticated') || '0') === '1';
 
     function renderSupportAvailability(resp, withToast) {
         if (!resp || !resp.success) {
@@ -370,7 +371,12 @@ $(document).ready(function() {
 
         if ($chatToggle.length) {
             $chatToggle.removeClass('is-online is-offline').addClass(available ? 'is-online' : 'is-offline');
-            var title = available ? 'Live chat with support (online)' : 'Live chat with support (offline - messages still delivered)';
+            var title = '';
+            if (isSupportChatAuthenticated) {
+                title = available ? 'Live chat with support (online)' : 'Live chat with support (offline - messages still delivered)';
+            } else {
+                title = available ? 'Contact support (team online now)' : 'Contact support (team currently offline)';
+            }
             $chatToggle.attr('title', title).attr('aria-label', title);
         }
 
@@ -579,6 +585,18 @@ $(document).ready(function() {
     }
 
     $chatToggle.on('click', function() {
+        if (!isSupportChatAuthenticated) {
+            var contactModalEl = document.getElementById('contactModal');
+            if (contactModalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                var contactModal = bootstrap.Modal.getInstance(contactModalEl) || bootstrap.Modal.getOrCreateInstance(contactModalEl);
+                contactModal.show();
+            }
+            if (window.showToast) {
+                showToast('Tell us your inquiry using the contact form or WhatsApp option.', 'info');
+            }
+            return;
+        }
+
         if ($chatWindow.is(':visible')) {
             closeSupportChat();
         } else {

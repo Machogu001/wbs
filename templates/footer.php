@@ -612,19 +612,22 @@
         <div class="support-availability-agents" id="supportAvailabilityAgents"></div>
     </div>
 
-    <!-- Floating Live Chat toggle (logged-in users) -->
-    <?php if (isset($_SESSION['user_id'])): ?>
-        <button type="button"
-                class="btn support-chat-toggle"
-                id="supportChatToggle"
-                title="Live chat with support"
-                aria-label="Live chat with support"
-                style="position:fixed;right:32px;bottom:224px;z-index:9999;">
-            <i class="bi bi-chat-dots" style="font-size: 1.3rem;"></i>
-        </button>
+    <?php $isFooterChatAuthenticated = isset($_SESSION['user_id']); ?>
 
-       <div class="support-chat-window" id="supportChatWindow" aria-live="polite" aria-label="Support chat window"
-           style="position:fixed;right:24px;bottom:290px;z-index:9999;display:none;">
+    <!-- Floating Live Chat toggle (available to visitors and logged-in users) -->
+    <button type="button"
+            class="btn support-chat-toggle"
+            id="supportChatToggle"
+            data-authenticated="<?php echo $isFooterChatAuthenticated ? '1' : '0'; ?>"
+            title="Contact support"
+            aria-label="Contact support"
+            style="position:fixed;right:32px;bottom:224px;z-index:9999;">
+        <i class="bi bi-chat-dots" style="font-size: 1.3rem;"></i>
+    </button>
+
+    <?php if ($isFooterChatAuthenticated): ?>
+        <div class="support-chat-window" id="supportChatWindow" aria-live="polite" aria-label="Support chat window"
+            style="position:fixed;right:24px;bottom:290px;z-index:9999;display:none;">
             <div class="support-chat-header">
                 <div class="d-flex align-items-center gap-2">
                     <i class="bi bi-headset"></i>
