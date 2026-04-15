@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../includes/CreditNote.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
 require_once __DIR__ . '/../../includes/Etims.php';
 require_once __DIR__ . '/../../includes/Accounting.php';
+require_once __DIR__ . '/../../includes/InstallmentPlan.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -112,8 +113,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 						error_log('Manual payment accounting posting failed for payment #' . $paymentId . ': ' . $e->getMessage());
 					}
 
-					// If full amount paid, mark bill as paid; otherwise leave as pending/overdue (partial payment / balance remains)
-					if (abs($billAmount - $amount) <= 0.01) {
+					try {
+						$planner = new InstallmentPlan($db);
+						$planner->allocatePayment($paymentId);
+					} catch (Throwable $e) {
+						error_log('Manual payment installment allocation failed for payment #' . $paymentId . ': ' . $e->getMessage());
+					}
+
+					// Set bill paid when cumulative completed payments settle the bill.
+					$stmtPaid = $db->prepare("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE bill_id = :bill_id AND status = 'completed'");
+					$stmtPaid->bindParam(':bill_id', $billId, PDO::PARAM_INT);
+					$stmtPaid->execute();
+					$totalPaid = (float)$stmtPaid->fetchColumn();
+					if ($totalPaid + 0.01 >= $billAmount) {
 						$billService->updateStatus($billId, 'paid');
 					}
 

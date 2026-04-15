@@ -227,6 +227,21 @@ try {
         CONSTRAINT fk_installment_items_plan FOREIGN KEY (plan_id) REFERENCES installment_plans(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    $conn->exec("CREATE TABLE IF NOT EXISTS installment_payment_allocations (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        plan_id INT NOT NULL,
+        plan_item_id INT NOT NULL,
+        payment_id INT NOT NULL,
+        allocated_amount DECIMAL(10,2) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_payment_item (payment_id, plan_item_id),
+        INDEX idx_plan_payment (plan_id, payment_id),
+        INDEX idx_plan_item (plan_item_id),
+        CONSTRAINT fk_allocations_plan FOREIGN KEY (plan_id) REFERENCES installment_plans(id) ON DELETE CASCADE,
+        CONSTRAINT fk_allocations_plan_item FOREIGN KEY (plan_item_id) REFERENCES installment_plan_items(id) ON DELETE CASCADE,
+        CONSTRAINT fk_allocations_payment FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
     // Payments table
     $conn->exec("CREATE TABLE IF NOT EXISTS payments (
         id INT PRIMARY KEY AUTO_INCREMENT,

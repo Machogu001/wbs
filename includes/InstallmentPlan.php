@@ -38,6 +38,21 @@ class InstallmentPlan {
             INDEX idx_plan_due (plan_id, due_date),
             CONSTRAINT fk_installment_items_plan FOREIGN KEY (plan_id) REFERENCES installment_plans(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $this->db->exec("CREATE TABLE IF NOT EXISTS installment_payment_allocations (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            plan_id INT NOT NULL,
+            plan_item_id INT NOT NULL,
+            payment_id INT NOT NULL,
+            allocated_amount DECIMAL(10,2) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_payment_item (payment_id, plan_item_id),
+            INDEX idx_plan_payment (plan_id, payment_id),
+            INDEX idx_plan_item (plan_item_id),
+            CONSTRAINT fk_allocations_plan FOREIGN KEY (plan_id) REFERENCES installment_plans(id) ON DELETE CASCADE,
+            CONSTRAINT fk_allocations_plan_item FOREIGN KEY (plan_item_id) REFERENCES installment_plan_items(id) ON DELETE CASCADE,
+            CONSTRAINT fk_allocations_payment FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     }
 
     public function createOrReplacePlan(int $billId, int $userId, float $totalAmount, int $installmentCount, string $frequency, string $startDate, ?int $createdBy = null, ?int $approvedItemId = null): int {
@@ -111,19 +126,26 @@ class InstallmentPlan {
             return [];
         }
 
-        $stmtItems = $this->db->prepare("SELECT * FROM installment_plan_items WHERE plan_id = :plan_id ORDER BY sequence_no ASC");
-        $stmtItems->execute([':plan_id' => $planId]);
+        $stmtItems = $this->db->prepare("SELECT i.*, COALESCE(a.allocated_total, 0) AS allocated_total
+            FROM installment_plan_items i
+            LEFT JOIN (
+                SELECT plan_item_id, SUM(allocated_amount) AS allocated_total
+                FROM installment_payment_allocations
+                WHERE plan_id = :plan_id_alloc
+                GROUP BY plan_item_id
+            ) a ON a.plan_item_id = i.id
+            WHERE i.plan_id = :plan_id
+            ORDER BY i.sequence_no ASC");
+        $stmtItems->execute([
+            ':plan_id_alloc' => $planId,
+            ':plan_id' => $planId,
+        ]);
         $items = $stmtItems->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-        $stmtPaid = $this->db->prepare("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE bill_id = :bill_id AND status = 'completed'");
-        $stmtPaid->execute([':bill_id' => (int)$plan['bill_id']]);
-        $remainingPaymentPool = (float)$stmtPaid->fetchColumn();
 
         $today = date('Y-m-d');
         foreach ($items as &$item) {
             $due = (float)$item['due_amount'];
-            $allocated = min($due, max(0.0, $remainingPaymentPool));
-            $remainingPaymentPool = max(0.0, $remainingPaymentPool - $allocated);
+            $allocated = min($due, max(0.0, (float)($item['allocated_total'] ?? 0)));
             $balance = round($due - $allocated, 2);
             $item['allocated_amount'] = round($allocated, 2);
             $item['balance_amount'] = $balance;
@@ -151,6 +173,132 @@ class InstallmentPlan {
         }
 
         return $items;
+    }
+
+    public function allocatePayment(int $paymentId): void {
+        if ($paymentId <= 0) {
+            return;
+        }
+
+        $stmtPayment = $this->db->prepare("SELECT * FROM payments WHERE id = :id LIMIT 1");
+        $stmtPayment->execute([':id' => $paymentId]);
+        $payment = $stmtPayment->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$payment || (string)($payment['status'] ?? '') !== 'completed') {
+            return;
+        }
+
+        $billId = (int)($payment['bill_id'] ?? 0);
+        if ($billId <= 0) {
+            return;
+        }
+
+        $plan = $this->getActivePlanByBillId($billId);
+        if (!$plan) {
+            return;
+        }
+
+        // Keep allocation idempotent if payment completion callback retries.
+        $stmtExisting = $this->db->prepare("SELECT COUNT(*) FROM installment_payment_allocations WHERE payment_id = :payment_id");
+        $stmtExisting->execute([':payment_id' => $paymentId]);
+        if ((int)$stmtExisting->fetchColumn() > 0) {
+            return;
+        }
+
+        $remaining = round(max(0.0, (float)$payment['amount']), 2);
+        if ($remaining <= 0) {
+            return;
+        }
+
+        $this->db->beginTransaction();
+        try {
+            $planItems = $this->getPlanItemsOutstanding((int)$plan['id']);
+            $stmtInsert = $this->db->prepare("INSERT INTO installment_payment_allocations
+                (plan_id, plan_item_id, payment_id, allocated_amount)
+                VALUES (:plan_id, :plan_item_id, :payment_id, :allocated_amount)");
+
+            foreach ($planItems as $item) {
+                if ($remaining <= 0) {
+                    break;
+                }
+
+                $itemBalance = (float)($item['balance_amount'] ?? 0);
+                if ($itemBalance <= 0) {
+                    continue;
+                }
+
+                $allocated = round(min($remaining, $itemBalance), 2);
+                if ($allocated <= 0) {
+                    continue;
+                }
+
+                $stmtInsert->execute([
+                    ':plan_id' => (int)$plan['id'],
+                    ':plan_item_id' => (int)$item['id'],
+                    ':payment_id' => $paymentId,
+                    ':allocated_amount' => $allocated,
+                ]);
+                $remaining = round($remaining - $allocated, 2);
+            }
+
+            $this->syncPlanCompletionStatus((int)$plan['id']);
+            $this->db->commit();
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    public function allocateExistingCompletedPaymentsForBill(int $billId): void {
+        if ($billId <= 0) {
+            return;
+        }
+
+        $stmt = $this->db->prepare("SELECT id FROM payments WHERE bill_id = :bill_id AND status = 'completed' ORDER BY COALESCE(transaction_date, created_at) ASC, id ASC");
+        $stmt->execute([':bill_id' => $billId]);
+        $payments = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        foreach ($payments as $payment) {
+            $this->allocatePayment((int)$payment['id']);
+        }
+    }
+
+    private function getPlanItemsOutstanding(int $planId): array {
+        $stmt = $this->db->prepare("SELECT i.*,
+            COALESCE(a.allocated_total, 0) AS allocated_total,
+            GREATEST(0, i.due_amount - COALESCE(a.allocated_total, 0)) AS balance_amount
+            FROM installment_plan_items i
+            LEFT JOIN (
+                SELECT plan_item_id, SUM(allocated_amount) AS allocated_total
+                FROM installment_payment_allocations
+                WHERE plan_id = :plan_id_alloc
+                GROUP BY plan_item_id
+            ) a ON a.plan_item_id = i.id
+            WHERE i.plan_id = :plan_id
+            ORDER BY i.sequence_no ASC, i.id ASC");
+        $stmt->execute([
+            ':plan_id_alloc' => $planId,
+            ':plan_id' => $planId,
+        ]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    private function syncPlanCompletionStatus(int $planId): void {
+        $items = $this->getPlanItemsWithAllocation($planId);
+        $allPaid = !empty($items);
+        foreach ($items as $item) {
+            if (((string)($item['item_status'] ?? '')) !== 'paid') {
+                $allPaid = false;
+                break;
+            }
+        }
+
+        if ($allPaid) {
+            $stmt = $this->db->prepare("UPDATE installment_plans SET status = 'completed', updated_at = NOW() WHERE id = :id");
+            $stmt->execute([':id' => $planId]);
+        }
     }
 
     private function buildSchedule(float $totalAmount, int $count, string $frequency, string $startDate): array {

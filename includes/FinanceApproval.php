@@ -368,6 +368,7 @@ class FinanceApproval {
             $approvedBy,
             (int)$item['id']
         );
+        $planner->allocateExistingCompletedPaymentsForBill((int)$bill['id']);
     }
 
     private function decodeMetadata($value): array {

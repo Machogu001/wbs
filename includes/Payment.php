@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/Accounting.php';
+require_once __DIR__ . '/InstallmentPlan.php';
 
 class Payment {
 	private $conn;
@@ -74,6 +75,9 @@ class Payment {
 		$stmt->bindParam(':registration_id', $this->registration_id);
 		if ($stmt->execute()) {
 			$this->id = $this->conn->lastInsertId();
+			if ((string)$this->status === 'completed') {
+				$this->handleCompletedPayment((int)$this->id);
+			}
 			return true;
 		}
 		return false;
@@ -122,27 +126,43 @@ class Payment {
 		}
 
 		if ($isTransitionToCompleted) {
-			try {
-				$accounting = new Accounting($this->conn);
-				$paymentRow = $this->getById($id);
-				$billRow = null;
-				if ($paymentRow && !empty($paymentRow['bill_id'])) {
-					$stmtBill = $this->conn->prepare('SELECT * FROM bills WHERE id = :id LIMIT 1');
-					$stmtBill->bindParam(':id', $paymentRow['bill_id'], PDO::PARAM_INT);
-					$stmtBill->execute();
-					$billRow = $stmtBill->fetch(PDO::FETCH_ASSOC) ?: null;
-				}
-				$accounting->postPaymentReceived(
-					(int)$id,
-					$paymentRow,
-					$billRow,
-					'Payment received'
-				);
-			} catch (\Throwable $e) {
-				error_log('Payment accounting posting failed for payment #' . (int)$id . ': ' . $e->getMessage());
-			}
+			$this->handleCompletedPayment((int)$id);
 		}
 
 		return true;
+	}
+
+	private function handleCompletedPayment(int $paymentId): void {
+		$paymentRow = $this->getById($paymentId);
+		if (!$paymentRow) {
+			return;
+		}
+
+		$billRow = null;
+		if (!empty($paymentRow['bill_id'])) {
+			$stmtBill = $this->conn->prepare('SELECT * FROM bills WHERE id = :id LIMIT 1');
+			$stmtBill->bindParam(':id', $paymentRow['bill_id'], PDO::PARAM_INT);
+			$stmtBill->execute();
+			$billRow = $stmtBill->fetch(PDO::FETCH_ASSOC) ?: null;
+		}
+
+		try {
+			$accounting = new Accounting($this->conn);
+			$accounting->postPaymentReceived(
+				$paymentId,
+				$paymentRow,
+				$billRow,
+				'Payment received'
+			);
+		} catch (\Throwable $e) {
+			error_log('Payment accounting posting failed for payment #' . (int)$paymentId . ': ' . $e->getMessage());
+		}
+
+		try {
+			$planner = new InstallmentPlan($this->conn);
+			$planner->allocatePayment($paymentId);
+		} catch (\Throwable $e) {
+			error_log('Installment allocation failed for payment #' . (int)$paymentId . ': ' . $e->getMessage());
+		}
 	}
 }
