@@ -21,6 +21,7 @@
             require_once __DIR__ . '/../config/database.php';
             require_once __DIR__ . '/../includes/BillingSettings.php';
             require_once __DIR__ . '/../includes/CountryDialCode.php';
+            require_once __DIR__ . '/../includes/SupportChat.php';
             if (class_exists('Database')) {
                 $dbFooter = (new Database())->getConnection();
                 if ($dbFooter) {
@@ -46,6 +47,42 @@
                     $dbCountryCodeOptions = $countryDialCodeService->listActive();
                     if (!empty($dbCountryCodeOptions)) {
                         $footerCountryCodeOptions = $dbCountryCodeOptions;
+                    }
+
+                    $footerAvailabilityStatus = 'Checking support availability...';
+                    $footerAvailabilityAgents = '';
+                    try {
+                        $footerSupportChat = new SupportChat($dbFooter);
+                        $footerAvailableAgents = $footerSupportChat->getAvailableAgents();
+                        if (!empty($footerAvailableAgents)) {
+                            $footerAvailabilityStatus = 'Support team is online now';
+                            $footerAvailabilityAgents = 'Available: ' . implode(', ', array_map(static function ($agent) {
+                                $fullName = trim((string)($agent['full_name'] ?? ''));
+                                return $fullName !== '' ? $fullName . ' (online)' : 'Support';
+                            }, $footerAvailableAgents));
+                        } else {
+                            $footerRecentAgents = $footerSupportChat->getLastSeenAgents(5);
+                            $footerAvailabilityStatus = 'Support team currently offline';
+                            if (!empty($footerRecentAgents)) {
+                                $footerAvailabilityAgents = 'Offline. ' . implode(', ', array_map(static function ($agent) {
+                                    $fullName = trim((string)($agent['full_name'] ?? ''));
+                                    $label = $fullName !== '' ? $fullName : 'Support';
+                                    $updatedAt = trim((string)($agent['updated_at'] ?? ''));
+                                    if ($updatedAt !== '') {
+                                        $timestamp = strtotime($updatedAt);
+                                        if ($timestamp) {
+                                            return $label . ' (last seen ' . date('h:i A', $timestamp) . ')';
+                                        }
+                                    }
+                                    return $label;
+                                }, $footerRecentAgents));
+                            } else {
+                                $footerAvailabilityAgents = 'Leave a message via contact form; we will respond as soon as possible.';
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        $footerAvailabilityStatus = 'Checking support availability...';
+                        $footerAvailabilityAgents = '';
                     }
                 }
             }
@@ -608,8 +645,8 @@
     </button>
 
     <div class="support-availability-badge is-offline" id="supportAvailabilityBadge" aria-live="polite">
-        <div class="support-availability-title" id="supportAvailabilityStatus">Checking support availability...</div>
-        <div class="support-availability-agents" id="supportAvailabilityAgents"></div>
+        <div class="support-availability-title" id="supportAvailabilityStatus"><?php echo htmlspecialchars($footerAvailabilityStatus ?? 'Checking support availability...'); ?></div>
+        <div class="support-availability-agents" id="supportAvailabilityAgents"><?php echo htmlspecialchars($footerAvailabilityAgents ?? ''); ?></div>
     </div>
 
     <?php $isFooterChatAuthenticated = isset($_SESSION['user_id']); ?>
