@@ -300,6 +300,10 @@ $(document).ready(function() {
     var $chatInput = $('#supportChatMessageInput');
     var $chatSendBtn = $('#supportChatSendBtn');
     var $chatTypingIndicator = $('#supportChatTypingIndicator');
+    var $guestInquiryWindow = $('#supportGuestInquiryWindow');
+    var $guestInquiryForm = $('#supportGuestInquiryForm');
+    var $guestInquirySendBtn = $('#supportGuestInquirySendBtn');
+    var $guestAvailabilityLabel = $('#supportGuestAvailabilityLabel');
     var chatThreadId = null;
     var chatLastMessageId = null;
     var chatPollTimer = null;
@@ -366,6 +370,14 @@ $(document).ready(function() {
                 $supportChatAvailabilityLabel.text('Online: ' + namesWithTime.join(', '));
             } else {
                 $supportChatAvailabilityLabel.text('No agent currently online; message will be queued.');
+            }
+        }
+
+        if ($guestAvailabilityLabel.length) {
+            if (available && namesWithTime.length > 0) {
+                $guestAvailabilityLabel.text('Team online: ' + namesWithTime.join(', '));
+            } else {
+                $guestAvailabilityLabel.text('Team offline now, but your inquiry will still be received.');
             }
         }
 
@@ -586,13 +598,12 @@ $(document).ready(function() {
 
     $chatToggle.on('click', function() {
         if (!isSupportChatAuthenticated) {
-            var contactModalEl = document.getElementById('contactModal');
-            if (contactModalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                var contactModal = bootstrap.Modal.getInstance(contactModalEl) || bootstrap.Modal.getOrCreateInstance(contactModalEl);
-                contactModal.show();
-            }
-            if (window.showToast) {
-                showToast('Tell us your inquiry using the contact form or WhatsApp option.', 'info');
+            if ($guestInquiryWindow.length) {
+                if ($guestInquiryWindow.is(':visible')) {
+                    $guestInquiryWindow.hide();
+                } else {
+                    $guestInquiryWindow.show();
+                }
             }
             return;
         }
@@ -606,6 +617,51 @@ $(document).ready(function() {
 
     $('#supportChatClose').on('click', function() {
         closeSupportChat();
+    });
+
+    $('#supportGuestInquiryClose').on('click', function() {
+        if ($guestInquiryWindow.length) {
+            $guestInquiryWindow.hide();
+        }
+    });
+
+    $guestInquiryForm.on('submit', function(e) {
+        e.preventDefault();
+        if (isSupportChatAuthenticated) {
+            return;
+        }
+
+        var formEl = this;
+        if (!formEl.checkValidity()) {
+            formEl.reportValidity();
+            return;
+        }
+
+        $guestInquirySendBtn.prop('disabled', true);
+        $.ajax({
+            url: '/api/contact/send_message',
+            method: 'POST',
+            dataType: 'json',
+            data: $(formEl).serialize()
+        }).done(function(resp) {
+            if (resp && resp.success) {
+                formEl.reset();
+                if (window.showToast) {
+                    showToast(resp.message || 'Inquiry sent successfully.', 'success');
+                }
+                if ($guestInquiryWindow.length) {
+                    $guestInquiryWindow.hide();
+                }
+            } else if (window.showToast) {
+                showToast((resp && resp.message) || 'Could not send inquiry right now.', 'danger');
+            }
+        }).fail(function() {
+            if (window.showToast) {
+                showToast('Could not send inquiry right now. Please try again.', 'danger');
+            }
+        }).always(function() {
+            $guestInquirySendBtn.prop('disabled', false);
+        });
     });
 
     $chatInput.on('input keydown', function() {

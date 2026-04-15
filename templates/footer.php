@@ -654,6 +654,48 @@
                 </form>
             </div>
         </div>
+    <?php else: ?>
+        <div class="support-chat-window" id="supportGuestInquiryWindow" aria-live="polite" aria-label="Support inquiry window"
+            style="position:fixed;right:24px;bottom:290px;z-index:9999;display:none;">
+            <div class="support-chat-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-chat-square-text"></i>
+                    <div>
+                        <div class="small fw-semibold">Quick Inquiry</div>
+                        <div class="small" style="font-size: 0.75rem; opacity: 0.85;">Ask support a question without logging in</div>
+                        <div class="small" id="supportGuestAvailabilityLabel" style="font-size: 0.72rem; opacity: 0.95;"></div>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-light" id="supportGuestInquiryClose" aria-label="Close inquiry panel">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+            <div class="support-chat-input" style="padding: 0.85rem;">
+                <form id="supportGuestInquiryForm" novalidate>
+                    <div class="mb-2">
+                        <label for="guestInquiryName" class="form-label small mb-1">Name *</label>
+                        <input type="text" class="form-control form-control-sm" id="guestInquiryName" name="name" required autocomplete="name">
+                    </div>
+                    <div class="mb-2">
+                        <label for="guestInquiryEmail" class="form-label small mb-1">Email *</label>
+                        <input type="email" class="form-control form-control-sm" id="guestInquiryEmail" name="email" required autocomplete="email">
+                    </div>
+                    <div class="mb-2">
+                        <label for="guestInquiryPhone" class="form-label small mb-1">Phone (optional)</label>
+                        <input type="tel" class="form-control form-control-sm" id="guestInquiryPhone" name="phone" autocomplete="tel">
+                    </div>
+                    <div class="mb-2">
+                        <label for="guestInquiryMessage" class="form-label small mb-1">Inquiry *</label>
+                        <textarea class="form-control form-control-sm" id="guestInquiryMessage" name="message" rows="3" required></textarea>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-sm" id="supportGuestInquirySendBtn">
+                            <i class="bi bi-send"></i> Send Inquiry
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     <?php endif; ?>
 
     <!-- Contact Form Modal -->
