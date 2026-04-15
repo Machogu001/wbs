@@ -27,8 +27,15 @@ try {
             exit;
         }
 
+        $currentUserId = (int)($auth->getUserId() ?? 0);
+        if ($currentUserId <= 0) {
+            http_response_code(401);
+            echo json_encode(['success' => false, 'message' => 'Invalid session']);
+            exit;
+        }
+
         $available = isset($_POST['available']) ? (int)$_POST['available'] === 1 : false;
-        $ok = $chat->setAgentAvailability((int)$user['id'], $available);
+        $ok = $chat->setAgentAvailability($currentUserId, $available);
         if (!$ok) {
             http_response_code(500);
             echo json_encode(['success' => false, 'message' => 'Could not update availability']);
@@ -54,7 +61,10 @@ try {
     $currentUserAvailable = false;
     $user = $auth->check();
     if ($user && ($auth->isAdmin() || $auth->hasRole('support'))) {
-        $currentUserAvailable = $chat->isAgentAvailable((int)$user['id']);
+        $currentUserId = (int)($auth->getUserId() ?? 0);
+        if ($currentUserId > 0) {
+            $currentUserAvailable = $chat->isAgentAvailable($currentUserId);
+        }
     }
 
     echo json_encode([
