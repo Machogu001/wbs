@@ -6,6 +6,9 @@ require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/SupportChat.php';
 
 header('Content-Type: application/json');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 try {
     $database = new Database();

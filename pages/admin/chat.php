@@ -230,7 +230,8 @@ $custom_scripts = <<<HTML
             url: '/api/chat/availability',
             method: 'GET',
             dataType: 'json',
-            cache: false
+            cache: false,
+            data: { _ts: Date.now() }
         }).done(function(resp) {
             renderAvailability(resp);
         });
@@ -460,6 +461,25 @@ $custom_scripts = <<<HTML
     $('#supportAvailabilityToggle').on('change', function() {
         var isAvailable = $(this).is(':checked') ? 1 : 0;
         var $toggle = $(this);
+
+        function showAvailabilityToast(message, type) {
+            if (window.Swal && typeof window.Swal.fire === 'function') {
+                window.Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: (type === 'success') ? 'success' : 'error',
+                    title: message,
+                    showConfirmButton: false,
+                    timer: 2400,
+                    timerProgressBar: true
+                });
+                return;
+            }
+            if (window.showToast) {
+                showToast(message, type);
+            }
+        }
+
         $toggle.prop('disabled', true);
         $.ajax({
             url: '/api/chat/availability',
@@ -469,16 +489,12 @@ $custom_scripts = <<<HTML
         }).done(function(resp) {
             if (resp && resp.success) {
                 renderAvailability(resp);
-                if (window.showToast) {
-                    showToast(isAvailable ? 'You are now available for live support.' : 'You are now offline for live support.', 'success');
-                }
-            } else if (window.showToast) {
-                showToast((resp && resp.message) || 'Could not update support availability.', 'danger');
+                showAvailabilityToast(isAvailable ? 'Support status set to ONLINE.' : 'Support status set to OFFLINE.', 'success');
+            } else {
+                showAvailabilityToast((resp && resp.message) || 'Could not update support availability.', 'danger');
             }
         }).fail(function() {
-            if (window.showToast) {
-                showToast('Could not update support availability.', 'danger');
-            }
+            showAvailabilityToast('Could not update support availability.', 'danger');
         }).always(function() {
             $toggle.prop('disabled', false);
             loadAvailability();
