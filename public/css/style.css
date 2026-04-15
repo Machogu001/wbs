@@ -255,35 +255,35 @@ main > .container {
   z-index: 9998;
   min-width: 250px;
   max-width: min(80vw, 360px);
-  background: #ffffff;
+  background: transparent;
   border-radius: 12px;
-  border: 1px solid #d1d5db;
-  box-shadow: var(--shadow-md);
+  border: none;
+  box-shadow: none;
   padding: 0.48rem 0.65rem;
 }
 
 .support-availability-badge.is-online {
-  border-color: #10b981;
-  background: #f0fdf4;
+  background: transparent;
 }
 
 .support-availability-badge.is-offline {
-  border-color: #9ca3af;
-  background: #f9fafb;
+  background: transparent;
 }
 
 .support-availability-title {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #111827;
+  color: #0f172a;
   margin-bottom: 0.12rem;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.85);
 }
 
 .support-availability-agents {
   font-size: 0.74rem;
-  color: #374151;
+  color: #1f2937;
   line-height: 1.2;
   white-space: normal;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.85);
 }
 
 .support-chat-header {
