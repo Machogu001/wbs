@@ -73,7 +73,7 @@ $to_display = date('d-m-Y', strtotime($to_str));
 
 // Helper for building download URLs (reusing current filters)
 $baseQuery = $_GET;
-unset($baseQuery['payments_page'], $baseQuery['bills_page'], $baseQuery['export']);
+unset($baseQuery['payments_page'], $baseQuery['bills_page'], $baseQuery['allocations_page'], $baseQuery['adjustments_page'], $baseQuery['export']);
 
 // Load settings for display (currency, company name)
 $settingsService = new BillingSettings($db);
@@ -696,6 +696,176 @@ if ($report_scope === 'all' || $report_scope === 'billing') {
 	$bills_grand_total = isset($totalBillsRow['total_amount']) ? (float)$totalBillsRow['total_amount'] : 0.0;
 }
 
+// Installment allocation audit preview with pagination
+$allocations = [];
+$allocations_total = 0;
+$allocations_total_pages = 1;
+$allocations_grand_total = 0.0;
+$allocations_page = isset($_GET['allocations_page']) ? max(1, (int)$_GET['allocations_page']) : 1;
+
+$sqlAllocWhere = "WHERE DATE(COALESCE(p.transaction_date, p.created_at)) BETWEEN :from AND :to";
+if ($search_term !== '') {
+	$sqlAllocWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search OR p.mpesa_receipt LIKE :search OR CAST(b.id AS CHAR) LIKE :search)";
+}
+
+$sqlAllocCount = "SELECT COUNT(*) AS cnt
+	FROM installment_payment_allocations a
+	INNER JOIN installment_plans ip ON ip.id = a.plan_id
+	INNER JOIN installment_plan_items ipi ON ipi.id = a.plan_item_id
+	INNER JOIN payments p ON p.id = a.payment_id
+	INNER JOIN bills b ON b.id = ip.bill_id
+	LEFT JOIN users u ON u.id = b.user_id
+	" . $sqlAllocWhere;
+
+$stmtAllocCount = $db->prepare($sqlAllocCount);
+$stmtAllocCount->bindParam(':from', $from_str);
+$stmtAllocCount->bindParam(':to', $to_str);
+if ($search_term !== '') {
+	$likeAlloc = '%' . $search_term . '%';
+	$stmtAllocCount->bindParam(':search', $likeAlloc, PDO::PARAM_STR);
+}
+$stmtAllocCount->execute();
+$allocCountRow = $stmtAllocCount->fetch(PDO::FETCH_ASSOC) ?: ['cnt' => 0];
+$allocations_total = (int)($allocCountRow['cnt'] ?? 0);
+$allocations_total_pages = max(1, (int)ceil($allocations_total / $page_size));
+if ($allocations_page > $allocations_total_pages) {
+	$allocations_page = $allocations_total_pages;
+}
+$allocations_offset = ($allocations_page - 1) * $page_size;
+
+$sqlAllocRows = "SELECT
+		COALESCE(p.transaction_date, p.created_at) AS payment_date,
+		p.id AS payment_id,
+		p.mpesa_receipt,
+		p.amount AS payment_amount,
+		ip.id AS plan_id,
+		ip.status AS plan_status,
+		ipi.sequence_no,
+		ipi.due_date,
+		a.allocated_amount,
+		b.id AS bill_id,
+		u.account_number,
+		u.full_name
+	FROM installment_payment_allocations a
+	INNER JOIN installment_plans ip ON ip.id = a.plan_id
+	INNER JOIN installment_plan_items ipi ON ipi.id = a.plan_item_id
+	INNER JOIN payments p ON p.id = a.payment_id
+	INNER JOIN bills b ON b.id = ip.bill_id
+	LEFT JOIN users u ON u.id = b.user_id
+	" . $sqlAllocWhere . "
+	ORDER BY COALESCE(p.transaction_date, p.created_at) DESC, p.id DESC, ipi.sequence_no ASC
+	LIMIT :limit OFFSET :offset";
+
+$stmtAllocRows = $db->prepare($sqlAllocRows);
+$stmtAllocRows->bindParam(':from', $from_str);
+$stmtAllocRows->bindParam(':to', $to_str);
+if ($search_term !== '') {
+	$likeAllocRows = '%' . $search_term . '%';
+	$stmtAllocRows->bindParam(':search', $likeAllocRows, PDO::PARAM_STR);
+}
+$stmtAllocRows->bindParam(':limit', $page_size, PDO::PARAM_INT);
+$stmtAllocRows->bindParam(':offset', $allocations_offset, PDO::PARAM_INT);
+$stmtAllocRows->execute();
+$allocations = $stmtAllocRows->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+$sqlAllocTotal = "SELECT COALESCE(SUM(a.allocated_amount),0) AS total_amount
+	FROM installment_payment_allocations a
+	INNER JOIN installment_plans ip ON ip.id = a.plan_id
+	INNER JOIN payments p ON p.id = a.payment_id
+	INNER JOIN bills b ON b.id = ip.bill_id
+	LEFT JOIN users u ON u.id = b.user_id
+	" . $sqlAllocWhere;
+$stmtAllocTotal = $db->prepare($sqlAllocTotal);
+$stmtAllocTotal->bindParam(':from', $from_str);
+$stmtAllocTotal->bindParam(':to', $to_str);
+if ($search_term !== '') {
+	$likeAllocTotal = '%' . $search_term . '%';
+	$stmtAllocTotal->bindParam(':search', $likeAllocTotal, PDO::PARAM_STR);
+}
+$stmtAllocTotal->execute();
+$allocTotalRow = $stmtAllocTotal->fetch(PDO::FETCH_ASSOC) ?: ['total_amount' => 0];
+$allocations_grand_total = (float)($allocTotalRow['total_amount'] ?? 0);
+
+// Write-off / waiver approval audit preview with pagination
+$adjustments = [];
+$adjustments_total = 0;
+$adjustments_total_pages = 1;
+$adjustments_grand_total = 0.0;
+$adjustments_page = isset($_GET['adjustments_page']) ? max(1, (int)$_GET['adjustments_page']) : 1;
+
+$sqlAdjustWhere = "WHERE fai.entity_type IN ('bill_writeoff','bill_waiver') AND fai.status = 'approved' AND DATE(COALESCE(fai.approved_at, fai.created_at)) BETWEEN :from AND :to";
+if ($search_term !== '') {
+	$sqlAdjustWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search OR CAST(fai.entity_id AS CHAR) LIKE :search OR fai.reference_no LIKE :search)";
+}
+
+$sqlAdjustCount = "SELECT COUNT(*) AS cnt
+	FROM financial_approval_items fai
+	LEFT JOIN bills b ON b.id = fai.entity_id
+	LEFT JOIN users u ON u.id = b.user_id
+	" . $sqlAdjustWhere;
+$stmtAdjustCount = $db->prepare($sqlAdjustCount);
+$stmtAdjustCount->bindParam(':from', $from_str);
+$stmtAdjustCount->bindParam(':to', $to_str);
+if ($search_term !== '') {
+	$likeAdjust = '%' . $search_term . '%';
+	$stmtAdjustCount->bindParam(':search', $likeAdjust, PDO::PARAM_STR);
+}
+$stmtAdjustCount->execute();
+$adjustCountRow = $stmtAdjustCount->fetch(PDO::FETCH_ASSOC) ?: ['cnt' => 0];
+$adjustments_total = (int)($adjustCountRow['cnt'] ?? 0);
+$adjustments_total_pages = max(1, (int)ceil($adjustments_total / $page_size));
+if ($adjustments_page > $adjustments_total_pages) {
+	$adjustments_page = $adjustments_total_pages;
+}
+$adjustments_offset = ($adjustments_page - 1) * $page_size;
+
+$sqlAdjustRows = "SELECT
+		fai.id,
+		fai.entity_type,
+		fai.entity_id AS bill_id,
+		fai.reference_no,
+		fai.amount,
+		fai.comments,
+		fai.metadata_json,
+		COALESCE(fai.approved_at, fai.created_at) AS decided_at,
+		u.account_number,
+		u.full_name,
+		au.full_name AS approver_name
+	FROM financial_approval_items fai
+	LEFT JOIN bills b ON b.id = fai.entity_id
+	LEFT JOIN users u ON u.id = b.user_id
+	LEFT JOIN users au ON au.id = fai.approved_by
+	" . $sqlAdjustWhere . "
+	ORDER BY COALESCE(fai.approved_at, fai.created_at) DESC, fai.id DESC
+	LIMIT :limit OFFSET :offset";
+$stmtAdjustRows = $db->prepare($sqlAdjustRows);
+$stmtAdjustRows->bindParam(':from', $from_str);
+$stmtAdjustRows->bindParam(':to', $to_str);
+if ($search_term !== '') {
+	$likeAdjustRows = '%' . $search_term . '%';
+	$stmtAdjustRows->bindParam(':search', $likeAdjustRows, PDO::PARAM_STR);
+}
+$stmtAdjustRows->bindParam(':limit', $page_size, PDO::PARAM_INT);
+$stmtAdjustRows->bindParam(':offset', $adjustments_offset, PDO::PARAM_INT);
+$stmtAdjustRows->execute();
+$adjustments = $stmtAdjustRows->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+$sqlAdjustTotal = "SELECT COALESCE(SUM(fai.amount),0) AS total_amount
+	FROM financial_approval_items fai
+	LEFT JOIN bills b ON b.id = fai.entity_id
+	LEFT JOIN users u ON u.id = b.user_id
+	" . $sqlAdjustWhere;
+$stmtAdjustTotal = $db->prepare($sqlAdjustTotal);
+$stmtAdjustTotal->bindParam(':from', $from_str);
+$stmtAdjustTotal->bindParam(':to', $to_str);
+if ($search_term !== '') {
+	$likeAdjustTotal = '%' . $search_term . '%';
+	$stmtAdjustTotal->bindParam(':search', $likeAdjustTotal, PDO::PARAM_STR);
+}
+$stmtAdjustTotal->execute();
+$adjustTotalRow = $stmtAdjustTotal->fetch(PDO::FETCH_ASSOC) ?: ['total_amount' => 0];
+$adjustments_grand_total = (float)($adjustTotalRow['total_amount'] ?? 0);
+
 $is_admin_page = true;
 require_once __DIR__ . '/../../templates/header.php';
 ?>
@@ -1177,6 +1347,185 @@ require_once __DIR__ . '/../../templates/header.php';
 			</div>
 		</div>
 		<?php endif; ?>
+		<div class="col-12" id="allocationAuditSection">
+			<div class="card h-100 report-table-card">
+				<div class="card-header d-flex justify-content-between align-items-center report-card-header">
+					<div>
+						<h5 class="card-title mb-0">Installment Allocation Audit</h5>
+						<small class="text-muted">Allocation rows posted against installment plans in the selected period.</small>
+					</div>
+				</div>
+				<div class="card-body p-0">
+					<div class="table-responsive">
+						<table class="table table-striped table-sm mb-0 align-middle table-density-target">
+							<thead class="table-light">
+								<tr>
+									<th>Payment Date</th>
+									<th>Payment</th>
+									<th>Bill</th>
+									<th>Account</th>
+									<th>Customer</th>
+									<th>Plan</th>
+									<th>Item #</th>
+									<th class="text-end">Allocated (<?php echo htmlspecialchars($currency); ?>)</th>
+								</tr>
+							</thead>
+							<tbody>
+							<?php if (empty($allocations)): ?>
+								<tr>
+									<td colspan="8" class="text-center text-muted py-3">No installment allocations found for this period.</td>
+								</tr>
+							<?php else: ?>
+								<?php foreach ($allocations as $alloc): ?>
+									<tr>
+										<td data-label="Payment Date"><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime((string)$alloc['payment_date']))); ?></td>
+										<td data-label="Payment">#<?php echo (int)$alloc['payment_id']; ?> <?php echo !empty($alloc['mpesa_receipt']) ? '(' . htmlspecialchars((string)$alloc['mpesa_receipt']) . ')' : ''; ?></td>
+										<td data-label="Bill">#<?php echo (int)$alloc['bill_id']; ?></td>
+										<td data-label="Account"><?php echo htmlspecialchars((string)($alloc['account_number'] ?? '-')); ?></td>
+										<td data-label="Customer"><?php echo htmlspecialchars((string)($alloc['full_name'] ?? '')); ?></td>
+										<td data-label="Plan">#<?php echo (int)$alloc['plan_id']; ?> (<?php echo htmlspecialchars((string)$alloc['plan_status']); ?>)</td>
+										<td data-label="Item #"><?php echo (int)$alloc['sequence_no']; ?> (due <?php echo htmlspecialchars(date('d-m-Y', strtotime((string)$alloc['due_date']))); ?>)</td>
+										<td data-label="Allocated" class="text-end"><?php echo number_format((float)$alloc['allocated_amount'], 2); ?></td>
+									</tr>
+								<?php endforeach; ?>
+							<?php endif; ?>
+							</tbody>
+						</table>
+					</div>
+					<div class="px-3 py-2 border-top small text-end report-grand-total">
+						<strong>Grand Total (<?php echo htmlspecialchars($currency); ?>):</strong>
+						<?php echo number_format($allocations_grand_total, 2); ?>
+					</div>
+					<?php if ($allocations_total_pages > 1): ?>
+					<nav class="mt-2">
+						<ul class="pagination pagination-sm justify-content-end mb-0 px-3 pb-2">
+							<?php
+								$allocPrevPage = max(1, $allocations_page - 1);
+								$allocNextPage = min($allocations_total_pages, $allocations_page + 1);
+							?>
+							<li class="page-item <?php echo $allocations_page <= 1 ? 'disabled' : ''; ?>">
+								<?php $allocFirstUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['allocations_page' => 1, 'adjustments_page' => $adjustments_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link js-alloc-page-link" href="<?php echo $allocFirstUrl; ?>" aria-label="First" title="Go to first page"><span aria-hidden="true">&laquo;&laquo;</span></a>
+							</li>
+							<li class="page-item <?php echo $allocations_page <= 1 ? 'disabled' : ''; ?>">
+								<?php $allocPrevUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['allocations_page' => $allocPrevPage, 'adjustments_page' => $adjustments_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link js-alloc-page-link" href="<?php echo $allocPrevUrl; ?>" aria-label="Previous" title="Go to previous page"><span aria-hidden="true">&laquo;</span></a>
+							</li>
+							<?php for ($i = 1; $i <= $allocations_total_pages; $i++): ?>
+								<?php $allocPageUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['allocations_page' => $i, 'adjustments_page' => $adjustments_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<li class="page-item <?php echo $i === $allocations_page ? 'active' : ''; ?>">
+									<a class="page-link js-alloc-page-link" href="<?php echo $allocPageUrl; ?>" title="Go to page <?php echo $i; ?>"><?php echo $i; ?></a>
+								</li>
+							<?php endfor; ?>
+							<li class="page-item <?php echo $allocations_page >= $allocations_total_pages ? 'disabled' : ''; ?>">
+								<?php $allocNextUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['allocations_page' => $allocNextPage, 'adjustments_page' => $adjustments_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link js-alloc-page-link" href="<?php echo $allocNextUrl; ?>" aria-label="Next" title="Go to next page"><span aria-hidden="true">&raquo;</span></a>
+							</li>
+							<li class="page-item <?php echo $allocations_page >= $allocations_total_pages ? 'disabled' : ''; ?>">
+								<?php $allocLastUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['allocations_page' => $allocations_total_pages, 'adjustments_page' => $adjustments_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link js-alloc-page-link" href="<?php echo $allocLastUrl; ?>" aria-label="Last" title="Go to last page"><span aria-hidden="true">&raquo;&raquo;</span></a>
+							</li>
+						</ul>
+					</nav>
+					<?php endif; ?>
+				</div>
+			</div>
+		</div>
+
+		<div class="col-12" id="adjustmentAuditSection">
+			<div class="card h-100 report-table-card">
+				<div class="card-header d-flex justify-content-between align-items-center report-card-header">
+					<div>
+						<h5 class="card-title mb-0">Write-off / Waiver Audit</h5>
+						<small class="text-muted">Approved write-off and waiver decisions for the selected period.</small>
+					</div>
+				</div>
+				<div class="card-body p-0">
+					<div class="table-responsive">
+						<table class="table table-striped table-sm mb-0 align-middle table-density-target">
+							<thead class="table-light">
+								<tr>
+									<th>Date</th>
+									<th>Approval</th>
+									<th>Type</th>
+									<th>Bill</th>
+									<th>Account</th>
+									<th>Customer</th>
+									<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
+									<th>Approved By</th>
+								</tr>
+							</thead>
+							<tbody>
+							<?php if (empty($adjustments)): ?>
+								<tr>
+									<td colspan="8" class="text-center text-muted py-3">No approved write-off or waiver records found for this period.</td>
+								</tr>
+							<?php else: ?>
+								<?php foreach ($adjustments as $adj): ?>
+									<?php
+										$adjMetadata = [];
+										if (!empty($adj['metadata_json']) && is_string($adj['metadata_json'])) {
+											$decodedAdj = json_decode($adj['metadata_json'], true);
+											if (is_array($decodedAdj)) {
+												$adjMetadata = $decodedAdj;
+											}
+										}
+										$adjReason = (string)($adjMetadata['reason'] ?? '');
+									?>
+									<tr>
+										<td data-label="Date"><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime((string)$adj['decided_at']))); ?></td>
+										<td data-label="Approval">#<?php echo (int)$adj['id']; ?> <?php echo !empty($adj['reference_no']) ? '(' . htmlspecialchars((string)$adj['reference_no']) . ')' : ''; ?></td>
+										<td data-label="Type"><?php echo htmlspecialchars($adj['entity_type'] === 'bill_waiver' ? 'Waiver' : 'Write-off'); ?></td>
+										<td data-label="Bill">#<?php echo (int)$adj['bill_id']; ?><?php echo $adjReason !== '' ? ' - ' . htmlspecialchars($adjReason) : ''; ?></td>
+										<td data-label="Account"><?php echo htmlspecialchars((string)($adj['account_number'] ?? '-')); ?></td>
+										<td data-label="Customer"><?php echo htmlspecialchars((string)($adj['full_name'] ?? '')); ?></td>
+										<td data-label="Amount" class="text-end"><?php echo number_format((float)$adj['amount'], 2); ?></td>
+										<td data-label="Approved By"><?php echo htmlspecialchars((string)($adj['approver_name'] ?? 'System')); ?></td>
+									</tr>
+								<?php endforeach; ?>
+							<?php endif; ?>
+							</tbody>
+						</table>
+					</div>
+					<div class="px-3 py-2 border-top small text-end report-grand-total">
+						<strong>Grand Total (<?php echo htmlspecialchars($currency); ?>):</strong>
+						<?php echo number_format($adjustments_grand_total, 2); ?>
+					</div>
+					<?php if ($adjustments_total_pages > 1): ?>
+					<nav class="mt-2">
+						<ul class="pagination pagination-sm justify-content-end mb-0 px-3 pb-2">
+							<?php
+								$adjustPrevPage = max(1, $adjustments_page - 1);
+								$adjustNextPage = min($adjustments_total_pages, $adjustments_page + 1);
+							?>
+							<li class="page-item <?php echo $adjustments_page <= 1 ? 'disabled' : ''; ?>">
+								<?php $adjustFirstUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['adjustments_page' => 1, 'allocations_page' => $allocations_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link js-adjust-page-link" href="<?php echo $adjustFirstUrl; ?>" aria-label="First" title="Go to first page"><span aria-hidden="true">&laquo;&laquo;</span></a>
+							</li>
+							<li class="page-item <?php echo $adjustments_page <= 1 ? 'disabled' : ''; ?>">
+								<?php $adjustPrevUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['adjustments_page' => $adjustPrevPage, 'allocations_page' => $allocations_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link js-adjust-page-link" href="<?php echo $adjustPrevUrl; ?>" aria-label="Previous" title="Go to previous page"><span aria-hidden="true">&laquo;</span></a>
+							</li>
+							<?php for ($i = 1; $i <= $adjustments_total_pages; $i++): ?>
+								<?php $adjustPageUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['adjustments_page' => $i, 'allocations_page' => $allocations_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<li class="page-item <?php echo $i === $adjustments_page ? 'active' : ''; ?>">
+									<a class="page-link js-adjust-page-link" href="<?php echo $adjustPageUrl; ?>" title="Go to page <?php echo $i; ?>"><?php echo $i; ?></a>
+								</li>
+							<?php endfor; ?>
+							<li class="page-item <?php echo $adjustments_page >= $adjustments_total_pages ? 'disabled' : ''; ?>">
+								<?php $adjustNextUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['adjustments_page' => $adjustNextPage, 'allocations_page' => $allocations_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link js-adjust-page-link" href="<?php echo $adjustNextUrl; ?>" aria-label="Next" title="Go to next page"><span aria-hidden="true">&raquo;</span></a>
+							</li>
+							<li class="page-item <?php echo $adjustments_page >= $adjustments_total_pages ? 'disabled' : ''; ?>">
+								<?php $adjustLastUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['adjustments_page' => $adjustments_total_pages, 'allocations_page' => $allocations_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link js-adjust-page-link" href="<?php echo $adjustLastUrl; ?>" aria-label="Last" title="Go to last page"><span aria-hidden="true">&raquo;&raquo;</span></a>
+							</li>
+						</ul>
+					</nav>
+					<?php endif; ?>
+				</div>
+			</div>
+		</div>
 	</div>
 </div>
 
@@ -1203,6 +1552,26 @@ require_once __DIR__ . '/../../templates/header.php';
 				link.addEventListener('click', function (e) {
 					e.preventDefault();
 					loadSection('billsReportSection', this.getAttribute('href'));
+				});
+			});
+		}
+		var allocationContainer = document.getElementById('allocationAuditSection');
+		if (allocationContainer) {
+			var allocationLinks = allocationContainer.querySelectorAll('.js-alloc-page-link');
+			allocationLinks.forEach(function(link) {
+				link.addEventListener('click', function (e) {
+					e.preventDefault();
+					loadSection('allocationAuditSection', this.getAttribute('href'));
+				});
+			});
+		}
+		var adjustmentContainer = document.getElementById('adjustmentAuditSection');
+		if (adjustmentContainer) {
+			var adjustmentLinks = adjustmentContainer.querySelectorAll('.js-adjust-page-link');
+			adjustmentLinks.forEach(function(link) {
+				link.addEventListener('click', function (e) {
+					e.preventDefault();
+					loadSection('adjustmentAuditSection', this.getAttribute('href'));
 				});
 			});
 		}
