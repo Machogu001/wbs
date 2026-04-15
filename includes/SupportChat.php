@@ -329,6 +329,11 @@ class SupportChat
                 FROM {$this->threadsTable} t
                 LEFT JOIN users u ON t.user_id = u.id
                 WHERE t.status = 'open'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM {$this->messagesTable} m
+                      WHERE m.thread_id = t.id
+                  )
                 ORDER BY (t.last_message_at IS NULL), t.last_message_at DESC, t.id DESC
                 LIMIT :lim");
             $stmt->bindValue(':lim', $limit, \PDO::PARAM_INT);
@@ -370,6 +375,12 @@ class SupportChat
             $stmt2->execute([':tid' => $threadId]);
             $last = $stmt2->fetch();
             $lastCreated = $last && !empty($last['last_created']) ? $last['last_created'] : null;
+
+            if ($lastCreated === null) {
+                $deleteThread = $this->conn->prepare("DELETE FROM {$this->threadsTable} WHERE id = :tid");
+                $deleteThread->execute([':tid' => $threadId]);
+                return true;
+            }
 
             $stmt3 = $this->conn->prepare("UPDATE {$this->threadsTable} SET last_message_at = :lm WHERE id = :tid");
             $stmt3->execute([
