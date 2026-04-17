@@ -1,5 +1,9 @@
 {
     "require": {
         "dompdf/dompdf": "^3.1"
+    },
+    "scripts": {
+        "billing:audit": "php scripts/billing_integrity_audit.php",
+        "billing:repair": "php scripts/repair_billing_journals.php"
     }
 }

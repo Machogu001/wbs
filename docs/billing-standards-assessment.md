@@ -1,6 +1,6 @@
 # Billing Standards Assessment and Completion Plan
 
-Date: 2026-04-15
+Date: 2026-04-16
 Scope: Water Billing System (WBS)
 
 ## Executive Summary
@@ -8,9 +8,9 @@ Scope: Water Billing System (WBS)
 This system is operationally strong for core water billing, but it is not yet fully comprehensive against utility-grade billing standards.
 
 Current maturity estimate:
-- Operational billing readiness: 75%
-- Finance and audit readiness: 60%
-- Enterprise utility billing completeness: 50%
+- Operational billing readiness: 85%
+- Finance and audit readiness: 78%
+- Enterprise utility billing completeness: 68%
 
 This document combines:
 - Requirements matrix (what is met, partial, or missing)
@@ -18,7 +18,7 @@ This document combines:
 - Prioritized implementation roadmap
 - Immediate hardening updates completed on 2026-04-15
 
-## Immediate Hardening Completed Today
+## Immediate Hardening Completed
 
 1. Accounting idempotency for automated postings
 - Added duplicate-post prevention for bill and payment references in accounting posting methods.
@@ -38,6 +38,25 @@ This document combines:
   - includes/Bill.php
   - pages/admin/payments.php
   - includes/Payment.php
+
+4. Payment refund and chargeback workflow
+- Added formal payment adjustment requests for refunds and chargebacks.
+- Routed decisions through finance approvals and posted accounting entries on approval.
+- Files:
+  - includes/Payment.php
+  - includes/FinanceApproval.php
+  - includes/Accounting.php
+  - pages/admin/payments.php
+  - pages/admin/approvals.php
+
+5. Reporting and audit coverage expansion
+- Added payment adjustment audit exports and report sections.
+- Added operational billing analytics for coverage, collection timing, and adjustment pressure.
+- Added a CLI billing integrity audit command for recurring checks.
+- Files:
+  - pages/admin/reports.php
+  - scripts/billing_integrity_audit.php
+  - composer.json
 
 ## Requirements Matrix
 
@@ -61,9 +80,9 @@ Legend:
 
 ### 3) Tariff and Rating Engine
 - Flat rate per unit + fixed service charge: Met
-- Tiered block tariffs: Missing
+- Tiered block tariffs: Met
 - Seasonal/time-based tariffs: Missing
-- Effective-dated tariff versioning: Missing
+- Effective-dated tariff versioning: Met
 - Category-based tariff policies: Partial
 
 ### 4) Billing and Invoicing
@@ -79,35 +98,35 @@ Legend:
 - Payment callback handling: Met
 - Idempotent accounting posting on payment completion: Met
 - Advanced allocation (oldest debt, configurable rules): Partial
-- Reversals/chargebacks/returns workflow: Missing
+- Reversals/chargebacks/returns workflow: Partial
 
 ### 6) Credit Notes and Adjustments
 - Credit note table and creation path: Partial
 - Integrated adjustment ledger impact: Partial
 - Approval and audit trail for adjustments: Partial
-- Write-off and waiver workflows: Missing
+- Write-off and waiver workflows: Met
 
 ### 7) Receivables and Collections
 - Overdue tracking: Met
 - Demand notices lifecycle: Met
 - Delinquency profile per customer: Met
-- Aging buckets (30/60/90+) and collection strategy: Missing
-- Payment plans/installments: Missing
+- Aging buckets (30/60/90+) and collection strategy: Met
+- Payment plans/installments: Met
 
 ### 8) Accounting and Finance Controls
 - Chart of accounts: Met
 - Journal entries and trial balance: Met
 - Auto postings from billing and payments: Met
 - Duplicate post guard: Met
-- Period close and lock controls: Missing
-- Reconciliation reports (subledger to GL): Partial
+- Period close and lock controls: Met
+- Reconciliation reports (subledger to GL): Met
 - Reversal journals and immutable audit controls: Partial
 
 ### 9) Reporting and Analytics
 - Financial reports with date filtering: Met
 - CSV/PDF export: Met
 - Usage and billing views: Met
-- Aging, leakage, non-revenue water analytics: Missing
+- Aging, leakage, non-revenue water analytics: Partial
 - Executive KPI and trend dashboarding: Partial
 
 ### 10) Compliance, Security, and Audit
@@ -122,7 +141,7 @@ Legend:
 - Backward-compatible schema evolution in app code: Partial
 - Silent failure reduction with warning logs: Partial
 - Observability (metrics/alerts/health SLOs): Partial
-- Automated tests and CI quality gates: Missing
+- Automated tests and CI quality gates: Partial
 
 ## Best-Practice Review
 
@@ -131,21 +150,23 @@ Legend:
 - Practical utility operations are covered (demand notices, statements, admin workflows).
 - Integrated double-entry accounting foundation is present.
 - Security features like 2FA and role checks are available.
+- Tariff plans, tariff blocks, installment workflows, period locking, and reconciliation tooling are now implemented.
+- Refund and chargeback requests are now governed through the finance approval path.
 
 ### Key Risks
-- Tariff model is too simple for regulatory and tariff-policy change needs.
-- Tax handling is configurable but not fully modeled in bill line accounting.
-- Adjustments and reversals are not yet governed by strict finance controls.
-- Limited collections intelligence (no aging buckets or installment framework).
-- Test automation and release guardrails are not established.
+- Seasonal or time-based tariff policy is still absent.
+- Tax handling is configurable but not yet modeled as a richer tax engine across all billing scenarios.
+- Refunds and chargebacks now exist, but deeper return/refund policy controls are still limited.
+- Utility analytics are improved but still do not cover full non-revenue-water analysis.
+- Test automation remains lightweight; CI quality gates are still absent.
 
 ## Roadmap to Full Standards Compliance
 
 ### Phase 1: Finance Integrity (2-4 weeks)
 1. Add posting source metadata and immutable audit fields for billing/payment journals.
-2. Implement explicit reversal entries for payments and bills.
-3. Add period-close lock for posting dates.
-4. Build reconciliation report: billed amount, payments, AR movement, GL totals.
+2. Extend refund/chargeback controls with richer decision states and operator evidence.
+3. Expand period-close governance into stricter operational policy and exception handling.
+4. Add deeper reconciliation views by account and posting source.
 
 Acceptance criteria:
 - No duplicate posts under callback retries.
@@ -163,10 +184,10 @@ Acceptance criteria:
 - Tax is traceable per invoice line and GL postings.
 
 ### Phase 3: Adjustments and Collections (3-4 weeks)
-1. Implement controlled adjustment workflows (credit note, waiver, write-off).
-2. Add AR aging buckets and strategy states (soft/hard collections).
-3. Add payment plans/installments and allocation rules.
-4. Add collection performance reporting.
+1. Expand controlled adjustment workflows with stronger refund/return governance.
+2. Add AR strategy states (soft/hard collections) and follow-up automation.
+3. Broaden allocation rules beyond the current installment and payment posting behaviors.
+4. Add richer collection performance reporting and exception queues.
 
 Acceptance criteria:
 - Every adjustment has approval, reason, actor, and journal evidence.

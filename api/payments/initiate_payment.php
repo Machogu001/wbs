@@ -49,7 +49,15 @@ try {
     if($billData['status'] == 'paid') {
         throw new Exception("Bill already paid");
     }
-    
+
+    // Use the outstanding balance so partial-payment clients are only
+    // charged the remaining amount, not the full bill amount again.
+    $paymentHelper = new Payment($db);
+    $amountDue = $paymentHelper->getBillOutstandingAmount($billId);
+    if ($amountDue <= 0) {
+        throw new Exception("Bill already paid");
+    }
+
     // Validate and normalize phone number
     // Accept formats: 07XXXXXXXX, 01XXXXXXXX, 2547XXXXXXXX, 2541XXXXXXXX, +2547XXXXXXXX, +2541XXXXXXXX, 07/01 with leading 0
     if(!preg_match('/^(?:254|\+254|0)?((?:7|1)\d{8})$/', $data->phone, $matches)) {
@@ -57,12 +65,12 @@ try {
     }
 
     $formatted_phone = '254' . $matches[1];
-    
-    // Initiate M-Pesa payment
+
+    // Initiate M-Pesa payment for the outstanding balance
     $mpesa = new Mpesa();
     $response = $mpesa->stkPush(
         $formatted_phone,
-        $billData['amount'],
+        $amountDue,
         $billData['account_number'],
         "Water Bill - " . date('F Y', strtotime($billData['billing_month']))
     );
@@ -83,11 +91,11 @@ try {
     }
     
     // Save payment record
-    $payment = new Payment($db);
+    $payment = $paymentHelper;
     $payment->bill_id = $data->bill_id;
     $payment->user_id = $_SESSION['user_id'];
     $payment->phone_number = $formatted_phone;
-    $payment->amount = $billData['amount'];
+    $payment->amount = $amountDue;
     $payment->merchant_request_id = $response['MerchantRequestID'];
     $payment->checkout_request_id = $response['CheckoutRequestID'];
     $payment->status = 'pending';
@@ -100,7 +108,7 @@ try {
             "data" => array(
                 "checkout_request_id" => $response['CheckoutRequestID'],
                 "payment_id" => $payment->id,
-                "amount" => $billData['amount']
+                "amount" => $amountDue
             )
         ));
     } else {

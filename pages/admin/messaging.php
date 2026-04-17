@@ -130,9 +130,22 @@ require_once __DIR__ . '/../../templates/header.php';
 <div class="container-fluid mt-4 admin-shell admin-messaging-page">
     <div class="row">
         <div class="col-12">
-            <div class="admin-page-header mb-3">
-                <h2 class="mb-1"><i class="bi bi-chat-dots me-2"></i>Messaging Center</h2>
-                <p class="admin-page-subtitle">Send announcements to clients and coordinate with staff using internal chat.</p>
+            <div class="pb-banner pb-banner--indigo mb-3">
+                <div class="pb-bg" aria-hidden="true">
+                    <div class="pb-grid"></div>
+                    <div class="pb-blob pb-blob--a"></div>
+                    <div class="pb-blob pb-blob--b"></div>
+                    <i class="bi bi-chat-dots-fill pb-watermark"></i>
+                </div>
+                <div class="pb-inner">
+                    <div class="pb-left">
+                        <div class="pb-eyebrow-row">
+                            <span class="pb-eyebrow-chip"><i class="bi bi-chat-dots-fill"></i> Communications</span>
+                        </div>
+                        <h2 class="pb-title">Messaging Center</h2>
+                        <p class="pb-subtitle">Send announcements to clients and coordinate with staff using internal chat.</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

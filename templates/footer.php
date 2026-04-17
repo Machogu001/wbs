@@ -743,42 +743,46 @@
                     <h5 class="modal-title" id="contactModalLabel"><i class="bi bi-chat-text"></i> Contact Support</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <p class="small text-muted mb-2">Choose how you would like to reach support:</p>
+                <div class="modal-body contact-modal-body">
+                    <div class="contact-support-intro mb-3">
+                        <div class="contact-support-intro-copy">
+                            <span class="contact-support-kicker">Support desk</span>
+                            <p class="small text-muted mb-2">Choose how you would like to reach support:</p>
+                        </div>
                         <?php if (!empty($whatsappNumber)): ?>
                             <a href="https://wa.me/<?php echo htmlspecialchars($whatsappNumber, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener"
-                               class="btn btn-success w-100 mb-2">
+                               class="btn btn-success w-100 contact-support-whatsapp">
                                 <i class="bi bi-whatsapp"></i> Private WhatsApp chat
                             </a>
-                            <div class="text-center text-muted small mb-2">or send us a message using the form below</div>
-                        <?php endif; ?>
-                        <?php if (empty($whatsappNumber)): ?>
-                            <p class="small text-muted mb-2">Send us a message using the form below.</p>
+                            <div class="contact-support-divider"><span>or send us a message using the form below</span></div>
+                        <?php else: ?>
+                            <p class="small text-muted mb-0">Send us a message using the form below.</p>
                         <?php endif; ?>
                     </div>
-                    <form id="contactForm" novalidate>
-                        <div class="mb-3">
-                            <label for="contact_name" class="form-label">Your Name *</label>
-                            <input type="text" class="form-control" id="contact_name" name="name" autocomplete="name" required>
-                            <div class="invalid-feedback">Please enter your name.</div>
+                    <form id="contactForm" class="contact-support-form" novalidate>
+                        <div class="contact-support-grid">
+                            <div class="mb-3 contact-support-field">
+                                <label for="contact_name" class="form-label">Your Name *</label>
+                                <input type="text" class="form-control" id="contact_name" name="name" autocomplete="name" required>
+                                <div class="invalid-feedback">Please enter your name.</div>
+                            </div>
+                            <div class="mb-3 contact-support-field">
+                                <label for="contact_email" class="form-label">Email Address *</label>
+                                <input type="email" class="form-control" id="contact_email" name="email" autocomplete="email" required>
+                                <div class="invalid-feedback">Please enter a valid email address.</div>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="contact_email" class="form-label">Email Address *</label>
-                            <input type="email" class="form-control" id="contact_email" name="email" autocomplete="email" required>
-                            <div class="invalid-feedback">Please enter a valid email address.</div>
-                        </div>
-                        <div class="mb-3">
+                        <div class="mb-3 contact-support-field">
                             <label for="contact_phone" class="form-label">Phone (optional)</label>
                             <input type="tel" class="form-control" id="contact_phone" name="phone" placeholder="2547XXXXXXXX" autocomplete="tel">
                         </div>
-                        <div class="mb-3">
+                        <div class="mb-3 contact-support-field">
                             <label for="contact_message" class="form-label">Message *</label>
-                            <textarea class="form-control" id="contact_message" name="message" rows="3" required></textarea>
+                            <textarea class="form-control" id="contact_message" name="message" rows="4" required></textarea>
                             <div class="invalid-feedback">Please enter your message.</div>
                         </div>
                         <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-primary" id="contactSubmitBtn">
+                            <button type="submit" class="btn btn-primary contact-support-submit" id="contactSubmitBtn">
                                 <i class="bi bi-send"></i> Send Message
                             </button>
                         </div>
@@ -817,6 +821,46 @@
     </script>
     <?php $scriptVersion = @filemtime(__DIR__ . '/../public/js/script.js') ?: time(); ?>
     <script src="/public/js/script.js?v=<?php echo (int)$scriptVersion; ?>"></script>
+
+    <script>
+    // Navbar hover-dropdowns: open on mouseenter, close on mouseleave
+    (function () {
+        function initNavHoverDropdowns() {
+            document.querySelectorAll('.navbar .nav-item.dropdown').forEach(function (li) {
+                var menu = li.querySelector('.dropdown-menu');
+                var toggle = li.querySelector('.dropdown-toggle');
+                if (!menu) return;
+
+                li.addEventListener('mouseenter', function () {
+                    // Close any other open menus first
+                    document.querySelectorAll('.navbar .nav-item.dropdown').forEach(function (other) {
+                        if (other !== li) {
+                            var otherMenu = other.querySelector('.dropdown-menu');
+                            var otherToggle = other.querySelector('.dropdown-toggle');
+                            if (otherMenu) { otherMenu.classList.remove('show'); otherMenu.setAttribute('data-bs-popper', ''); }
+                            if (otherToggle) otherToggle.setAttribute('aria-expanded', 'false');
+                            other.classList.remove('show');
+                        }
+                    });
+                    li.classList.add('show');
+                    menu.classList.add('show');
+                    if (toggle) toggle.setAttribute('aria-expanded', 'true');
+                });
+
+                li.addEventListener('mouseleave', function () {
+                    li.classList.remove('show');
+                    menu.classList.remove('show');
+                    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+                });
+            });
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initNavHoverDropdowns);
+        } else {
+            initNavHoverDropdowns();
+        }
+    })();
+    </script>
 
     <script>
     // Simple location autocomplete using Nominatim (OpenStreetMap)

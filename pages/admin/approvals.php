@@ -75,10 +75,17 @@ $financeItems = $finance->getItems($selectedStatus, 200);
 $financeItemsByBillId = [];
 foreach ($financeItems as $item) {
     $type = (string)($item['entity_type'] ?? '');
-    if (!in_array($type, ['bill_writeoff', 'bill_waiver', 'bill_installment'], true)) {
+    if (!in_array($type, ['bill_writeoff', 'bill_waiver', 'bill_installment', 'payment_refund', 'payment_chargeback'], true)) {
         continue;
     }
-    $billId = (int)($item['entity_id'] ?? 0);
+    $metadata = [];
+    if (!empty($item['metadata_json']) && is_string($item['metadata_json'])) {
+        $decoded = json_decode($item['metadata_json'], true);
+        if (is_array($decoded)) {
+            $metadata = $decoded;
+        }
+    }
+    $billId = (int)($metadata['bill_id'] ?? $item['entity_id'] ?? 0);
     if ($billId <= 0) {
         continue;
     }
@@ -104,9 +111,22 @@ $is_admin_page = true;
 include __DIR__ . '/../../templates/header.php';
 ?>
 <div class="container-fluid mt-4 admin-shell">
-    <div class="admin-page-header mb-4">
-        <h2 class="mb-1">Approvals Dashboard</h2>
-        <p class="admin-page-subtitle">Track financial approval items and existing workflow records.</p>
+    <div class="pb-banner pb-banner--cobalt mb-4">
+        <div class="pb-bg" aria-hidden="true">
+            <div class="pb-grid"></div>
+            <div class="pb-blob pb-blob--a"></div>
+            <div class="pb-blob pb-blob--b"></div>
+            <i class="bi bi-check2-circle pb-watermark"></i>
+        </div>
+        <div class="pb-inner">
+            <div class="pb-left">
+                <div class="pb-eyebrow-row">
+                    <span class="pb-eyebrow-chip"><i class="bi bi-check2-circle"></i> Workflow Approvals</span>
+                </div>
+                <h2 class="pb-title">Approvals Dashboard</h2>
+                <p class="pb-subtitle">Track financial approval items and existing workflow records.</p>
+            </div>
+        </div>
     </div>
 
     <div class="row g-3 mb-4">
@@ -169,9 +189,12 @@ include __DIR__ . '/../../templates/header.php';
                                                     $entityType = (string)($item['entity_type'] ?? '');
                                                     $billId = (int)($item['entity_id'] ?? 0);
                                                 ?>
-                                                <?php if ($billId > 0 && in_array($entityType, ['bill_writeoff', 'bill_waiver', 'bill_installment'], true)): ?>
+                                                <?php if ($billId > 0 && in_array($entityType, ['bill_writeoff', 'bill_waiver', 'bill_installment', 'payment_refund', 'payment_chargeback'], true)): ?>
                                                     <div class="small text-muted">
                                                         <a href="/admin/bill-detail?bill_id=<?php echo $billId; ?>">Bill #<?php echo $billId; ?></a>
+                                                        <?php if (!empty($metadata['payment_id'])): ?>
+                                                            | Payment #<?php echo (int)$metadata['payment_id']; ?>
+                                                        <?php endif; ?>
                                                         <?php if (!empty($metadata['reason'])): ?>
                                                             | Reason: <?php echo htmlspecialchars((string)$metadata['reason']); ?>
                                                         <?php endif; ?>
@@ -184,6 +207,14 @@ include __DIR__ . '/../../templates/header.php';
                                                     <?php if (($item['status'] ?? '') === 'approved' && isset($billInstallmentPlans[$billId])): ?>
                                                         <div class="small text-success">Plan #<?php echo (int)$billInstallmentPlans[$billId]['id']; ?> is <?php echo htmlspecialchars((string)$billInstallmentPlans[$billId]['status']); ?></div>
                                                     <?php endif; ?>
+                                                <?php endif; ?>
+                                                <?php if (in_array($entityType, ['payment_refund', 'payment_chargeback'], true)): ?>
+                                                    <div class="small text-muted">
+                                                        Type: <?php echo htmlspecialchars($entityType === 'payment_refund' ? 'Refund' : 'Chargeback'); ?>
+                                                        <?php if (!empty($metadata['requested_amount'])): ?>
+                                                            | Requested: KES <?php echo number_format((float)$metadata['requested_amount'], 2); ?>
+                                                        <?php endif; ?>
+                                                    </div>
                                                 <?php endif; ?>
                                             </td>
                                             <td>KES <?php echo number_format((float)$item['amount'], 2); ?></td>

@@ -50,6 +50,7 @@ try {
     $paymentModel = new Payment($db);
     $existingRegistration = $paymentModel->getLatestRegistrationByUserId($user['id']);
     $billId = null;
+    $amountToCharge = round($registrationFee, 2);
     if ($existingRegistration && !empty($existingRegistration['bill_id'])) {
         $existingBill = $billService->getById((int)$existingRegistration['bill_id']);
         if ($existingBill && isset($existingBill['status'])) {
@@ -60,6 +61,7 @@ try {
             // invoice/bill number remains the same on retries.
             if ($existingBill['status'] !== 'paid') {
                 $billId = (int)$existingRegistration['bill_id'];
+                $amountToCharge = $paymentModel->getBillOutstandingAmount($billId);
             }
         }
     }
@@ -68,6 +70,10 @@ try {
     // If there is no unpaid registration bill, create a fresh one
     if (!$billId) {
         $billId = $billService->createRegistrationFeeBill($user['id'], $user['account_number'], $registrationFee, $dueDate, 'pending');
+    }
+
+    if ($amountToCharge <= 0.01) {
+        throw new Exception('Registration fee already paid. Your account should now be active. If you cannot access your account, please contact support.');
     }
 
     // Validate and normalize phone number
@@ -80,7 +86,7 @@ try {
     $mpesa = new Mpesa();
     $response = $mpesa->stkPush(
         $formatted_phone,
-        $registrationFee,
+        $amountToCharge,
         $user['account_number'],
         'Registration Fee'
     );
@@ -105,7 +111,7 @@ try {
     $payment->bill_id = $billId;
     $payment->user_id = $user['id'];
     $payment->phone_number = $formatted_phone;
-    $payment->amount = $registrationFee;
+    $payment->amount = $amountToCharge;
     $payment->merchant_request_id = $response['MerchantRequestID'] ?? null;
     $payment->checkout_request_id = $response['CheckoutRequestID'] ?? null;
     $payment->status = 'pending';
@@ -120,7 +126,7 @@ try {
         'status' => 'success',
         'message' => 'Registration payment initiated. Please approve the M-Pesa prompt on your phone.',
         'data' => array(
-            'amount' => $registrationFee,
+            'amount' => $amountToCharge,
             'checkout_request_id' => $payment->checkout_request_id
         )
     ));

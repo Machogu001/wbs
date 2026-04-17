@@ -408,20 +408,32 @@ require_once __DIR__ . '/../../templates/header.php';
 <div class="container-fluid mt-4 admin-shell system-settings-page">
 	<div class="row">
 		<div class="col-md-12">
-			<div class="admin-page-header admin-hero-header system-settings-hero">
-				<div class="admin-hero-main">
-					<p class="admin-hero-eyebrow mb-2"><i class="bi bi-sliders"></i> Billing Control Center</p>
-					<h2 class="mb-1">System Setting</h2>
-					<p class="text-muted mb-0">Manage billing settings and record meter readings.</p>
+			<div class="pb-banner pb-banner--amber mb-4">
+				<div class="pb-bg" aria-hidden="true">
+					<div class="pb-grid"></div>
+					<div class="pb-blob pb-blob--a"></div>
+					<div class="pb-blob pb-blob--b"></div>
+					<i class="bi bi-sliders2 pb-watermark"></i>
 				</div>
-				<div class="admin-hero-actions system-settings-hero-actions">
-					<div class="admin-hero-chip">
-						<i class="bi bi-cash-stack"></i>
-						Rate: <strong>KES <?php echo number_format((float)($settings['rate_per_unit'] ?? 50), 2); ?></strong>
+				<div class="pb-inner">
+					<div class="pb-left">
+						<div class="pb-eyebrow-row">
+							<span class="pb-eyebrow-chip"><i class="bi bi-sliders2"></i> Billing Control Center</span>
+						</div>
+						<h2 class="pb-title">System Setting</h2>
+						<p class="pb-subtitle">Manage billing settings and record meter readings.</p>
 					</div>
-					<div class="admin-hero-chip">
-						<i class="bi bi-person-plus"></i>
-						Registration: <strong>KES <?php echo number_format((float)($settings['registration_fee'] ?? 0), 2); ?></strong>
+					<div class="pb-right">
+						<div class="pb-kpi-row">
+							<div class="pb-kpi">
+								<span class="pb-kpi-label">Rate / Unit</span>
+								<span class="pb-kpi-value">KES <?php echo number_format((float)($settings['rate_per_unit'] ?? 50), 2); ?></span>
+							</div>
+							<div class="pb-kpi">
+								<span class="pb-kpi-label">Registration Fee</span>
+								<span class="pb-kpi-value">KES <?php echo number_format((float)($settings['registration_fee'] ?? 0), 2); ?></span>
+							</div>
+						</div>
 					</div>
 				</div>
 			</div>
@@ -478,305 +490,485 @@ require_once __DIR__ . '/../../templates/header.php';
 		</div>
 	<?php endif; ?>
 
-	<div class="row mt-4 g-4 align-items-stretch">
-		<div class="col-lg-8">
-			<div class="card system-settings-card system-settings-primary-card h-100">
-				<div class="card-header">
-					<h5 class="mb-0 admin-section-title">Billing Settings</h5>
-				</div>
-				<div class="card-body">
-					<form method="POST">
-						<input type="hidden" name="action" value="update_settings">
-						<div class="row g-3">
-							<div class="col-md-6">
-								<label class="form-label">Company Name</label>
-								<input type="text" name="company_name" class="form-control" value="<?php echo htmlspecialchars($settings['company_name'] ?? 'BreMac Consultant Ltd'); ?>" placeholder="e.g. BreMac Consultant Ltd" required>
-								<div class="form-text">Shown in customer SMS messages and receipts. Defaults to BreMac Consultant Ltd.</div>
-							</div>
-							<div class="col-md-6">
-								<label class="form-label">Support Phone</label>
-								<input type="text" name="support_phone" class="form-control" value="<?php echo htmlspecialchars($settings['support_phone'] ?? '+254 700 000 000'); ?>" placeholder="e.g. +254 700 000 000">
-								<div class="form-text">Shown in the footer as the main contact phone.</div>
-							</div>
-							<div class="col-md-6">
-								<label class="form-label">Support Email</label>
-								<input type="email" name="support_email" class="form-control" value="<?php echo htmlspecialchars($settings['support_email'] ?? 'support@waterbilling.com'); ?>" placeholder="e.g. support@waterbilling.com">
-								<div class="form-text">Shown in the footer as the main support email.</div>
-							</div>
-							<div class="col-md-3">
-								<label class="form-label">Rate per m³ (<?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>)</label>
-								<input type="number" step="0.01" min="0" name="rate_per_unit" class="form-control" value="<?php echo htmlspecialchars($settings['rate_per_unit'] ?? '50.00'); ?>" required>
-							</div>
-							<div class="col-md-3">
-								<label class="form-label">Service Charge (<?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>)</label>
-								<input type="number" step="0.01" min="0" name="service_charge" class="form-control" value="<?php echo htmlspecialchars($settings['service_charge'] ?? '0.00'); ?>" required>
-							</div>
-							<div class="col-md-3">
-								<label class="form-label">Registration Fee (<?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>)</label>
-								<input type="number" step="0.01" min="0" name="registration_fee" class="form-control" value="<?php echo htmlspecialchars($settings['registration_fee'] ?? '0.00'); ?>">
-								<div class="form-text">One-time fee charged on new registrations.</div>
-							</div>
-							<div class="col-md-3">
-								<label class="form-label">Enforce GPS Location Accuracy</label>
-								<div class="form-check form-switch mt-1">
-									<input class="form-check-input" type="checkbox" role="switch" id="enforce_location_accuracy_switch" name="enforce_location_accuracy" value="1" <?php echo !empty($settings['enforce_location_accuracy']) ? 'checked' : ''; ?>>
-									<label class="form-check-label" for="enforce_location_accuracy_switch">Require accurate GPS (&le;14m)</label>
-								</div>
-								<div class="form-text">When enabled, clients must capture GPS with accuracy &le;14m before submitting the registration form.</div>
-							</div>
-							<div class="col-md-3">
-								<label class="form-label">Currency Code</label>
-								<input type="text" name="currency_code" class="form-control" value="<?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>" maxlength="10" placeholder="e.g. KES, USD">
-								<div class="form-text">ISO currency code used in reports and invoices.</div>
-							</div>
-							<div class="col-md-3">
-								<label class="form-label">Locale</label>
-								<input type="text" name="locale_code" class="form-control" value="<?php echo htmlspecialchars($settings['locale_code'] ?? 'en-KE'); ?>" maxlength="20" placeholder="e.g. en-KE, en-US">
-								<div class="form-text">Used for localized formatting and messaging.</div>
-							</div>
-							<div class="col-md-3">
-								<label class="form-label">Timezone</label>
-								<input type="text" name="timezone_name" class="form-control" value="<?php echo htmlspecialchars($settings['timezone_name'] ?? 'Africa/Nairobi'); ?>" maxlength="100" placeholder="e.g. Africa/Nairobi">
-								<div class="form-text">IANA timezone for billing and reporting.</div>
-							</div>
-							<div class="col-md-3">
-								<label class="form-label">Financial Year Starts</label>
-								<select name="financial_year_start_month" class="form-select">
-									<?php
-									$fyStart = (int)($settings['financial_year_start_month'] ?? 1);
-									$months = [1=>'January',2=>'February',3=>'March',4=>'April',5=>'May',6=>'June',7=>'July',8=>'August',9=>'September',10=>'October',11=>'November',12=>'December'];
-									foreach ($months as $num => $label): ?>
-										<option value="<?php echo $num; ?>" <?php echo $fyStart === $num ? 'selected' : ''; ?>><?php echo $label; ?></option>
-									<?php endforeach; ?>
-								</select>
-								<div class="form-text">Used for annual financial reporting.</div>
-							</div>
-						</div>
-						<hr class="my-4">
-						<h6 class="mb-3">eTIMS Integration (Optional)</h6>
-						<div class="row g-3">
-							<div class="col-md-4">
-								<label class="form-label">Company PIN (KRA PIN/TIN)</label>
-								<input type="text" name="company_pin" class="form-control" value="<?php echo htmlspecialchars($settings['company_pin'] ?? ''); ?>" placeholder="e.g. P012345678Z">
-								<div class="form-text">Used when submitting invoices to eTIMS. Leave blank if not integrated.</div>
-							</div>
-							<div class="col-md-5">
-								<label class="form-label">eTIMS Integration URL</label>
-								<input type="url" name="etims_integration_url" class="form-control" value="<?php echo htmlspecialchars($settings['etims_integration_url'] ?? ''); ?>" placeholder="https://etims.example.com/api/saveSales">
-								<div class="form-text">Endpoint for your eTIMS gateway.</div>
-							</div>
-							<div class="col-md-3">
-								<label class="form-label">eTIMS API Key</label>
-								<input type="text" name="etims_api_key" class="form-control" value="<?php echo htmlspecialchars($settings['etims_api_key'] ?? ''); ?>" placeholder="Optional API key/token">
-								<div class="form-text">Only if your eTIMS gateway requires it.</div>
-							</div>
-						</div>
-						<div class="row g-3 mt-2">
-							<div class="col-md-3">
-								<label class="form-label">VAT Rate %</label>
-								<input type="number" step="0.01" min="0" max="100" name="vat_rate" class="form-control" value="<?php echo htmlspecialchars(isset($settings['vat_rate']) ? $settings['vat_rate'] : '0.00'); ?>" placeholder="e.g. 16.00">
-								<div class="form-text">VAT percentage used for ETIMS tax calculations.</div>
-							</div>
-							<div class="col-md-4">
-								<label class="form-label">Taxation Type Code</label>
-								<?php $taxCode = strtoupper(trim((string)($settings['etims_taxation_type_code'] ?? ''))); ?>
-								<select name="etims_taxation_type_code" class="form-select">
-									<option value="" <?php echo $taxCode === '' ? 'selected' : ''; ?>>Auto (based on VAT rate)</option>
-									<option value="A" <?php echo $taxCode === 'A' ? 'selected' : ''; ?>>A - Zero-rated / Exempt</option>
-									<option value="B" <?php echo $taxCode === 'B' ? 'selected' : ''; ?>>B - Standard VAT</option>
-								</select>
-								<div class="form-text">If left as Auto, the system will choose A for 0% and B when VAT &gt; 0.</div>
-							</div>
-							<div class="col-md-5">
-								<label class="form-label">Payment Link Secret (.env)</label>
-								<div class="input-group mb-2">
-									<input type="text" id="paymentLinkSecretValue" class="form-control" value="<?php echo htmlspecialchars(MpesaConfig::getPaymentLinkSecret()); ?>" readonly>
-									<button type="button" class="btn btn-outline-primary" id="btnGeneratePaymentLinkSecret">Generate</button>
-									<button type="button" class="btn btn-outline-secondary" id="btnCopyPaymentLinkSecret">Copy</button>
-								</div>
-								<div class="form-text">
-									Use <strong>Generate</strong> to create a new 64-char secret, then <strong>Copy</strong> and paste into your .env file.
-									Changing this secret invalidates previously generated payment links.
-								</div>
-							</div>
-						</div>
-						<div class="mt-4">
-							<button type="submit" class="btn btn-primary">Save Settings</button>
-						</div>
-					</form>
-				</div>
-			</div>
-			<div class="card system-settings-card mt-4">
-				<div class="card-header">
-					<h5 class="mb-0 admin-section-title">Tariff Plan Management</h5>
-				</div>
-				<div class="card-body">
-					<form method="POST" class="row g-3">
-						<input type="hidden" name="action" value="save_tariff_plan">
-						<input type="hidden" name="tariff_plan_id" value="<?php echo (int)($editing_tariff['id'] ?? 0); ?>">
-						<div class="col-md-4">
-							<label class="form-label">Tariff Name</label>
-							<input type="text" class="form-control" name="tariff_name" value="<?php echo htmlspecialchars((string)($editing_tariff['name'] ?? '')); ?>" placeholder="e.g. Domestic 2026 Q2" required>
-						</div>
-						<div class="col-md-2">
-							<label class="form-label">Category</label>
-							<select name="tariff_category" class="form-select" required>
-								<?php $selectedCategory = (string)($editing_tariff['category'] ?? 'all'); ?>
-								<?php foreach (['all' => 'All', 'domestic' => 'Domestic', 'commercial' => 'Commercial', 'industrial' => 'Industrial'] as $catValue => $catLabel): ?>
-									<option value="<?php echo htmlspecialchars($catValue); ?>" <?php echo $selectedCategory === $catValue ? 'selected' : ''; ?>><?php echo htmlspecialchars($catLabel); ?></option>
-								<?php endforeach; ?>
-							</select>
-						</div>
-						<div class="col-md-2">
-							<label class="form-label">Effective From</label>
-							<input type="date" class="form-control" name="effective_from" value="<?php echo htmlspecialchars((string)($editing_tariff['effective_from'] ?? date('Y-m-01'))); ?>" required>
-						</div>
-						<div class="col-md-2">
-							<label class="form-label">Effective To</label>
-							<input type="date" class="form-control" name="effective_to" value="<?php echo htmlspecialchars((string)($editing_tariff['effective_to'] ?? '')); ?>">
-						</div>
-						<div class="col-md-2 d-flex align-items-end">
-							<div class="form-check form-switch">
-								<input class="form-check-input" type="checkbox" name="tariff_is_active" id="tariff_is_active" <?php echo !isset($editing_tariff['is_active']) || !empty($editing_tariff['is_active']) ? 'checked' : ''; ?>>
-								<label class="form-check-label" for="tariff_is_active">Active</label>
-							</div>
-						</div>
+<div class="row mt-4 g-0 align-items-start" id="settingsMain">
 
-						<div class="col-md-4">
-							<label class="form-label">Default Rate (KES/m3)</label>
-							<input type="number" step="0.0001" min="0" class="form-control" name="base_rate_per_unit" value="<?php echo htmlspecialchars((string)($editing_tariff['base_rate_per_unit'] ?? ($settings['rate_per_unit'] ?? '50.0000'))); ?>" required>
-						</div>
-						<div class="col-md-4">
-							<label class="form-label">Service Charge (KES)</label>
-							<input type="number" step="0.01" min="0" class="form-control" name="tariff_service_charge" value="<?php echo htmlspecialchars((string)($editing_tariff['service_charge'] ?? ($settings['service_charge'] ?? '0.00'))); ?>" required>
-						</div>
-						<div class="col-md-4">
-							<label class="form-label">VAT Rate (%)</label>
-							<input type="number" step="0.01" min="0" max="100" class="form-control" name="tariff_vat_rate" value="<?php echo htmlspecialchars((string)($editing_tariff['vat_rate'] ?? ($settings['vat_rate'] ?? '0.00'))); ?>" required>
-						</div>
+<!-- ====== LEFT COLUMN: Tab panels ====== -->
+<div class="col-xl-8 col-lg-7 pe-lg-3">
 
-						<?php
-						$tariffBlocks = $editing_tariff['blocks'] ?? [
-							['from_unit' => 0, 'to_unit' => 10, 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
-							['from_unit' => 10, 'to_unit' => 20, 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
-							['from_unit' => 20, 'to_unit' => '', 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
-						];
-						if (empty($tariffBlocks)) {
-							$tariffBlocks = [['from_unit' => 0, 'to_unit' => '', 'rate_per_unit' => $settings['rate_per_unit'] ?? 50]];
-						}
-						?>
-						<div class="col-12">
-							<div class="d-flex justify-content-between align-items-center mb-2">
-								<h6 class="mb-0">Tariff Blocks</h6>
-								<button type="button" class="btn btn-sm btn-outline-primary" id="addTariffBlockBtn"><i class="bi bi-plus-circle me-1"></i>Add Block</button>
-							</div>
-							<div id="tariffBlocksContainer">
-								<?php foreach ($tariffBlocks as $idx => $block): ?>
-									<div class="row g-2 align-items-end tariff-block-row mb-2" data-index="<?php echo (int)$idx; ?>">
-										<div class="col-md-3">
-											<label class="form-label">From Unit</label>
-											<input type="number" step="0.01" min="0" class="form-control" name="block_from_unit[]" value="<?php echo htmlspecialchars((string)($block['from_unit'] ?? '')); ?>">
-										</div>
-										<div class="col-md-3">
-											<label class="form-label">To Unit (blank = open)</label>
-											<input type="number" step="0.01" min="0" class="form-control" name="block_to_unit[]" value="<?php echo htmlspecialchars((string)($block['to_unit'] ?? '')); ?>">
-										</div>
-										<div class="col-md-3">
-											<label class="form-label">Rate</label>
-											<input type="number" step="0.0001" min="0" class="form-control" name="block_rate[]" value="<?php echo htmlspecialchars((string)($block['rate_per_unit'] ?? '')); ?>">
-										</div>
-										<div class="col-md-3">
-											<button type="button" class="btn btn-outline-danger w-100 js-remove-tariff-block"><i class="bi bi-trash"></i> Remove</button>
-										</div>
-									</div>
-								<?php endforeach; ?>
-							</div>
-							<template id="tariffBlockTemplate">
-								<div class="row g-2 align-items-end tariff-block-row mb-2">
-									<div class="col-md-3">
-										<label class="form-label">From Unit</label>
-										<input type="number" step="0.01" min="0" class="form-control" name="block_from_unit[]" value="0">
-									</div>
-									<div class="col-md-3">
-										<label class="form-label">To Unit (blank = open)</label>
-										<input type="number" step="0.01" min="0" class="form-control" name="block_to_unit[]" value="">
-									</div>
-									<div class="col-md-3">
-										<label class="form-label">Rate</label>
-										<input type="number" step="0.0001" min="0" class="form-control" name="block_rate[]" value="0">
-									</div>
-									<div class="col-md-3">
-										<button type="button" class="btn btn-outline-danger w-100 js-remove-tariff-block"><i class="bi bi-trash"></i> Remove</button>
-									</div>
-								</div>
-							</template>
-						</div>
+<!-- Tab nav -->
+<ul class="nav ssp-tabs mb-0" id="sspTabNav" role="tablist">
+<li class="nav-item" role="presentation">
+<button class="nav-link active" id="ssp-tab-billing" data-bs-toggle="tab" data-bs-target="#ssp-panel-billing" type="button" role="tab">
+<i class="bi bi-sliders2"></i> Billing Settings
+</button>
+</li>
+<li class="nav-item" role="presentation">
+<button class="nav-link" id="ssp-tab-etims" data-bs-toggle="tab" data-bs-target="#ssp-panel-etims" type="button" role="tab">
+<i class="bi bi-cloud-upload"></i> eTIMS &amp; Tax
+</button>
+</li>
+<li class="nav-item" role="presentation">
+<button class="nav-link" id="ssp-tab-tariff" data-bs-toggle="tab" data-bs-target="#ssp-panel-tariff" type="button" role="tab">
+<i class="bi bi-bar-chart-steps"></i> Tariff Plans
+</button>
+</li>
+</ul>
 
-						<div class="col-12 d-flex gap-2">
-							<button type="submit" class="btn btn-primary"><?php echo !empty($editing_tariff) ? 'Update Tariff Plan' : 'Create Tariff Plan'; ?></button>
-							<a href="/settings" class="btn btn-outline-secondary">Reset</a>
-						</div>
-					</form>
+<div class="tab-content" id="sspTabContent">
 
-					<hr class="my-4">
-					<div class="table-responsive">
-						<table class="table table-sm align-middle mb-0">
-							<thead>
-								<tr>
-									<th>Name</th>
-									<th>Category</th>
-									<th>Effective</th>
-									<th>VAT %</th>
-									<th>Status</th>
-									<th>Actions</th>
-								</tr>
-							</thead>
-							<tbody>
-							<?php if (empty($tariff_plans)): ?>
-								<tr><td colspan="6" class="text-center text-muted py-3">No tariff plans found.</td></tr>
-							<?php else: ?>
-								<?php foreach ($tariff_plans as $plan): ?>
-									<tr>
-										<td><?php echo htmlspecialchars((string)$plan['name']); ?></td>
-										<td><?php echo htmlspecialchars(ucfirst((string)$plan['category'])); ?></td>
-										<td><?php echo htmlspecialchars((string)$plan['effective_from']); ?><?php echo !empty($plan['effective_to']) ? ' to ' . htmlspecialchars((string)$plan['effective_to']) : ' onward'; ?></td>
-										<td><?php echo number_format((float)$plan['vat_rate'], 2); ?></td>
-										<td><?php echo !empty($plan['is_active']) ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'; ?></td>
-										<td class="d-flex gap-2 flex-wrap">
-											<a href="/settings?edit_tariff_id=<?php echo (int)$plan['id']; ?>" class="btn btn-sm btn-outline-primary">Edit</a>
-											<form method="POST" class="d-inline">
-												<input type="hidden" name="action" value="toggle_tariff_plan">
-												<input type="hidden" name="tariff_plan_id" value="<?php echo (int)$plan['id']; ?>">
-												<input type="hidden" name="is_active" value="<?php echo !empty($plan['is_active']) ? 0 : 1; ?>">
-												<button type="submit" class="btn btn-sm btn-outline-<?php echo !empty($plan['is_active']) ? 'danger' : 'success'; ?>"><?php echo !empty($plan['is_active']) ? 'Deactivate' : 'Activate'; ?></button>
-											</form>
-										</td>
-									</tr>
-								<?php endforeach; ?>
-							<?php endif; ?>
-							</tbody>
-						</table>
-					</div>
-				</div>
-			</div>
-		</div>
-		<div class="col-lg-4 mt-4 mt-lg-0">
-			<div class="card h-100 admin-aside-card system-settings-card system-settings-summary-card">
-				<div class="card-header bg-light">
-					<h6 class="mb-0 admin-section-title small">At a Glance</h6>
-				</div>
-				<div class="card-body">
-					<p class="mb-2"><strong>Company:</strong> <?php echo htmlspecialchars($settings['company_name'] ?? 'BreMac Consultant Ltd'); ?></p>
-					<p class="mb-2"><strong>Support:</strong> <?php echo htmlspecialchars($settings['support_phone'] ?? '+254 700 000 000'); ?> &middot; <?php echo htmlspecialchars($settings['support_email'] ?? 'support@waterbilling.com'); ?></p>
-					<p class="mb-2"><strong>Rate per m³:</strong> KES <?php echo number_format((float)($settings['rate_per_unit'] ?? 50), 2); ?></p>
-					<p class="mb-2"><strong>Service Charge:</strong> KES <?php echo number_format((float)($settings['service_charge'] ?? 0), 2); ?></p>
-					<p class="mb-2"><strong>Locale / Timezone:</strong> <?php echo htmlspecialchars($settings['locale_code'] ?? 'en-KE'); ?> &middot; <?php echo htmlspecialchars($settings['timezone_name'] ?? 'Africa/Nairobi'); ?></p>
-					<p class="mb-2"><strong>Registration Fee:</strong> <?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?> <?php echo number_format((float)($settings['registration_fee'] ?? 0), 2); ?></p>
-					<p class="mb-0"><strong>GPS Enforcement:</strong> <span class="badge bg-<?php echo !empty($settings['enforce_location_accuracy']) ? 'success' : 'secondary'; ?>"><?php echo !empty($settings['enforce_location_accuracy']) ? 'On' : 'Off'; ?></span></p>
-				</div>
-			</div>
-		</div>
-	</div>
+<!-- =========================================
+     TAB 1: Billing Settings
+========================================= -->
+<div class="tab-pane fade show active" id="ssp-panel-billing" role="tabpanel">
+<form method="POST">
+<input type="hidden" name="action" value="update_settings">
+
+<!-- Contact & Company -->
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-building"></i> Company &amp; Contact</div>
+<div class="ssp-section-body">
+<div class="row g-3">
+<div class="col-md-6">
+<label class="form-label">Company Name</label>
+<input type="text" name="company_name" class="form-control" value="<?php echo htmlspecialchars($settings['company_name'] ?? 'BreMac Consultant Ltd'); ?>" placeholder="e.g. BreMac Consultant Ltd" required>
+<div class="form-text">Shown in customer SMS messages and receipts.</div>
+</div>
+<div class="col-md-6">
+<label class="form-label">Support Phone</label>
+<input type="text" name="support_phone" class="form-control" value="<?php echo htmlspecialchars($settings['support_phone'] ?? '+254 700 000 000'); ?>" placeholder="e.g. +254 700 000 000">
+<div class="form-text">Shown in the footer as the main contact phone.</div>
+</div>
+<div class="col-md-6">
+<label class="form-label">Support Email</label>
+<input type="email" name="support_email" class="form-control" value="<?php echo htmlspecialchars($settings['support_email'] ?? 'support@waterbilling.com'); ?>" placeholder="e.g. support@waterbilling.com">
+<div class="form-text">Shown in the footer as the main support email.</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Rates -->
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-cash-coin"></i> Billing Rates</div>
+<div class="ssp-section-body">
+<div class="row g-3">
+<div class="col-sm-4">
+<label class="form-label">Rate per m³ (<?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>)</label>
+<div class="input-group">
+<span class="input-group-text"><i class="bi bi-droplet-fill text-primary"></i></span>
+<input type="number" step="0.01" min="0" name="rate_per_unit" class="form-control" value="<?php echo htmlspecialchars($settings['rate_per_unit'] ?? '50.00'); ?>" required>
+</div>
+</div>
+<div class="col-sm-4">
+<label class="form-label">Service Charge (<?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>)</label>
+<div class="input-group">
+<span class="input-group-text"><i class="bi bi-wrench text-secondary"></i></span>
+<input type="number" step="0.01" min="0" name="service_charge" class="form-control" value="<?php echo htmlspecialchars($settings['service_charge'] ?? '0.00'); ?>" required>
+</div>
+</div>
+<div class="col-sm-4">
+<label class="form-label">Registration Fee (<?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>)</label>
+<div class="input-group">
+<span class="input-group-text"><i class="bi bi-person-plus text-success"></i></span>
+<input type="number" step="0.01" min="0" name="registration_fee" class="form-control" value="<?php echo htmlspecialchars($settings['registration_fee'] ?? '0.00'); ?>">
+</div>
+<div class="form-text">One-time fee charged on new registrations.</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Locale & System -->
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-globe2"></i> Locale &amp; System</div>
+<div class="ssp-section-body">
+<div class="row g-3">
+<div class="col-sm-4">
+<label class="form-label">Currency Code</label>
+<input type="text" name="currency_code" class="form-control" value="<?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?>" maxlength="10" placeholder="e.g. KES">
+<div class="form-text">ISO currency code used in reports and invoices.</div>
+</div>
+<div class="col-sm-4">
+<label class="form-label">Locale</label>
+<input type="text" name="locale_code" class="form-control" value="<?php echo htmlspecialchars($settings['locale_code'] ?? 'en-KE'); ?>" maxlength="20" placeholder="e.g. en-KE">
+<div class="form-text">Used for localized formatting and messaging.</div>
+</div>
+<div class="col-sm-4">
+<label class="form-label">Timezone</label>
+<input type="text" name="timezone_name" class="form-control" value="<?php echo htmlspecialchars($settings['timezone_name'] ?? 'Africa/Nairobi'); ?>" maxlength="100" placeholder="e.g. Africa/Nairobi">
+<div class="form-text">IANA timezone for billing and reporting.</div>
+</div>
+<div class="col-sm-4">
+<label class="form-label">Financial Year Starts</label>
+<select name="financial_year_start_month" class="form-select">
+<?php
+$fyStart = (int)($settings['financial_year_start_month'] ?? 1);
+$months = [1=>'January',2=>'February',3=>'March',4=>'April',5=>'May',6=>'June',7=>'July',8=>'August',9=>'September',10=>'October',11=>'November',12=>'December'];
+foreach ($months as $num => $label): ?>
+<option value="<?php echo $num; ?>" <?php echo $fyStart === $num ? 'selected' : ''; ?>><?php echo $label; ?></option>
+<?php endforeach; ?>
+</select>
+<div class="form-text">Used for annual financial reporting.</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- GPS Toggle -->
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-geo-alt-fill"></i> GPS Location Enforcement</div>
+<div class="ssp-section-body">
+<div class="ssp-toggle-row">
+<div class="form-check form-switch">
+<input class="form-check-input" type="checkbox" role="switch" id="enforce_location_accuracy_switch" name="enforce_location_accuracy" value="1" <?php echo !empty($settings['enforce_location_accuracy']) ? 'checked' : ''; ?>>
+</div>
+<div class="ssp-toggle-info">
+<div class="ssp-toggle-title">Require accurate GPS (&le;14m)</div>
+<div class="ssp-toggle-desc">When enabled, clients must capture GPS with accuracy &le;14m before submitting the registration form.</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Save -->
+<div class="ssp-save-row">
+<button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-1"></i> Save Settings</button>
+<span class="text-muted small">Changes take effect immediately.</span>
+</div>
+</form>
+</div><!-- /tab billing -->
+
+<!-- =========================================
+     TAB 2: eTIMS & Tax
+========================================= -->
+<div class="tab-pane fade" id="ssp-panel-etims" role="tabpanel">
+<form method="POST">
+<input type="hidden" name="action" value="update_settings">
+
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-building-gear"></i> eTIMS Integration (Optional)</div>
+<div class="ssp-section-body">
+<div class="row g-3">
+<div class="col-md-4">
+<label class="form-label">Company PIN (KRA PIN/TIN)</label>
+<input type="text" name="company_pin" class="form-control" value="<?php echo htmlspecialchars($settings['company_pin'] ?? ''); ?>" placeholder="e.g. P012345678Z">
+<div class="form-text">Used when submitting invoices to eTIMS. Leave blank if not integrated.</div>
+</div>
+<div class="col-md-5">
+<label class="form-label">eTIMS Integration URL</label>
+<input type="url" name="etims_integration_url" class="form-control" value="<?php echo htmlspecialchars($settings['etims_integration_url'] ?? ''); ?>" placeholder="https://etims.example.com/api/saveSales">
+<div class="form-text">Endpoint for your eTIMS gateway.</div>
+</div>
+<div class="col-md-3">
+<label class="form-label">eTIMS API Key</label>
+<input type="text" name="etims_api_key" class="form-control" value="<?php echo htmlspecialchars($settings['etims_api_key'] ?? ''); ?>" placeholder="Optional API key/token">
+<div class="form-text">Only if your eTIMS gateway requires it.</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-percent"></i> Tax Configuration</div>
+<div class="ssp-section-body">
+<div class="row g-3">
+<div class="col-md-3">
+<label class="form-label">VAT Rate %</label>
+<div class="input-group">
+<input type="number" step="0.01" min="0" max="100" name="vat_rate" class="form-control" value="<?php echo htmlspecialchars(isset($settings['vat_rate']) ? $settings['vat_rate'] : '0.00'); ?>" placeholder="e.g. 16.00">
+<span class="input-group-text">%</span>
+</div>
+<div class="form-text">VAT percentage used for ETIMS tax calculations.</div>
+</div>
+<div class="col-md-4">
+<label class="form-label">Taxation Type Code</label>
+<?php $taxCode = strtoupper(trim((string)($settings['etims_taxation_type_code'] ?? ''))); ?>
+<select name="etims_taxation_type_code" class="form-select">
+<option value="" <?php echo $taxCode === '' ? 'selected' : ''; ?>>Auto (based on VAT rate)</option>
+<option value="A" <?php echo $taxCode === 'A' ? 'selected' : ''; ?>>A – Zero-rated / Exempt</option>
+<option value="B" <?php echo $taxCode === 'B' ? 'selected' : ''; ?>>B – Standard VAT</option>
+</select>
+<div class="form-text">If left as Auto, the system will choose A for 0% and B when VAT &gt; 0.</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-key-fill"></i> Payment Link Secret (.env)</div>
+<div class="ssp-section-body">
+<div class="input-group mb-2">
+<input type="text" id="paymentLinkSecretValue" class="form-control font-monospace" value="<?php echo htmlspecialchars(MpesaConfig::getPaymentLinkSecret()); ?>" readonly>
+<button type="button" class="btn btn-outline-primary" id="btnGeneratePaymentLinkSecret">Generate</button>
+<button type="button" class="btn btn-outline-secondary" id="btnCopyPaymentLinkSecret">Copy</button>
+</div>
+<div class="form-text">Use <strong>Generate</strong> to create a new 64-char secret, then <strong>Copy</strong> and paste into your <code>.env</code> file. Changing this secret invalidates previously generated payment links.</div>
+</div>
+</div>
+
+<div class="ssp-save-row">
+<button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-1"></i> Save eTIMS &amp; Tax</button>
+</div>
+</form>
+</div><!-- /tab etims -->
+
+<!-- =========================================
+     TAB 3: Tariff Plans
+========================================= -->
+<div class="tab-pane fade" id="ssp-panel-tariff" role="tabpanel">
+
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-pencil-square"></i> <?php echo !empty($editing_tariff) ? 'Edit Tariff Plan' : 'New Tariff Plan'; ?></div>
+<div class="ssp-section-body">
+<form method="POST" class="row g-3">
+<input type="hidden" name="action" value="save_tariff_plan">
+<input type="hidden" name="tariff_plan_id" value="<?php echo (int)($editing_tariff['id'] ?? 0); ?>">
+
+<div class="col-md-4">
+<label class="form-label">Tariff Name</label>
+<input type="text" class="form-control" name="tariff_name" value="<?php echo htmlspecialchars((string)($editing_tariff['name'] ?? '')); ?>" placeholder="e.g. Domestic 2026 Q2" required>
+</div>
+<div class="col-md-2">
+<label class="form-label">Category</label>
+<select name="tariff_category" class="form-select" required>
+<?php $selectedCategory = (string)($editing_tariff['category'] ?? 'all'); ?>
+<?php foreach (['all' => 'All', 'domestic' => 'Domestic', 'commercial' => 'Commercial', 'industrial' => 'Industrial'] as $catValue => $catLabel): ?>
+<option value="<?php echo htmlspecialchars($catValue); ?>" <?php echo $selectedCategory === $catValue ? 'selected' : ''; ?>><?php echo htmlspecialchars($catLabel); ?></option>
+<?php endforeach; ?>
+</select>
+</div>
+<div class="col-md-2">
+<label class="form-label">Effective From</label>
+<input type="date" class="form-control" name="effective_from" value="<?php echo htmlspecialchars((string)($editing_tariff['effective_from'] ?? date('Y-m-01'))); ?>" required>
+</div>
+<div class="col-md-2">
+<label class="form-label">Effective To</label>
+<input type="date" class="form-control" name="effective_to" value="<?php echo htmlspecialchars((string)($editing_tariff['effective_to'] ?? '')); ?>">
+</div>
+<div class="col-md-2 d-flex align-items-end pb-1">
+<div class="form-check form-switch">
+<input class="form-check-input" type="checkbox" name="tariff_is_active" id="tariff_is_active" <?php echo !isset($editing_tariff['is_active']) || !empty($editing_tariff['is_active']) ? 'checked' : ''; ?>>
+<label class="form-check-label fw-semibold" for="tariff_is_active">Active</label>
+</div>
+</div>
+
+<div class="col-md-4">
+<label class="form-label">Default Rate (KES/m³)</label>
+<input type="number" step="0.0001" min="0" class="form-control" name="base_rate_per_unit" value="<?php echo htmlspecialchars((string)($editing_tariff['base_rate_per_unit'] ?? ($settings['rate_per_unit'] ?? '50.0000'))); ?>" required>
+</div>
+<div class="col-md-4">
+<label class="form-label">Service Charge (KES)</label>
+<input type="number" step="0.01" min="0" class="form-control" name="tariff_service_charge" value="<?php echo htmlspecialchars((string)($editing_tariff['service_charge'] ?? ($settings['service_charge'] ?? '0.00'))); ?>" required>
+</div>
+<div class="col-md-4">
+<label class="form-label">VAT Rate (%)</label>
+<input type="number" step="0.01" min="0" max="100" class="form-control" name="tariff_vat_rate" value="<?php echo htmlspecialchars((string)($editing_tariff['vat_rate'] ?? ($settings['vat_rate'] ?? '0.00'))); ?>" required>
+</div>
+
+<?php
+$tariffBlocks = $editing_tariff['blocks'] ?? [
+['from_unit' => 0, 'to_unit' => 10, 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
+['from_unit' => 10, 'to_unit' => 20, 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
+['from_unit' => 20, 'to_unit' => '', 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
+];
+if (empty($tariffBlocks)) {
+$tariffBlocks = [['from_unit' => 0, 'to_unit' => '', 'rate_per_unit' => $settings['rate_per_unit'] ?? 50]];
+}
+?>
+
+<div class="col-12">
+<div class="d-flex justify-content-between align-items-center mb-2">
+<h6 class="mb-0 fw-bold"><i class="bi bi-bar-chart-steps me-1 text-primary"></i>Tariff Blocks</h6>
+<button type="button" class="btn btn-sm btn-outline-primary" id="addTariffBlockBtn"><i class="bi bi-plus-circle me-1"></i>Add Block</button>
+</div>
+<div id="tariffBlocksContainer">
+<?php foreach ($tariffBlocks as $idx => $block): ?>
+<div class="ssp-tariff-block tariff-block-row" data-index="<?php echo (int)$idx; ?>">
+<div>
+<label class="form-label">From Unit</label>
+<input type="number" step="0.01" min="0" class="form-control" name="block_from_unit[]" value="<?php echo htmlspecialchars((string)($block['from_unit'] ?? '')); ?>">
+</div>
+<div>
+<label class="form-label">To Unit <span class="text-muted fw-normal">(blank = open)</span></label>
+<input type="number" step="0.01" min="0" class="form-control" name="block_to_unit[]" value="<?php echo htmlspecialchars((string)($block['to_unit'] ?? '')); ?>">
+</div>
+<div>
+<label class="form-label">Rate (KES/m³)</label>
+<input type="number" step="0.0001" min="0" class="form-control" name="block_rate[]" value="<?php echo htmlspecialchars((string)($block['rate_per_unit'] ?? '')); ?>">
+</div>
+<div class="ssp-tb-remove">
+<button type="button" class="btn btn-outline-danger w-100 js-remove-tariff-block"><i class="bi bi-trash"></i></button>
+</div>
+</div>
+<?php endforeach; ?>
+</div>
+<template id="tariffBlockTemplate">
+<div class="ssp-tariff-block tariff-block-row">
+<div>
+<label class="form-label">From Unit</label>
+<input type="number" step="0.01" min="0" class="form-control" name="block_from_unit[]" value="0">
+</div>
+<div>
+<label class="form-label">To Unit <span class="text-muted fw-normal">(blank = open)</span></label>
+<input type="number" step="0.01" min="0" class="form-control" name="block_to_unit[]" value="">
+</div>
+<div>
+<label class="form-label">Rate (KES/m³)</label>
+<input type="number" step="0.0001" min="0" class="form-control" name="block_rate[]" value="0">
+</div>
+<div class="ssp-tb-remove">
+<button type="button" class="btn btn-outline-danger w-100 js-remove-tariff-block"><i class="bi bi-trash"></i></button>
+</div>
+</div>
+</template>
+</div>
+
+<div class="col-12 d-flex gap-2 mt-2">
+<button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-1"></i><?php echo !empty($editing_tariff) ? 'Update Tariff Plan' : 'Create Tariff Plan'; ?></button>
+<a href="/settings" class="btn btn-outline-secondary">Reset</a>
+</div>
+</form>
+</div>
+</div>
+
+<!-- Tariff Plans Table -->
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-table"></i> Existing Tariff Plans</div>
+<div class="ssp-section-body p-0">
+<div class="table-responsive">
+<table class="table table-sm align-middle mb-0">
+<thead>
+<tr>
+<th>Name</th>
+<th>Category</th>
+<th>Effective</th>
+<th>VAT %</th>
+<th>Status</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody>
+<?php if (empty($tariff_plans)): ?>
+<tr><td colspan="6" class="text-center text-muted py-3">No tariff plans found.</td></tr>
+<?php else: ?>
+<?php foreach ($tariff_plans as $plan): ?>
+<tr>
+<td class="fw-semibold"><?php echo htmlspecialchars((string)$plan['name']); ?></td>
+<td><?php echo htmlspecialchars(ucfirst((string)$plan['category'])); ?></td>
+<td class="text-nowrap"><?php echo htmlspecialchars((string)$plan['effective_from']); ?><?php echo !empty($plan['effective_to']) ? ' to ' . htmlspecialchars((string)$plan['effective_to']) : ' <span class="text-muted">onward</span>'; ?></td>
+<td><?php echo number_format((float)$plan['vat_rate'], 2); ?>%</td>
+<td><?php echo !empty($plan['is_active']) ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'; ?></td>
+<td>
+<div class="d-flex gap-1 flex-wrap">
+<a href="/settings?edit_tariff_id=<?php echo (int)$plan['id']; ?>" class="btn btn-sm btn-outline-primary">Edit</a>
+<form method="POST" class="d-inline">
+<input type="hidden" name="action" value="toggle_tariff_plan">
+<input type="hidden" name="tariff_plan_id" value="<?php echo (int)$plan['id']; ?>">
+<input type="hidden" name="is_active" value="<?php echo !empty($plan['is_active']) ? 0 : 1; ?>">
+<button type="submit" class="btn btn-sm btn-outline-<?php echo !empty($plan['is_active']) ? 'danger' : 'success'; ?>"><?php echo !empty($plan['is_active']) ? 'Deactivate' : 'Activate'; ?></button>
+</form>
+</div>
+</td>
+</tr>
+<?php endforeach; ?>
+<?php endif; ?>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+
+</div><!-- /tab tariff -->
+
+</div><!-- /tab-content -->
+</div><!-- /left column -->
+
+<!-- ====== RIGHT COLUMN: At a Glance sidebar ====== -->
+<div class="col-xl-4 col-lg-5 mt-4 mt-lg-0">
+<div class="ssp-glance-card">
+<div class="ssp-glance-hd">
+<span><i class="bi bi-reception-4 me-1"></i> At a Glance</span>
+<div class="ssp-glance-hd-right">
+<span class="ssp-live-dot"></span>
+<span style="font-size:0.65rem; color:rgba(147,197,253,0.7);">Live</span>
+</div>
+</div>
+<div class="ssp-glance-body">
+
+<div class="ssp-kpi-item">
+<div class="ssp-kpi-icon"><i class="bi bi-building"></i></div>
+<div>
+<div class="ssp-kpi-label">Company</div>
+<div class="ssp-kpi-value"><?php echo htmlspecialchars($settings['company_name'] ?? 'BreMac Consultant Ltd'); ?></div>
+</div>
+</div>
+
+<div class="ssp-kpi-item">
+<div class="ssp-kpi-icon"><i class="bi bi-telephone-fill"></i></div>
+<div>
+<div class="ssp-kpi-label">Support</div>
+<div class="ssp-kpi-value"><?php echo htmlspecialchars($settings['support_phone'] ?? '—'); ?></div>
+<div class="ssp-kpi-sub"><?php echo htmlspecialchars($settings['support_email'] ?? '—'); ?></div>
+</div>
+</div>
+
+<div class="ssp-kpi-item">
+<div class="ssp-kpi-icon"><i class="bi bi-droplet-fill"></i></div>
+<div>
+<div class="ssp-kpi-label">Rate per m³</div>
+<div class="ssp-kpi-value">KES <?php echo number_format((float)($settings['rate_per_unit'] ?? 50), 2); ?></div>
+</div>
+</div>
+
+<div class="ssp-kpi-item">
+<div class="ssp-kpi-icon"><i class="bi bi-wrench"></i></div>
+<div>
+<div class="ssp-kpi-label">Service Charge</div>
+<div class="ssp-kpi-value">KES <?php echo number_format((float)($settings['service_charge'] ?? 0), 2); ?></div>
+</div>
+</div>
+
+<div class="ssp-kpi-item">
+<div class="ssp-kpi-icon"><i class="bi bi-person-plus-fill"></i></div>
+<div>
+<div class="ssp-kpi-label">Registration Fee</div>
+<div class="ssp-kpi-value"><?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?> <?php echo number_format((float)($settings['registration_fee'] ?? 0), 2); ?></div>
+</div>
+</div>
+
+<div class="ssp-kpi-item">
+<div class="ssp-kpi-icon"><i class="bi bi-globe2"></i></div>
+<div>
+<div class="ssp-kpi-label">Locale / Timezone</div>
+<div class="ssp-kpi-value"><?php echo htmlspecialchars($settings['locale_code'] ?? 'en-KE'); ?></div>
+<div class="ssp-kpi-sub"><?php echo htmlspecialchars($settings['timezone_name'] ?? 'Africa/Nairobi'); ?></div>
+</div>
+</div>
+
+<div class="ssp-kpi-item">
+<div class="ssp-kpi-icon"><i class="bi bi-geo-alt-fill"></i></div>
+<div>
+<div class="ssp-kpi-label">GPS Enforcement</div>
+<div class="ssp-kpi-value">
+<?php if (!empty($settings['enforce_location_accuracy'])): ?>
+<span class="badge bg-success">On</span>
+<?php else: ?>
+<span class="badge bg-secondary">Off</span>
+<?php endif; ?>
+</div>
+</div>
+</div>
+
+</div>
+<div class="ssp-glance-footer">
+<a href="/admin/invoicing" class="ssp-glance-btn"><i class="bi bi-receipt-cutoff"></i> Invoicing</a>
+<a href="/reports" class="ssp-glance-btn"><i class="bi bi-bar-chart-line"></i> Reports</a>
+<a href="/admin/payments" class="ssp-glance-btn"><i class="bi bi-wallet2"></i> Payments</a>
+</div>
+</div>
+</div><!-- /right column -->
+
+</div><!-- /settingsMain row -->
 
 	<div class="row mt-4">
 		<div class="col-md-12">

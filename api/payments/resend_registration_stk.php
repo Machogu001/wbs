@@ -76,6 +76,14 @@ try {
         throw new Exception('No registration fee is configured. Please contact support.');
     }
 
+    $amountToCharge = !empty($existingPayment['bill_id'])
+        ? $paymentModel->getBillOutstandingAmount((int)$existingPayment['bill_id'])
+        : round($registrationFee, 2);
+
+    if ($amountToCharge <= 0.01) {
+        throw new Exception('Registration fee already paid. Your account should now be active.');
+    }
+
     // Validate phone number
     if (empty($user['phone_number']) || !preg_match('/^(?:254|\+254|0)?((?:7|1)\d{8})$/', $user['phone_number'], $matches)) {
         throw new Exception('Invalid or missing phone number for M-Pesa payment. Please contact support.');
@@ -86,7 +94,7 @@ try {
     $mpesa = new Mpesa();
     $response = $mpesa->stkPush(
         $formattedPhone,
-        $registrationFee,
+        $amountToCharge,
         $user['account_number'] ?? 'REG',
         'Registration Fee'
     );
@@ -125,7 +133,7 @@ try {
     $newPayment->bill_id = $billId;
     $newPayment->user_id = $user['id'];
     $newPayment->phone_number = $formattedPhone;
-    $newPayment->amount = $registrationFee;
+    $newPayment->amount = $amountToCharge;
     $newPayment->merchant_request_id = $response['MerchantRequestID'] ?? null;
     $newPayment->checkout_request_id = $response['CheckoutRequestID'] ?? null;
     $newPayment->status = 'pending';
@@ -141,7 +149,7 @@ try {
         'message' => 'A new M-Pesa prompt has been sent to your phone. Please approve it to activate your account.',
         'data' => [
             'checkout_request_id' => $newPayment->checkout_request_id,
-            'amount' => $registrationFee
+            'amount' => $amountToCharge
         ]
     ]);
 

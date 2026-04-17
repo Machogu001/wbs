@@ -33,9 +33,22 @@ if ($db) {
 <div class="container-fluid mt-4 pay-bill-page admin-shell">
     <div class="row">
         <div class="col-md-12">
-            <div class="admin-page-header">
-                <h2 class="mb-1">Pay Water Bill</h2>
-                <p class="text-muted mb-0">Select an invoice and complete payment securely through M-Pesa.</p>
+            <div class="pb-banner pb-banner--emerald mb-4">
+                <div class="pb-bg" aria-hidden="true">
+                    <div class="pb-grid"></div>
+                    <div class="pb-blob pb-blob--a"></div>
+                    <div class="pb-blob pb-blob--b"></div>
+                    <i class="bi bi-phone pb-watermark"></i>
+                </div>
+                <div class="pb-inner">
+                    <div class="pb-left">
+                        <div class="pb-eyebrow-row">
+                            <span class="pb-eyebrow-chip"><i class="bi bi-phone"></i> M-Pesa Payment</span>
+                        </div>
+                        <h2 class="pb-title">Pay Water Bill</h2>
+                        <p class="pb-subtitle">Select an invoice and complete payment securely through M-Pesa.</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

@@ -375,32 +375,40 @@ if (isset($_SESSION['flash_message'])) {
 <div class="container mt-4 invoicing-page">
 	<div class="row">
 		<div class="col-md-12">
-			<div class="invoicing-hero">
-				<div class="invoicing-hero-copy">
-					<span class="invoicing-hero-eyebrow">Billing Desk</span>
-					<h2 class="mb-2">Invoicing</h2>
-					<p class="mb-0">Record client meter readings, generate invoices, and keep a quick eye on outstanding balances.</p>
+			<div class="pb-banner pb-banner--amber mb-4">
+				<div class="pb-bg" aria-hidden="true">
+					<div class="pb-grid"></div>
+					<div class="pb-blob pb-blob--a"></div>
+					<div class="pb-blob pb-blob--b"></div>
+					<i class="bi bi-receipt-cutoff pb-watermark"></i>
 				</div>
-				<div class="invoicing-hero-metrics">
-					<div class="invoicing-metric-card">
-						<div class="invoicing-metric-icon"><i class="bi bi-people"></i></div>
-						<span class="invoicing-metric-label">Clients</span>
-						<strong><?php echo number_format($totalClients); ?></strong>
+				<div class="pb-inner">
+					<div class="pb-left">
+						<div class="pb-eyebrow-row">
+							<span class="pb-eyebrow-chip"><i class="bi bi-receipt-cutoff"></i> Billing Desk</span>
+						</div>
+						<h2 class="pb-title">Invoicing</h2>
+						<p class="pb-subtitle">Record client meter readings, generate invoices, and keep a quick eye on outstanding balances.</p>
 					</div>
-					<div class="invoicing-metric-card invoicing-metric-warn">
-						<div class="invoicing-metric-icon"><i class="bi bi-exclamation-circle"></i></div>
-						<span class="invoicing-metric-label">Unpaid Accounts</span>
-						<strong><?php echo number_format($clientsWithUnpaid); ?></strong>
-					</div>
-					<div class="invoicing-metric-card invoicing-metric-money">
-						<div class="invoicing-metric-icon"><i class="bi bi-cash-stack"></i></div>
-						<span class="invoicing-metric-label">Outstanding</span>
-						<strong><?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?> <?php echo number_format($totalUnpaidAmount, 2); ?></strong>
-					</div>
-					<div class="invoicing-metric-card invoicing-metric-good">
-						<div class="invoicing-metric-icon"><i class="bi bi-check-circle"></i></div>
-						<span class="invoicing-metric-label">Paid Last Bill</span>
-						<strong><?php echo number_format($paidClients); ?></strong>
+					<div class="pb-right">
+						<div class="pb-kpi-row">
+							<div class="pb-kpi">
+								<span class="pb-kpi-label">Clients</span>
+								<span class="pb-kpi-value"><?php echo number_format($totalClients); ?></span>
+							</div>
+							<div class="pb-kpi">
+								<span class="pb-kpi-label">Unpaid Accounts</span>
+								<span class="pb-kpi-value"><?php echo number_format($clientsWithUnpaid); ?></span>
+							</div>
+							<div class="pb-kpi">
+								<span class="pb-kpi-label">Outstanding</span>
+								<span class="pb-kpi-value"><?php echo htmlspecialchars($settings['currency_code'] ?? 'KES'); ?> <?php echo number_format($totalUnpaidAmount, 2); ?></span>
+							</div>
+							<div class="pb-kpi">
+								<span class="pb-kpi-label">Paid Last Bill</span>
+								<span class="pb-kpi-value"><?php echo number_format($paidClients); ?></span>
+							</div>
+						</div>
 					</div>
 				</div>
 			</div>
@@ -528,7 +536,7 @@ if (isset($_SESSION['flash_message'])) {
 				<div class="card-header system-settings-overview-header">
 					<div>
 						<h5 class="mb-1 admin-section-title">Client Billing Overview</h5>
-						<p class="mb-0 text-muted small">Quick reference for latest client bills, payment status, and direct payment-link actions.</p>
+						<p class="mb-0 text-muted small">Quick reference for latest client bills, payment status, and the available invoice or payment actions.</p>
 					</div>
 					<div class="d-flex align-items-center gap-2 system-settings-filter-wrap">
 						<label class="form-label mb-0" style="white-space:nowrap;">Filter:</label>
@@ -551,7 +559,7 @@ if (isset($_SESSION['flash_message'])) {
 									<th>Status</th>
 									<th>Due Date</th>
 									<th>Unpaid (KES)</th>
-									<th>Action</th>
+									<th>Actions</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -586,10 +594,10 @@ if (isset($_SESSION['flash_message'])) {
 														<button type="button"
 															class="btn btn-sm btn-outline-primary js-copy-pay-link"
 															data-pay-url="<?php echo htmlspecialchars($clientPayUrl, ENT_QUOTES, 'UTF-8'); ?>">
-															<i class="bi bi-link-45deg me-1"></i>Copy Link
+															<i class="bi bi-link-45deg me-1"></i>Copy Pay Link
 														</button>
 														<a href="<?php echo htmlspecialchars($clientPayUrl); ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
-															<i class="bi bi-box-arrow-up-right me-1"></i>Open
+															<i class="bi bi-box-arrow-up-right me-1"></i>Open Pay Page
 														</a>
 													</div>
 												<?php else: ?>

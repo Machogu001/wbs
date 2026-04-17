@@ -94,6 +94,16 @@ if ($loggedOut): ?>
 <?php endif; ?>
 
 <section class="hero-section text-white py-5 py-lg-6">
+    <div class="hero-water-bubbles" aria-hidden="true">
+        <span class="hero-water-bubble bubble-1"></span>
+        <span class="hero-water-bubble bubble-2"></span>
+        <span class="hero-water-bubble bubble-3"></span>
+        <span class="hero-water-bubble bubble-4"></span>
+        <span class="hero-water-bubble bubble-5"></span>
+        <span class="hero-water-bubble bubble-6"></span>
+        <span class="hero-water-bubble bubble-7"></span>
+        <span class="hero-water-bubble bubble-8"></span>
+    </div>
     <div class="container">
         <div class="row align-items-center gy-4">
             <div class="col-lg-6">

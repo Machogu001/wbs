@@ -236,26 +236,29 @@ class Accounting {
 	}
 
 	public function getTrialBalance(?string $fromDate = null, ?string $toDate = null): array {
-		$sql = "SELECT coa.id, coa.code, coa.name, coa.account_type, coa.normal_balance, coa.is_active,
-			COALESCE(SUM(CASE WHEN je.status = 'posted' THEN jel.debit ELSE 0 END), 0) AS total_debit,
-			COALESCE(SUM(CASE WHEN je.status = 'posted' THEN jel.credit ELSE 0 END), 0) AS total_credit
-			FROM {$this->chartTable} coa
-			LEFT JOIN {$this->lineTable} jel ON jel.account_id = coa.id
-			LEFT JOIN {$this->entryTable} je ON je.id = jel.journal_entry_id";
+		// Date conditions are placed in the JOIN ON clause (not WHERE) so that
+		// accounts with no journal entries in the period still appear with zero balances.
+		$joinDateConditions = "je.status = 'posted'";
 		$params = [];
-		$conditions = ["coa.is_active = 1"];
 		if ($fromDate !== null && $fromDate !== '') {
-			$conditions[] = "je.entry_date >= :from_date";
+			$joinDateConditions .= " AND je.entry_date >= :from_date";
 			$params[':from_date'] = $fromDate;
 		}
 		if ($toDate !== null && $toDate !== '') {
-			$conditions[] = "je.entry_date <= :to_date";
+			$joinDateConditions .= " AND je.entry_date <= :to_date";
 			$params[':to_date'] = $toDate;
 		}
-		if (!empty($conditions)) {
-			$sql .= " WHERE " . implode(' AND ', $conditions);
-		}
-		$sql .= " GROUP BY coa.id, coa.code, coa.name, coa.account_type, coa.normal_balance, coa.is_active ORDER BY coa.account_type, coa.code";
+
+		$sql = "SELECT coa.id, coa.code, coa.name, coa.account_type, coa.normal_balance, coa.is_active,
+			COALESCE(SUM(jel.debit), 0) AS total_debit,
+			COALESCE(SUM(jel.credit), 0) AS total_credit
+			FROM {$this->chartTable} coa
+			LEFT JOIN {$this->lineTable} jel ON jel.account_id = coa.id
+			LEFT JOIN {$this->entryTable} je ON je.id = jel.journal_entry_id AND {$joinDateConditions}
+			WHERE coa.is_active = 1
+			GROUP BY coa.id, coa.code, coa.name, coa.account_type, coa.normal_balance, coa.is_active
+			ORDER BY coa.account_type, coa.code";
+
 		$stmt = $this->db->prepare($sql);
 		$stmt->execute($params);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -607,7 +610,24 @@ class Accounting {
 		return (int)$account['id'];
 	}
 
-	public function postInvoiceIssued(int $billId, int $userId, float $amount, string $memo, string $revenueType = 'water', ?int $postedBy = null): ?int {
+	private function normalizeEntryDate(?string $candidate): string {
+		if ($candidate === null || trim($candidate) === '') {
+			return date('Y-m-d');
+		}
+
+		$timestamp = strtotime($candidate);
+		if ($timestamp === false) {
+			return date('Y-m-d');
+		}
+
+		return date('Y-m-d', $timestamp);
+	}
+
+	public function postInvoiceIssued(int $billId, int $userId, float $amount, string $memo, string $revenueType = 'water', ?int $postedBy = null, ?string $entryDate = null): ?int {
+		if ($billId <= 0) {
+			throw new InvalidArgumentException('A valid bill reference is required to post an invoice journal entry.');
+		}
+
 		if ($amount <= 0) {
 			return null;
 		}
@@ -622,7 +642,7 @@ class Accounting {
 			? $this->resolveSystemAccount('4100', 'Registration Fee Revenue', 'revenue', 'credit')
 			: $this->resolveSystemAccount('4000', 'Water Sales Revenue', 'revenue', 'credit');
 
-		$entryDate = date('Y-m-d');
+		$entryDate = $this->normalizeEntryDate($entryDate);
 		return $this->postJournalEntry($entryDate, $memo, [
 			['account_id' => $accountsReceivableId, 'debit' => $amount, 'credit' => 0, 'memo' => 'Bill #' . $billId . ' for user #' . $userId],
 			['account_id' => $revenueAccountId, 'debit' => 0, 'credit' => $amount, 'memo' => $memo],
@@ -646,7 +666,7 @@ class Accounting {
 
 		$cashId = $this->resolveSystemAccount('1000', 'Cash and Cash Equivalents', 'asset', 'debit');
 		$receivableId = $this->resolveSystemAccount('1100', 'Accounts Receivable', 'asset', 'debit');
-		$entryDate = !empty($paymentRow['transaction_date']) ? date('Y-m-d', strtotime((string)$paymentRow['transaction_date'])) : date('Y-m-d');
+		$entryDate = $this->normalizeEntryDate((string)($paymentRow['transaction_date'] ?? $paymentRow['created_at'] ?? ''));
 
 		return $this->postJournalEntry($entryDate, $memo, [
 			['account_id' => $cashId, 'debit' => $amount, 'credit' => 0, 'memo' => 'Payment #' . $paymentId],
@@ -672,5 +692,31 @@ class Accounting {
 			['account_id' => $badDebtExpenseId, 'debit' => $amount, 'credit' => 0, 'memo' => 'Bill #' . $billId . ' user #' . $userId],
 			['account_id' => $receivableId, 'debit' => 0, 'credit' => $amount, 'memo' => $memo],
 		], $referenceType, $referenceId, $postedBy);
+	}
+
+	public function postPaymentAdjustment(string $adjustmentType, int $adjustmentId, ?array $paymentRow, ?array $billRow, string $memo = 'Payment adjustment', ?int $postedBy = null): ?int {
+		if (!$paymentRow) {
+			return null;
+		}
+
+		$referenceType = $adjustmentType === 'chargeback' ? 'payment_chargeback' : 'payment_refund';
+		$existing = $this->getPostedEntryByReference($referenceType, $adjustmentId);
+		if ($existing) {
+			return (int)$existing['id'];
+		}
+
+		$amount = (float)($paymentRow['adjustment_amount'] ?? $paymentRow['amount'] ?? 0);
+		if ($amount <= 0) {
+			return null;
+		}
+
+		$cashId = $this->resolveSystemAccount('1000', 'Cash and Cash Equivalents', 'asset', 'debit');
+		$receivableId = $this->resolveSystemAccount('1100', 'Accounts Receivable', 'asset', 'debit');
+		$entryDate = date('Y-m-d');
+
+		return $this->postJournalEntry($entryDate, $memo, [
+			['account_id' => $receivableId, 'debit' => $amount, 'credit' => 0, 'memo' => $billRow ? ('Bill #' . (int)$billRow['id']) : 'Customer receivable restored'],
+			['account_id' => $cashId, 'debit' => 0, 'credit' => $amount, 'memo' => ucfirst($adjustmentType) . ' for payment #' . (int)($paymentRow['id'] ?? 0)],
+		], $referenceType, $adjustmentId, $postedBy);
 	}
 }

@@ -157,14 +157,27 @@ require_once __DIR__ . '/../../templates/header.php';
         </div>
     <?php endif; ?>
 
-    <div class="admin-page-header mb-4 d-flex justify-content-between align-items-start flex-wrap gap-2">
-        <div>
-            <h2 class="mb-1">Bill Detail #<?php echo (int)$billId; ?></h2>
-            <p class="admin-page-subtitle mb-0">Detailed bill composition, payments, and adjustments.</p>
+    <div class="pb-banner pb-banner--amber mb-4">
+        <div class="pb-bg" aria-hidden="true">
+            <div class="pb-grid"></div>
+            <div class="pb-blob pb-blob--a"></div>
+            <div class="pb-blob pb-blob--b"></div>
+            <i class="bi bi-file-text-fill pb-watermark"></i>
         </div>
-        <div class="d-flex gap-2 flex-wrap">
-            <a href="/admin/payments" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back to Payments</a>
-            <a href="/admin/accounting?entry_id=<?php echo (int)$billId; ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-journal-text me-1"></i>Accounting</a>
+        <div class="pb-inner">
+            <div class="pb-left">
+                <div class="pb-eyebrow-row">
+                    <span class="pb-eyebrow-chip"><i class="bi bi-file-text-fill"></i> Billing Desk</span>
+                </div>
+                <h2 class="pb-title">Bill Detail #<?php echo (int)$billId; ?></h2>
+                <p class="pb-subtitle">Detailed bill composition, payments, and adjustments.</p>
+            </div>
+            <div class="pb-right">
+                <div class="pb-btn-row">
+                    <a href="/admin/payments" class="pb-btn"><i class="bi bi-arrow-left"></i> Back to Payments</a>
+                    <a href="/admin/accounting?entry_id=<?php echo (int)$billId; ?>" class="pb-btn pb-btn--accent"><i class="bi bi-journal-text"></i> Accounting</a>
+                </div>
+            </div>
         </div>
     </div>
 

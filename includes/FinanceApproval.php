@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/Accounting.php';
 require_once __DIR__ . '/InstallmentPlan.php';
 require_once __DIR__ . '/CreditNote.php';
+require_once __DIR__ . '/Payment.php';
 
 class FinanceApproval {
     private $db;
@@ -201,6 +202,56 @@ class FinanceApproval {
         ]);
     }
 
+    public function createPaymentAdjustmentRequest(int $paymentId, string $adjustmentType, float $amount, int $submittedBy, string $reason = ''): bool {
+        $adjustmentType = $adjustmentType === 'chargeback' ? 'chargeback' : 'refund';
+        $paymentService = new Payment($this->db);
+
+        $this->db->beginTransaction();
+        try {
+            $adjustmentId = $paymentService->createAdjustmentRequest($paymentId, $adjustmentType, $amount, $submittedBy, $reason);
+            $adjustment = $paymentService->getAdjustmentById($adjustmentId);
+            if (!$adjustment) {
+                throw new RuntimeException('Payment adjustment request could not be created.');
+            }
+
+            $entityType = $adjustmentType === 'chargeback' ? 'payment_chargeback' : 'payment_refund';
+            $referencePrefix = $adjustmentType === 'chargeback' ? 'CHB' : 'RFD';
+            $payload = [
+                'payment_id' => (int)$adjustment['payment_id'],
+                'bill_id' => !empty($adjustment['bill_id']) ? (int)$adjustment['bill_id'] : null,
+                'user_id' => !empty($adjustment['user_id']) ? (int)$adjustment['user_id'] : null,
+                'requested_amount' => (float)$adjustment['amount'],
+                'adjustment_type' => $adjustmentType,
+                'reason' => trim($reason),
+                'requested_at' => date('c'),
+                'requested_by' => $submittedBy,
+            ];
+
+            $stmt = $this->db->prepare("INSERT INTO financial_approval_items
+                (entity_type, entity_id, reference_no, title, amount, submitted_by, current_approver_role, status, metadata_json, created_at)
+                VALUES (:entity_type, :entity_id, :reference_no, :title, :amount, :submitted_by, 'finance', 'pending', :metadata_json, NOW())");
+            $stmt->execute([
+                ':entity_type' => $entityType,
+                ':entity_id' => $adjustmentId,
+                ':reference_no' => $referencePrefix . '-' . $paymentId . '-' . $adjustmentId,
+                ':title' => ucfirst($adjustmentType) . ' Request for Payment #' . $paymentId,
+                ':amount' => (float)$adjustment['amount'],
+                ':submitted_by' => $submittedBy,
+                ':metadata_json' => json_encode($payload),
+            ]);
+
+            $approvalItemId = (int)$this->db->lastInsertId();
+            $paymentService->linkAdjustmentApprovalItem($adjustmentId, $approvalItemId);
+            $this->db->commit();
+            return true;
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     public function updateStatus($itemId, $status, $approvedBy = null, $comments = null) {
         $allowed = ['approved', 'rejected'];
         if (!in_array($status, $allowed, true)) {
@@ -251,6 +302,10 @@ class FinanceApproval {
                 throw new RuntimeException('Failed to update approval status.');
             }
 
+            if ($status === 'rejected') {
+                $this->applyRejectedItem($item, $approvedBy);
+            }
+
             $this->db->commit();
             return true;
         } catch (Throwable $e) {
@@ -264,7 +319,12 @@ class FinanceApproval {
 
     private function applyApprovedItem(array $item, ?int $approvedBy = null, ?string $comments = null): void {
         $entityType = (string)($item['entity_type'] ?? '');
-        if (!in_array($entityType, ['bill_writeoff', 'bill_waiver', 'bill_installment'], true)) {
+        if (!in_array($entityType, ['bill_writeoff', 'bill_waiver', 'bill_installment', 'payment_refund', 'payment_chargeback'], true)) {
+            return;
+        }
+
+        if (in_array($entityType, ['payment_refund', 'payment_chargeback'], true)) {
+            $this->applyPaymentAdjustment($item, $approvedBy, $comments);
             return;
         }
 
@@ -333,6 +393,29 @@ class FinanceApproval {
         );
     }
 
+    private function applyPaymentAdjustment(array $item, ?int $approvedBy = null, ?string $comments = null): void {
+        $paymentService = new Payment($this->db);
+        $adjustmentId = (int)($item['entity_id'] ?? 0);
+        if ($adjustmentId <= 0) {
+            throw new RuntimeException('Invalid payment adjustment reference.');
+        }
+
+        $ok = $paymentService->approveAdjustment($adjustmentId, $approvedBy, $comments);
+        if (!$ok) {
+            throw new RuntimeException('Payment adjustment could not be approved.');
+        }
+    }
+
+    private function applyRejectedItem(array $item, ?int $approvedBy = null): void {
+        $entityType = (string)($item['entity_type'] ?? '');
+        if (!in_array($entityType, ['payment_refund', 'payment_chargeback'], true)) {
+            return;
+        }
+
+        $paymentService = new Payment($this->db);
+        $paymentService->rejectAdjustment((int)($item['entity_id'] ?? 0), $approvedBy);
+    }
+
     private function applyInstallmentPlan(array $item, array $bill, array $metadata, ?int $approvedBy = null): void {
         $outstanding = $this->getBillOutstandingAmount((int)$bill['id']);
         if ($outstanding <= 0) {
@@ -396,10 +479,22 @@ class FinanceApproval {
             return 0.0;
         }
 
-        $stmt = $this->db->prepare("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE bill_id = :bill_id AND status = 'completed'");
+        // Deduct approved refund/chargeback adjustments so write-off amounts
+        // are accurate even after payments have been partially or fully reversed.
+        $stmt = $this->db->prepare(
+            "SELECT COALESCE(SUM(p.amount), 0) - COALESCE(SUM(adj.approved_adj), 0) AS net_paid
+            FROM payments p
+            LEFT JOIN (
+                SELECT payment_id, SUM(amount) AS approved_adj
+                FROM payment_adjustments
+                WHERE status = 'approved'
+                GROUP BY payment_id
+            ) adj ON adj.payment_id = p.id
+            WHERE p.bill_id = :bill_id AND p.status = 'completed'"
+        );
         $stmt->execute([':bill_id' => $billId]);
-        $paid = (float)$stmt->fetchColumn();
+        $netPaid = max(0.0, (float)$stmt->fetchColumn());
 
-        return max(0.0, round((float)$bill['amount'] - $paid, 2));
+        return max(0.0, round((float)$bill['amount'] - $netPaid, 2));
     }
 }

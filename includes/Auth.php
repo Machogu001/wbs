@@ -172,6 +172,18 @@ class Auth {
     
     // Logout user
     public function logout() {
+        $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0;
+
+        if ($userId > 0) {
+            try {
+                $stmt = $this->conn->prepare("UPDATE support_agent_availability SET is_available = 0, updated_at = CURRENT_TIMESTAMP WHERE user_id = :user_id");
+                $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+                $stmt->execute();
+            } catch (\Throwable $e) {
+                // Keep logout working even when chat availability storage is unavailable.
+            }
+        }
+
         if(isset($_SESSION['session_token'])) {
             // Delete session from database
             $query = "DELETE FROM " . $this->table . " 

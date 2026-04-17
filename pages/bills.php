@@ -21,6 +21,8 @@ $count_paid = 0;
 $count_unpaid = 0;
 $count_overdue = 0;
 $next_due_date = null;
+$hasRegistrationBillsInView = false;
+$hasUsageBillsInView = false;
 $filter = isset($_GET['filter']) ? $_GET['filter'] : 'all';
 $fromPeriod = isset($_GET['from']) ? trim((string)$_GET['from']) : '';
 $toPeriod = isset($_GET['to']) ? trim((string)$_GET['to']) : '';
@@ -64,9 +66,11 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 	$filename = 'my_bills_' . date('Ymd') . '.csv';
 	header('Content-Disposition: attachment; filename="' . $filename . '"');
 	$out = fopen('php://output', 'w');
-	fputcsv($out, ['Billing Month', 'Previous Reading', 'Current Reading', 'Consumption (m3)', 'Rate (KES/m3)', 'Service Charge (KES)', 'Base Amount (KES)', 'Tax Rate (%)', 'Tax Amount (KES)', 'Amount (KES)', 'Status', 'Due Date']);
+	fputcsv($out, ['Bill Type', 'Billing Month', 'Previous Reading', 'Current Reading', 'Consumption (m3)', 'Rate (KES/m3)', 'Service Charge (KES)', 'Base Amount (KES)', 'Tax Rate (%)', 'Tax Amount (KES)', 'Amount (KES)', 'Status', 'Due Date']);
 	foreach ($billsCsv as $billRow) {
+		$billTypeLabel = $billService->getBillTypeLabel($billRow);
 		fputcsv($out, [
+			$billTypeLabel,
 			$billRow['billing_month'],
 			$billRow['previous_reading'],
 			$billRow['current_reading'],
@@ -117,20 +121,62 @@ if ($db) {
 			return in_array($bill['status'], ['pending', 'overdue'], true);
 		});
 	}
+
+	foreach ($bills as $bill) {
+		if ($billService->isRegistrationFeeBill($bill)) {
+			$hasRegistrationBillsInView = true;
+		} else {
+			$hasUsageBillsInView = true;
+		}
+	}
+}
+
+$billColumnSubhead = 'Type and month';
+$readingColumnSubhead = 'Previous, current, usage';
+$chargesColumnSubhead = 'Rate and service';
+$totalsColumnSubhead = 'Base, tax, amount';
+
+if ($hasRegistrationBillsInView && !$hasUsageBillsInView) {
+	$readingColumnSubhead = 'Not used for registration';
+	$chargesColumnSubhead = 'Registration charge';
+	$totalsColumnSubhead = 'Amount summary';
+	$billColumnSubhead = 'Type and month';
+	} elseif ($hasUsageBillsInView && !$hasRegistrationBillsInView) {
+	$billColumnSubhead = 'Type and month';
+	$readingColumnSubhead = 'Metered usage summary';
+	$chargesColumnSubhead = 'Water charge summary';
+	$totalsColumnSubhead = 'Amount summary';
+} elseif ($hasRegistrationBillsInView && $hasUsageBillsInView) {
+	$readingColumnSubhead = 'Depends on bill type';
+	$chargesColumnSubhead = 'Fee or water charges';
+	$totalsColumnSubhead = 'Amount summary';
 }
 ?>
 
 <div class="container mt-4 bills-page admin-shell">
 	<div class="row">
 		<div class="col-md-12">
-			<div class="admin-page-header">
-				<h2 class="mb-1">My Bills</h2>
-				<p class="text-muted mb-1">Your billing history and current charges.</p>
-				<p class="small mb-0">
-					<a href="#" data-bs-toggle="modal" data-bs-target="#billingPolicyModal">
-						<i class="bi bi-info-circle"></i> View Water Usage Billing Policy
-					</a>
-				</p>
+			<div class="pb-banner mb-4">
+				<div class="pb-bg" aria-hidden="true">
+					<div class="pb-grid"></div>
+					<div class="pb-blob pb-blob--a"></div>
+					<div class="pb-blob pb-blob--b"></div>
+					<i class="bi bi-receipt pb-watermark"></i>
+				</div>
+				<div class="pb-inner">
+					<div class="pb-left">
+						<div class="pb-eyebrow-row">
+							<span class="pb-eyebrow-chip"><i class="bi bi-receipt"></i> My Account</span>
+						</div>
+						<h2 class="pb-title">My Bills</h2>
+						<p class="pb-subtitle">Your billing history and current charges.</p>
+					</div>
+					<div class="pb-right">
+						<div class="pb-btn-row">
+							<a href="#" class="pb-btn" data-bs-toggle="modal" data-bs-target="#billingPolicyModal"><i class="bi bi-info-circle"></i> View Billing Policy</a>
+						</div>
+					</div>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -227,44 +273,88 @@ if ($db) {
 			</div>
 			<div class="card">
 				<div class="card-body">
+					<?php if ($hasRegistrationBillsInView && $hasUsageBillsInView): ?>
+						<div class="alert alert-light bills-table-note" role="alert">
+							Registration fees do not use meter readings. Reading values apply only to water bills in this list.
+						</div>
+					<?php endif; ?>
 					<div class="table-responsive">
-						<table class="table table-striped align-middle">
+						<table class="table table-striped align-middle bills-history-table">
 							<thead>
 								<tr>
-									<th>Billing Month</th>
-									<th>Previous</th>
-									<th>Current</th>
-									<th>Consumption (m³)</th>
-									<th>Rate (KES/m³)</th>
-									<th>Service Charge (KES)</th>
-									<th>Base (KES)</th>
-									<th>Tax (KES)</th>
-									<th>Amount (KES)</th>
-									<th>Status</th>
-									<th>Invoice</th>
-									<th>Pay</th>
+									<th class="col-bill"><span class="bills-head-main">Bill</span><span class="bills-head-sub"><?php echo htmlspecialchars($billColumnSubhead); ?></span></th>
+									<th class="col-readings"><span class="bills-head-main">Meter Readings</span><span class="bills-head-sub"><?php echo htmlspecialchars($readingColumnSubhead); ?></span></th>
+									<th class="col-charges"><span class="bills-head-main">Charges</span><span class="bills-head-sub"><?php echo htmlspecialchars($chargesColumnSubhead); ?></span></th>
+									<th class="col-totals"><span class="bills-head-main">Totals</span><span class="bills-head-sub"><?php echo htmlspecialchars($totalsColumnSubhead); ?></span></th>
+									<th class="col-status"><span class="bills-head-main">Status</span><span class="bills-head-sub">Payment state</span></th>
+									<th class="col-actions"><span class="bills-head-main">Actions</span><span class="bills-head-sub">Download invoice or pay bill</span></th>
 								</tr>
 							</thead>
 							<tbody>
 								<?php if(empty($bills)): ?>
 									<tr>
-										<td colspan="12" class="text-center text-muted">No bills found for this view.</td>
+										<td colspan="6" class="text-center text-muted">No bills found for this view.</td>
 									</tr>
 								<?php else: ?>
 									<?php foreach($bills as $bill): ?>
 										<?php $baseAmount = isset($bill['base_amount']) ? (float)$bill['base_amount'] : (float)$bill['amount']; ?>
 										<?php $taxAmount = isset($bill['tax_amount']) ? (float)$bill['tax_amount'] : 0.0; ?>
+										<?php $billTypeLabel = $billService->getBillTypeLabel($bill); ?>
+										<?php $isRegistrationFeeBill = $billService->isRegistrationFeeBill($bill); ?>
+										<?php $summaryClass = $isRegistrationFeeBill ? ' bills-cell-summary-accent' : ''; ?>
 										<tr>
-											<td><?php echo htmlspecialchars(date('M Y', strtotime($bill['billing_month']))); ?></td>
-											<td><?php echo number_format($bill['previous_reading'], 2); ?></td>
-											<td><?php echo number_format($bill['current_reading'], 2); ?></td>
-											<td><?php echo number_format($bill['consumption'], 2); ?></td>
-											<td><?php echo number_format($bill['rate_per_unit'], 2); ?></td>
-											<td><?php echo number_format($bill['service_charge'], 2); ?></td>
-											<td><?php echo number_format($baseAmount, 2); ?></td>
-											<td><?php echo number_format($taxAmount, 2); ?></td>
-											<td><?php echo number_format($bill['amount'], 2); ?></td>
-											<td>
+											<td class="col-bill">
+												<div class="bills-cell-stack bills-cell-summary bills-cell-centered<?php echo $summaryClass; ?>">
+													<span class="badge <?php echo $billTypeLabel === 'Registration Fee' ? 'bg-info text-dark' : 'bg-light text-dark border'; ?>">
+														<?php echo htmlspecialchars($billTypeLabel); ?>
+													</span>
+													<div class="bills-cell-primary"><?php echo htmlspecialchars(date('M Y', strtotime($bill['billing_month']))); ?></div>
+												</div>
+											</td>
+											<td class="col-readings">
+												<?php if ($isRegistrationFeeBill): ?>
+													<div class="bills-cell-stack bills-cell-summary">
+														<div class="bills-cell-primary">No meter readings</div>
+														<div class="bills-cell-note">Registration fees are fixed charges and do not depend on usage.</div>
+													</div>
+												<?php else: ?>
+													<div class="bills-cell-stack bills-cell-summary bills-cell-metrics">
+														<div><span class="bills-cell-label">Previous reading</span><span class="bills-cell-value"><?php echo number_format($bill['previous_reading'], 2); ?></span></div>
+														<div><span class="bills-cell-label">Current reading</span><span class="bills-cell-value"><?php echo number_format($bill['current_reading'], 2); ?></span></div>
+														<div><span class="bills-cell-label">Usage</span><span class="bills-cell-value"><?php echo number_format($bill['consumption'], 2); ?> m³</span></div>
+													</div>
+												<?php endif; ?>
+											</td>
+											<td class="col-charges">
+												<?php if ($isRegistrationFeeBill): ?>
+													<div class="bills-cell-stack bills-cell-summary bills-cell-summary-accent bills-cell-centered">
+														<div class="bills-cell-label">Registration fee</div>
+														<div class="bills-cell-value bills-cell-value-strong">KES <?php echo number_format((float)$bill['amount'], 2); ?></div>
+													</div>
+												<?php else: ?>
+													<div class="bills-cell-stack bills-cell-summary bills-cell-metrics">
+														<div><span class="bills-cell-label">Water rate</span><span class="bills-cell-value">KES <?php echo number_format($bill['rate_per_unit'], 2); ?></span></div>
+														<div><span class="bills-cell-label">Service fee</span><span class="bills-cell-value">KES <?php echo number_format($bill['service_charge'], 2); ?></span></div>
+													</div>
+												<?php endif; ?>
+											</td>
+											<td class="col-totals">
+												<?php if ($isRegistrationFeeBill): ?>
+													<div class="bills-cell-stack bills-cell-summary bills-cell-metrics<?php echo $summaryClass; ?>">
+														<div><span class="bills-cell-label">Total amount</span><span class="bills-cell-value bills-cell-value-strong">KES <?php echo number_format($bill['amount'], 2); ?></span></div>
+														<?php if ($taxAmount > 0): ?>
+															<div><span class="bills-cell-label">Tax</span><span class="bills-cell-value">KES <?php echo number_format($taxAmount, 2); ?></span></div>
+														<?php endif; ?>
+													</div>
+												<?php else: ?>
+													<div class="bills-cell-stack bills-cell-summary bills-cell-metrics">
+														<div><span class="bills-cell-label">Subtotal</span><span class="bills-cell-value">KES <?php echo number_format($baseAmount, 2); ?></span></div>
+														<div><span class="bills-cell-label">Tax</span><span class="bills-cell-value">KES <?php echo number_format($taxAmount, 2); ?></span></div>
+														<div><span class="bills-cell-label">Total amount</span><span class="bills-cell-value bills-cell-value-strong">KES <?php echo number_format($bill['amount'], 2); ?></span></div>
+													</div>
+												<?php endif; ?>
+											</td>
+											<td class="col-status">
 												<?php
 												$status = $bill['status'];
 												$badgeClass = 'badge-pending';
@@ -274,17 +364,30 @@ if ($db) {
 													$badgeClass = 'badge-overdue';
 												}
 												?>
-												<span class="badge <?php echo $badgeClass; ?>"><?php echo htmlspecialchars(ucfirst($status)); ?></span>
+												<div class="bills-cell-stack bills-cell-summary bills-cell-centered<?php echo $summaryClass; ?>">
+													<span class="badge <?php echo $badgeClass; ?>"><?php echo htmlspecialchars(ucfirst($status)); ?></span>
+													<div class="bills-cell-note">
+														<?php if ($status === 'paid'): ?>
+															Fully settled
+														<?php elseif (!empty($bill['due_date'])): ?>
+															<?php echo 'Due ' . htmlspecialchars(date('d M Y', strtotime($bill['due_date']))); ?>
+														<?php else: ?>
+															Awaiting payment
+														<?php endif; ?>
+													</div>
+												</div>
 											</td>
-											<td><a class="btn btn-sm btn-outline-secondary" href="/invoice?bill_id=<?php echo (int)$bill['id']; ?>">Download</a></td>
-											<td>
-												<?php if (in_array($bill['status'], ['pending','overdue'], true)): ?>
-													<button type="button" class="btn btn-sm btn-primary js-pay-bill-btn" data-bill-id="<?php echo (int)$bill['id']; ?>" data-bill-amount="<?php echo htmlspecialchars($bill['amount']); ?>">
-														Pay
-													</button>
-												<?php else: ?>
-													<span class="text-muted small">-</span>
-												<?php endif; ?>
+											<td class="col-actions">
+												<div class="bills-actions-stack">
+													<a class="btn btn-sm btn-outline-secondary" href="/invoice?bill_id=<?php echo (int)$bill['id']; ?>">Invoice</a>
+													<?php if (in_array($bill['status'], ['pending','overdue'], true)): ?>
+														<button type="button" class="btn btn-sm btn-primary js-pay-bill-btn" data-bill-id="<?php echo (int)$bill['id']; ?>" data-bill-amount="<?php echo htmlspecialchars($bill['amount']); ?>">
+															Pay Now
+														</button>
+													<?php else: ?>
+														<span class="bills-actions-state">Settled</span>
+													<?php endif; ?>
+												</div>
 											</td>
 										</tr>
 									<?php endforeach; ?>

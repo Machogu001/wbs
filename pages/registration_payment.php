@@ -8,6 +8,7 @@ if(!isset($_SESSION['user_id'])) {
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/BillingSettings.php';
 require_once __DIR__ . '/../includes/Payment.php';
+require_once __DIR__ . '/../includes/User.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -19,7 +20,25 @@ $currency = isset($settings['currency_code']) && $settings['currency_code'] !== 
 $registrationFee = isset($settings['registration_fee']) ? (float)$settings['registration_fee'] : 0.00;
 
 $paymentModel = new Payment($db);
+$userModel = new User($db);
+$currentUser = $userModel->getById((int)$_SESSION['user_id']);
 $pendingPayment = $paymentModel->getLatestPendingRegistrationByUserId($_SESSION['user_id']);
+$latestRegistrationPayment = $paymentModel->getLatestRegistrationByUserId($_SESSION['user_id']);
+$registrationBalance = $registrationFee;
+$registrationBillStatus = null;
+$registrationFullySettled = false;
+
+if ($latestRegistrationPayment && !empty($latestRegistrationPayment['bill_id'])) {
+    $registrationBalance = $paymentModel->getBillOutstandingAmount((int)$latestRegistrationPayment['bill_id']);
+    $stmtBill = $db->prepare('SELECT status FROM bills WHERE id = :id LIMIT 1');
+    $stmtBill->execute([':id' => (int)$latestRegistrationPayment['bill_id']]);
+    $registrationBillStatus = $stmtBill->fetchColumn() ?: null;
+}
+
+if ($registrationBalance <= 0.01 && (($currentUser['status'] ?? '') === 'active' || $registrationBillStatus === 'paid')) {
+	$registrationBalance = 0.0;
+	$registrationFullySettled = true;
+}
 
 $page_title = "Complete Registration Payment";
 $hide_nav = true;
@@ -36,18 +55,37 @@ require_once __DIR__ . '/../templates/header.php';
                 <div class="card-body">
                     <div id="regPayMessage" class="alert d-none"></div>
 
-                    <?php if ($pendingPayment): ?>
+                    <?php if ($registrationFullySettled): ?>
+                        <p class="mb-3">
+                            Your registration fee is fully paid and your account is ready to use.
+                        </p>
+                        <ul class="list-group mb-3">
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                Registration Balance
+                                <span><strong><?php echo htmlspecialchars($currency); ?> 0.00</strong></span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                Status
+                                <span class="badge bg-success">Paid</span>
+                            </li>
+                        </ul>
+                        <p class="mb-3">
+                            No further registration payment is required. Use the button below to continue to your home page.
+                        </p>
+                    <?php elseif ($pendingPayment || $registrationBalance > 0.01): ?>
                         <p class="mb-3">
                             Your account has been created but is not yet active. To finish your registration, please complete the one-time registration fee payment below.
                         </p>
                         <ul class="list-group mb-3">
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 Amount Due
-                                <span><strong><?php echo htmlspecialchars($currency); ?> <?php echo number_format($pendingPayment['amount'], 2); ?></strong></span>
+                                <span><strong><?php echo htmlspecialchars($currency); ?> <?php echo number_format(max(0, $registrationBalance), 2); ?></strong></span>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center">
                                 Status
-                                <span class="badge bg-warning text-dark">Pending</span>
+                                <span class="badge bg-<?php echo $registrationBillStatus === 'overdue' ? 'danger' : 'warning'; ?> text-<?php echo $registrationBillStatus === 'overdue' ? 'white' : 'dark'; ?>">
+                                    <?php echo htmlspecialchars(ucfirst((string)($registrationBillStatus ?: 'pending'))); ?>
+                                </span>
                             </li>
                         </ul>
                         <p class="mb-3">
@@ -73,9 +111,15 @@ require_once __DIR__ . '/../templates/header.php';
                         </p>
                     <?php endif; ?>
                     <div class="d-grid gap-2">
-                        <button id="btnResendRegPayment" class="btn btn-primary btn-lg">
-                            <i class="bi bi-phone"></i> Pay Registration Fee
-                        </button>
+                        <?php if ($registrationFullySettled): ?>
+                            <a href="/dashboard" class="btn btn-success btn-lg">
+                                <i class="bi bi-house-door"></i> Go to Home Page
+                            </a>
+                        <?php else: ?>
+                            <button id="btnResendRegPayment" class="btn btn-primary btn-lg">
+                                <i class="bi bi-phone"></i> Pay Registration Fee
+                            </button>
+                        <?php endif; ?>
                         <a href="/logout" class="btn btn-link">Logout</a>
                     </div>
                 </div>

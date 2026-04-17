@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/Accounting.php';
 require_once __DIR__ . '/BillingSettings.php';
+require_once __DIR__ . '/CustomerCredit.php';
 
 class Bill {
 	private $conn;
@@ -286,6 +287,29 @@ class Bill {
 		$credit->restoreCredit($bill['user_id'], $bill['amount']);
 
 		return true;
+	}
+
+	public function isRegistrationFeeBill(array $billRow): bool {
+		$billId = isset($billRow['id']) ? (int)$billRow['id'] : 0;
+		if ($billId > 0) {
+			$lineItems = $this->getBillLineItems($billId);
+			foreach ($lineItems as $lineItem) {
+				if (($lineItem['line_type'] ?? '') === 'registration_fee') {
+					return true;
+				}
+			}
+		}
+
+		$consumption = isset($billRow['consumption']) ? (float)$billRow['consumption'] : 0.0;
+		$ratePerUnit = isset($billRow['rate_per_unit']) ? (float)$billRow['rate_per_unit'] : 0.0;
+		$baseAmount = isset($billRow['base_amount']) ? (float)$billRow['base_amount'] : 0.0;
+		$serviceCharge = isset($billRow['service_charge']) ? (float)$billRow['service_charge'] : 0.0;
+
+		return $consumption == 0.0 && $ratePerUnit == 0.0 && $serviceCharge > 0.0 && $baseAmount == 0.0;
+	}
+
+	public function getBillTypeLabel(array $billRow): string {
+		return $this->isRegistrationFeeBill($billRow) ? 'Registration Fee' : 'Water Bill';
 	}
 
 	public function getUsersBillingSummary() {

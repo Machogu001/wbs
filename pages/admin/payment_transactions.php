@@ -98,9 +98,22 @@ $is_admin_page = true;
 include __DIR__ . '/../../templates/header.php';
 ?>
 <div class="container-fluid mt-4 admin-shell">
-    <div class="admin-page-header mb-4">
-        <h2 class="mb-1">Payment Transactions</h2>
-        <p class="admin-page-subtitle">Review payment statuses, receipts, and request finance approvals where needed.</p>
+    <div class="pb-banner pb-banner--cobalt mb-4">
+        <div class="pb-bg" aria-hidden="true">
+            <div class="pb-grid"></div>
+            <div class="pb-blob pb-blob--a"></div>
+            <div class="pb-blob pb-blob--b"></div>
+            <i class="bi bi-credit-card-2-front-fill pb-watermark"></i>
+        </div>
+        <div class="pb-inner">
+            <div class="pb-left">
+                <div class="pb-eyebrow-row">
+                    <span class="pb-eyebrow-chip"><i class="bi bi-credit-card-2-front-fill"></i> Finance Records</span>
+                </div>
+                <h2 class="pb-title">Payment Transactions</h2>
+                <p class="pb-subtitle">Review payment statuses, receipts, and request finance approvals where needed.</p>
+            </div>
+        </div>
     </div>
 
     <div class="row g-3 mb-4">

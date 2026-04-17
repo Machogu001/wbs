@@ -82,12 +82,14 @@ $filename = 'statement_' . ($user['account_number'] ?? 'account') . $periodToken
 
 $rows = '';
 if (empty($bills)) {
-	$rows = '<tr><td colspan="6" style="text-align:center;">No bills found.</td></tr>';
+    $rows = '<tr><td colspan="7" style="text-align:center;">No bills found.</td></tr>';
 } else {
     foreach ($bills as $bill) {
 		$baseAmount = isset($bill['base_amount']) ? (float)$bill['base_amount'] : (float)$bill['amount'];
 		$taxAmount = isset($bill['tax_amount']) ? (float)$bill['tax_amount'] : 0.0;
+        $billTypeLabel = $billService->getBillTypeLabel($bill);
         $rows .= '<tr>'
+            . '<td>' . htmlspecialchars($billTypeLabel) . '</td>'
             . '<td>' . htmlspecialchars(date('M Y', strtotime($bill['billing_month']))) . '</td>'
             . '<td class="text-right">' . number_format($baseAmount, 2) . '</td>'
             . '<td class="text-right">' . number_format($taxAmount, 2) . '</td>'
@@ -191,6 +193,7 @@ $html = '<!DOCTYPE html>
                 <table>
                     <thead>
                         <tr>
+							<th style="color:#0f766e; border-bottom-color:#0f766e;">Type</th>
                             <th style="color:#e11d48; border-bottom-color:#e11d48;">Billing Month</th>
                             <th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Base (' . htmlspecialchars($currency) . ')</th>
                             <th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Tax (' . htmlspecialchars($currency) . ')</th>
@@ -224,7 +227,7 @@ $html = '<!DOCTYPE html>
                 </table>
             </div>
 
-            <div class="footer-note">This statement shows your water billing history for this account.</div>
+            <div class="footer-note">This statement shows your billing history for this account, including any registration fee invoices within the selected period.</div>
             </div><!-- /body-pad -->
         </div>
     </div>

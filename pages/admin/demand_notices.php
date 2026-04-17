@@ -79,16 +79,31 @@ $is_admin_page = true;
 include __DIR__ . '/../../templates/header.php';
 ?>
 <div class="container-fluid mt-4 admin-shell">
-    <div class="admin-page-header mb-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div>
-            <h2 class="mb-1">Demand Notices</h2>
-            <p class="admin-page-subtitle">Generate and track overdue customer demand notices.</p>
+    <div class="pb-banner pb-banner--rose mb-4">
+        <div class="pb-bg" aria-hidden="true">
+            <div class="pb-grid"></div>
+            <div class="pb-blob pb-blob--a"></div>
+            <div class="pb-blob pb-blob--b"></div>
+            <i class="bi bi-exclamation-triangle-fill pb-watermark"></i>
         </div>
-        <form method="post">
-            <input type="hidden" name="action" value="generate">
-            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['demand_notices_csrf']); ?>">
-            <button type="submit" class="btn btn-primary" data-confirm-message="Generate demand notices for all currently overdue bills?">Generate Overdue Notices</button>
-        </form>
+        <div class="pb-inner">
+            <div class="pb-left">
+                <div class="pb-eyebrow-row">
+                    <span class="pb-eyebrow-chip"><i class="bi bi-exclamation-triangle-fill"></i> Collections</span>
+                </div>
+                <h2 class="pb-title">Demand Notices</h2>
+                <p class="pb-subtitle">Generate and track overdue customer demand notices.</p>
+            </div>
+            <div class="pb-right">
+                <div class="pb-btn-row">
+                    <form method="post">
+                        <input type="hidden" name="action" value="generate">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['demand_notices_csrf']); ?>">
+                        <button type="submit" class="pb-btn pb-btn--accent" data-confirm-message="Generate demand notices for all currently overdue bills?"><i class="bi bi-megaphone-fill"></i> Generate Overdue Notices</button>
+                    </form>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="row g-3 mb-4">

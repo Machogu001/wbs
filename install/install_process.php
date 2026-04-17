@@ -245,7 +245,7 @@ try {
     // Payments table
     $conn->exec("CREATE TABLE IF NOT EXISTS payments (
         id INT PRIMARY KEY AUTO_INCREMENT,
-        bill_id INT NOT NULL,
+        bill_id INT NULL,
         user_id INT NOT NULL,
         registration_id INT NULL,
         mpesa_receipt VARCHAR(50),
@@ -547,27 +547,57 @@ try {
         INDEX idx_user_status (user_id, status),
         INDEX idx_generated_at (generated_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-    // Finance approval items table
-    $conn->exec("CREATE TABLE IF NOT EXISTS financial_approval_items (
+    // Payment adjustments table (refunds and chargebacks against completed payments)
+    $conn->exec("CREATE TABLE IF NOT EXISTS payment_adjustments (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        entity_type VARCHAR(50) NOT NULL,
-        entity_id INT NOT NULL,
-        reference_no VARCHAR(50) NULL,
-        title VARCHAR(191) NOT NULL,
-        amount DECIMAL(10,2) DEFAULT 0.00,
+        payment_id INT NOT NULL,
+        bill_id INT NULL,
+        user_id INT NULL,
+        adjustment_type ENUM('refund','chargeback') NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        reason TEXT NULL,
+        status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
         submitted_by INT NULL,
-        current_approver_role VARCHAR(50) DEFAULT 'finance',
-        status ENUM('pending','approved','rejected') DEFAULT 'pending',
-        metadata_json LONGTEXT NULL,
-        comments TEXT NULL,
         approved_by INT NULL,
+        approval_item_id INT NULL,
         approved_at TIMESTAMP NULL,
-        rejected_at TIMESTAMP NULL,
+        processed_at TIMESTAMP NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY unique_entity (entity_type, entity_id),
-        INDEX idx_status_role (status, current_approver_role),
-        INDEX idx_created_at (created_at)
+        updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_payment_status (payment_id, status),
+        INDEX idx_user_created (user_id, created_at),
+        INDEX idx_type_status (adjustment_type, status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Blog posts table
+    $conn->exec("CREATE TABLE IF NOT EXISTS blog_posts (
+        id            INT AUTO_INCREMENT PRIMARY KEY,
+        title         VARCHAR(255) NOT NULL,
+        slug          VARCHAR(255) NOT NULL,
+        body          LONGTEXT NOT NULL,
+        excerpt       TEXT NULL,
+        cover_image   VARCHAR(512) NULL,
+        status        ENUM('draft','published') NOT NULL DEFAULT 'draft',
+        author_id     INT NOT NULL,
+        created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at    TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+        published_at  TIMESTAMP NULL,
+        UNIQUE KEY uq_slug (slug),
+        INDEX idx_status_pub (status, published_at),
+        INDEX idx_author (author_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Blog comments table
+    $conn->exec("CREATE TABLE IF NOT EXISTS blog_comments (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        post_id     INT NOT NULL,
+        user_id     INT NULL,
+        guest_name  VARCHAR(120) NULL,
+        body        TEXT NOT NULL,
+        status      ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_post_status (post_id, status),
+        INDEX idx_user (user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     // Integration health checks table

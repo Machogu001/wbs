@@ -786,10 +786,14 @@ function initializeDashboardCharts(data) {
     var labels = Array.isArray(data.labels) ? data.labels.slice() : [];
     var bills = Array.isArray(data.bills) ? data.bills.slice() : [];
     var payments = Array.isArray(data.payments) ? data.payments.slice() : [];
+    var registrationBills = Array.isArray(data.registrationBills) ? data.registrationBills.slice() : [];
+    var registrationPayments = Array.isArray(data.registrationPayments) ? data.registrationPayments.slice() : [];
     var usage = Array.isArray(data.usage) ? data.usage.slice() : [];
 
     var ctxTrend = document.getElementById('billingTrendsChart');
+    var ctxRegistrationTrend = document.getElementById('registrationTrendsChart');
     var ctxStatus = document.getElementById('statusPieChart');
+    var ctxRegistrationStatus = document.getElementById('registrationStatusPieChart');
     var ctxUsage = document.getElementById('usageChart');
     var ctxCollection = document.getElementById('collectionRateChart');
 
@@ -813,7 +817,9 @@ function initializeDashboardCharts(data) {
         return {
             labels: labels.slice(-r),
             bills: bills.slice(-r),
-            payments: payments.slice(-r)
+            payments: payments.slice(-r),
+            registrationBills: registrationBills.slice(-r),
+            registrationPayments: registrationPayments.slice(-r)
         };
     }
 
@@ -907,6 +913,76 @@ function initializeDashboardCharts(data) {
         }
     });
 
+    var registrationTrendChart = null;
+
+    if (ctxRegistrationTrend && initial.labels.length && (initial.registrationBills.some(function(v){ return Number(v) > 0; }) || initial.registrationPayments.some(function(v){ return Number(v) > 0; }))) {
+        registrationTrendChart = new Chart(ctxRegistrationTrend, {
+            type: 'line',
+            data: {
+                labels: initial.labels,
+                datasets: [
+                    {
+                        label: 'Registration Billed (Ksh)',
+                        data: initial.registrationBills,
+                        borderColor: 'rgba(8, 145, 178, 0.95)',
+                        backgroundColor: 'rgba(8, 145, 178, 0.14)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointBackgroundColor: 'rgba(8, 145, 178, 1)'
+                    },
+                    {
+                        label: 'Registration Collected (Ksh)',
+                        data: initial.registrationPayments,
+                        borderColor: 'rgba(15, 118, 110, 0.95)',
+                        backgroundColor: 'rgba(15, 118, 110, 0.14)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointBackgroundColor: 'rgba(15, 118, 110, 1)'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                var label = context.dataset.label || '';
+                                var value = context.parsed.y || 0;
+                                return label + ': Ksh ' + Number(value).toLocaleString('en-KE', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2
+                                });
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'Ksh ' + Number(value).toLocaleString('en-KE', {
+                                    maximumFractionDigits: 0
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     var collectionChart = null;
 
     if (ctxCollection && initial.labels.length && initialRates.some(function(v){ return v !== null && !isNaN(v); })) {
@@ -969,6 +1045,13 @@ function initializeDashboardCharts(data) {
             trendChart.data.datasets[1].data = sliced.payments;
             trendChart.update();
 
+            if (registrationTrendChart) {
+                registrationTrendChart.data.labels = sliced.labels;
+                registrationTrendChart.data.datasets[0].data = sliced.registrationBills;
+                registrationTrendChart.data.datasets[1].data = sliced.registrationPayments;
+                registrationTrendChart.update();
+            }
+
             if (collectionChart) {
                 var newRates = computeCollectionRates(sliced.bills, sliced.payments);
                 collectionChart.data.labels = sliced.labels;
@@ -985,13 +1068,15 @@ function initializeDashboardCharts(data) {
             var rangeValue = rangeSelect ? rangeSelect.value : 'all';
             var sliced = sliceRange(rangeValue);
             var rows = [];
-            rows.push(['Month', 'Bills (Ksh)', 'Payments (Ksh)', 'Usage (units)']);
+            rows.push(['Month', 'Bills (Ksh)', 'Payments (Ksh)', 'Registration Billed (Ksh)', 'Registration Collected (Ksh)', 'Usage (units)']);
 
             var startIndex = labels.length - sliced.labels.length;
             for (var i = 0; i < sliced.labels.length; i++) {
                 var label = sliced.labels[i];
                 var billVal = sliced.bills[i] != null ? Number(sliced.bills[i]) : 0;
                 var payVal = sliced.payments[i] != null ? Number(sliced.payments[i]) : 0;
+                var registrationBillVal = sliced.registrationBills[i] != null ? Number(sliced.registrationBills[i]) : 0;
+                var registrationPaymentVal = sliced.registrationPayments[i] != null ? Number(sliced.registrationPayments[i]) : 0;
                 var usageVal = 0;
                 if (usage && usage.length && (startIndex + i) >= 0 && (startIndex + i) < usage.length) {
                     usageVal = Number(usage[startIndex + i]) || 0;
@@ -1000,6 +1085,8 @@ function initializeDashboardCharts(data) {
                     label,
                     billVal.toFixed(2),
                     payVal.toFixed(2),
+                    registrationBillVal.toFixed(2),
+                    registrationPaymentVal.toFixed(2),
                     usageVal.toFixed(2)
                 ]);
             }
@@ -1047,6 +1134,46 @@ function initializeDashboardCharts(data) {
                     plugins: {
                         legend: {
                             position: 'bottom'
+                        }
+                    },
+                    cutout: '60%'
+                }
+            });
+        }
+    }
+
+    if (ctxRegistrationStatus) {
+        var registrationCollected = data.totals && data.totals.registration_collected ? Number(data.totals.registration_collected) : 0;
+        var registrationOutstanding = data.totals && data.totals.registration_outstanding ? Number(data.totals.registration_outstanding) : 0;
+        var registrationTotal = registrationCollected + registrationOutstanding;
+
+        if (registrationTotal > 0) {
+            new Chart(ctxRegistrationStatus, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Collected', 'Outstanding'],
+                    datasets: [{
+                        data: [registrationCollected, registrationOutstanding],
+                        backgroundColor: ['#0f766e', '#0891b2'],
+                        hoverBackgroundColor: ['#115e59', '#0e7490']
+                    }]
+                },
+                options: {
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    var label = context.label || '';
+                                    var value = context.parsed || 0;
+                                    return label + ': Ksh ' + Number(value).toLocaleString('en-KE', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                    });
+                                }
+                            }
                         }
                     },
                     cutout: '60%'

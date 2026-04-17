@@ -95,6 +95,15 @@ if (!isset($appName) || $appName === '') {
         $navCustomerPaths = ['/bills','/pay','/complaints'];
         $navServicesActive = in_array($currentPath, array_merge($navAdminPaths, $navCustomerPaths));
             $navProfileActive  = in_array($currentPath, ['/profile', '/receipts', '/settings']);
+        // Show News & Updates link only when at least one post is published
+        $navHasPublishedNews = false;
+        try {
+            if (isset($db) || class_exists('Database')) {
+                $_navDb = isset($db) ? $db : (new Database())->getConnection();
+                $_navStmt = $_navDb->query("SELECT 1 FROM blog_posts WHERE status='published' LIMIT 1");
+                $navHasPublishedNews = $_navStmt && $_navStmt->fetch() !== false;
+            }
+        } catch (\Throwable $_navEx) { /* table may not exist yet on fresh install */ }
     ?>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
         <div class="container">
@@ -133,11 +142,14 @@ if (!isset($appName) || $appName === '') {
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/invoicing' ? ' active' : ''; ?>" href="/invoicing"><i class="bi bi-file-earmark-text"></i> Invoicing</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/reports' ? ' active' : ''; ?>" href="/reports"><i class="bi bi-graph-up-arrow"></i> Reports</a></li>
+                                <li><a class="dropdown-item<?php echo $currentPath === '/reports' ? ' active' : ''; ?>" href="/reports#billingIntegrityTools"><i class="bi bi-shield-check"></i> Integrity Tools</a></li>
                                 <li><a class="dropdown-item<?php echo in_array($currentPath, ['/accounting','/admin/accounting']) ? ' active' : ''; ?>" href="/accounting"><i class="bi bi-journal-text"></i> Accounting</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/payment-transactions' ? ' active' : ''; ?>" href="/admin/payment-transactions"><i class="bi bi-wallet2"></i> Transactions</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/demand-notices' ? ' active' : ''; ?>" href="/admin/demand-notices"><i class="bi bi-file-earmark-exclamation"></i> Demand Notices</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/approvals' ? ' active' : ''; ?>" href="/admin/approvals"><i class="bi bi-check2-square"></i> Approvals</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item<?php echo str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/blog') ? ' active' : ''; ?>" href="/admin/blog"><i class="bi bi-newspaper"></i> News &amp; Updates</a></li>
                             </ul>
                         </li>
                         <?php endif; ?>
@@ -145,7 +157,7 @@ if (!isset($appName) || $appName === '') {
                         <!-- Admin/Staff: Monitoring dropdown -->
                         <?php if ($navIsStaff): ?>
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/integration-health','/admin/messaging','/admin/support-inquiries','/activity_log','/system-logs','/chat','/internal-chat']) ? ' active' : ''; ?>"
+                            <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/integration-health','/admin/messaging','/admin/support-inquiries','/activity_log','/system-logs','/chat','/internal-chat']) || (!$navIsAdmin && (str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/blog'))) ? ' active' : ''; ?>"
                                href="#" id="navbarMonitoring" role="button"
                                <?php if (!empty($is_admin_page)): ?>
                                    onclick="(function(el){var m=el.nextElementSibling;if(!m)return;var shown=m.classList.contains('show');var open=document.querySelectorAll('.dropdown-menu.show');open.forEach(function(mm){mm.classList.remove('show');});if(!shown){m.classList.add('show');}})(this); return false;"
@@ -168,10 +180,22 @@ if (!isset($appName) || $appName === '') {
                                     <li><a class="dropdown-item<?php echo $currentPath === '/chat' ? ' active' : ''; ?>" href="/chat"><i class="bi bi-headset"></i> Support Chat</a></li>
                                 <?php endif; ?>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/internal-chat' ? ' active' : ''; ?>" href="/internal-chat"><i class="bi bi-people-fill"></i> Internal Chat</a></li>
+                                <?php if (!$navIsAdmin): ?>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item<?php echo str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/blog') ? ' active' : ''; ?>" href="/admin/blog"><i class="bi bi-newspaper"></i> News &amp; Updates</a></li>
+                                <?php endif; ?>
                             </ul>
                         </li>
                         <?php endif; ?>
 
+                        <!-- My Account dropdown (all logged-in users) -->
+                        <?php if (!$navIsStaff && $navHasPublishedNews): ?>
+                        <li class="nav-item">
+                            <a class="nav-link<?php echo str_starts_with($currentPath, '/blog') ? ' active' : ''; ?>" href="/blog">
+                                <i class="bi bi-newspaper"></i> News &amp; Updates
+                            </a>
+                        </li>
+                        <?php endif; ?>
                         <!-- My Account dropdown (all logged-in users) -->
                         <li class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/bills','/pay','/complaints']) ? ' active' : ''; ?>"
@@ -231,6 +255,13 @@ if (!isset($appName) || $appName === '') {
                         </li>
 
                     <?php else: ?>
+                        <?php if ($navHasPublishedNews): ?>
+                        <li class="nav-item">
+                            <a class="nav-link<?php echo str_starts_with($currentPath, '/blog') ? ' active' : ''; ?>" href="/blog">
+                                <i class="bi bi-newspaper"></i> News &amp; Updates
+                            </a>
+                        </li>
+                        <?php endif; ?>
                         <li class="nav-item">
                             <a class="nav-link" href="/register" data-bs-toggle="modal" data-bs-target="#registerModal">
                                 <i class="bi bi-person-plus"></i> Register

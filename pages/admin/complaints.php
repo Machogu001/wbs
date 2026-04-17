@@ -107,10 +107,21 @@ if ($db) {
     <div class="container mt-4">
         <div class="row">
             <div class="col-md-12">
-                <div class="admin-page-header d-flex justify-content-between align-items-center">
-                    <div>
-                        <h2 class="mb-1">Complaints</h2>
-                        <p class="text-muted mb-0">Manage user complaints.</p>
+                <div class="pb-banner pb-banner--rose mb-4">
+                    <div class="pb-bg" aria-hidden="true">
+                        <div class="pb-grid"></div>
+                        <div class="pb-blob pb-blob--a"></div>
+                        <div class="pb-blob pb-blob--b"></div>
+                        <i class="bi bi-chat-left-text-fill pb-watermark"></i>
+                    </div>
+                    <div class="pb-inner">
+                        <div class="pb-left">
+                            <div class="pb-eyebrow-row">
+                                <span class="pb-eyebrow-chip"><i class="bi bi-chat-left-text-fill"></i> Customer Relations</span>
+                            </div>
+                            <h2 class="pb-title">Complaints</h2>
+                            <p class="pb-subtitle">Manage user complaints and track resolution status.</p>
+                        </div>
                     </div>
                 </div>
             </div>

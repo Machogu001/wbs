@@ -29,8 +29,23 @@ require_once __DIR__ . '/../../templates/header.php';
 <div class="container py-4 support-chat-page">
     <div class="row">
         <div class="col-12 mb-3">
-            <h1 class="h4 mb-0"><i class="bi bi-headset"></i> Support Chat</h1>
-            <p class="text-muted mb-0" style="font-size:0.9rem;">Chat live with customers and see messages as they arrive.</p>
+            <div class="pb-banner pb-banner--violet">
+                <div class="pb-bg" aria-hidden="true">
+                    <div class="pb-grid"></div>
+                    <div class="pb-blob pb-blob--a"></div>
+                    <div class="pb-blob pb-blob--b"></div>
+                    <i class="bi bi-headset pb-watermark"></i>
+                </div>
+                <div class="pb-inner">
+                    <div class="pb-left">
+                        <div class="pb-eyebrow-row">
+                            <span class="pb-eyebrow-chip"><i class="bi bi-headset"></i> Customer Support</span>
+                        </div>
+                        <h2 class="pb-title">Support Chat</h2>
+                        <p class="pb-subtitle">Chat live with customers and see messages as they arrive.</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

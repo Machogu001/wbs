@@ -231,15 +231,26 @@ require_once __DIR__ . '/../../templates/header.php';
 <div class="container mt-4">
     <div class="row">
         <div class="col-md-12">
-            <div class="admin-page-header d-flex justify-content-between align-items-center">
-                <div>
-                    <h2 class="mb-1">Office Staff Users</h2>
-                    <p class="text-muted mb-0">Manage office staff accounts separately from customer accounts.</p>
+            <div class="pb-banner pb-banner--violet mb-4">
+                <div class="pb-bg" aria-hidden="true">
+                    <div class="pb-grid"></div>
+                    <div class="pb-blob pb-blob--a"></div>
+                    <div class="pb-blob pb-blob--b"></div>
+                    <i class="bi bi-person-badge-fill pb-watermark"></i>
                 </div>
-                <div>
-                    <a href="/admin/users" class="btn btn-outline-primary btn-sm">
-                        <i class="bi bi-people"></i> Customers Page
-                    </a>
+                <div class="pb-inner">
+                    <div class="pb-left">
+                        <div class="pb-eyebrow-row">
+                            <span class="pb-eyebrow-chip"><i class="bi bi-person-badge-fill"></i> Office &amp; Staff</span>
+                        </div>
+                        <h2 class="pb-title">Office Staff Users</h2>
+                        <p class="pb-subtitle">Manage office staff accounts separately from customer accounts.</p>
+                    </div>
+                    <div class="pb-right">
+                        <div class="pb-btn-row">
+                            <a href="/admin/users" class="pb-btn"><i class="bi bi-people"></i> Customers Page</a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

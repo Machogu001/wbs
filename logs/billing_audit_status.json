@@ -1,0 +1,57 @@
+{
+    "generated_at": "2026-04-16T07:20:31+00:00",
+    "status": "pass",
+    "failures": 0,
+    "warnings": 0,
+    "checks": [
+        {
+            "status": "PASS",
+            "label": "Duplicate posted journal references",
+            "detail": "No duplicate posted references found.",
+            "count": 0
+        },
+        {
+            "status": "PASS",
+            "label": "Completed payments without payment journals",
+            "detail": "All completed payments are journaled.",
+            "count": 0
+        },
+        {
+            "status": "PASS",
+            "label": "Bills without bill journals",
+            "detail": "All bills have bill journal entries.",
+            "count": 0
+        },
+        {
+            "status": "PASS",
+            "label": "Paid bills without completed payments",
+            "detail": "Every paid bill has at least one completed payment record.",
+            "count": 0
+        },
+        {
+            "status": "PASS",
+            "label": "Approved payment adjustments without journals",
+            "detail": "All approved payment adjustments are journaled.",
+            "count": 0
+        },
+        {
+            "status": "PASS",
+            "label": "Approved adjustments exceeding source payment",
+            "detail": "No payment is over-adjusted.",
+            "count": 0
+        },
+        {
+            "status": "PASS",
+            "label": "Approved reads not yet billed",
+            "detail": "No approved meter readings are waiting for billing.",
+            "count": 0
+        },
+        {
+            "status": "PASS",
+            "label": "Current-month reconciliation deltas",
+            "detail": "Billing and payment deltas are zero for the current month.",
+            "count": 0
+        }
+    ],
+    "summary_line": "Summary: 0 failure(s), 0 warning(s)."
+}

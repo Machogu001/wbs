@@ -10,6 +10,25 @@ require_once __DIR__ . '/../../includes/FinanceApproval.php';
 require_once __DIR__ . '/../../includes/InstallmentPlan.php';
 use Dompdf\Dompdf;
 
+function runReportsMaintenanceCommand(string $scriptPath, array $args = []): array {
+	$phpBinary = defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php';
+	$commandParts = [escapeshellarg($phpBinary), escapeshellarg($scriptPath)];
+	foreach ($args as $arg) {
+		$commandParts[] = escapeshellarg($arg);
+	}
+	$command = implode(' ', $commandParts) . ' 2>&1';
+	$output = [];
+	$exitCode = 1;
+	exec($command, $output, $exitCode);
+
+	return [
+		'command' => $command,
+		'output' => $output,
+		'exit_code' => $exitCode,
+		'succeeded' => $exitCode === 0,
+	];
+}
+
 $database = new Database();
 $db = $database->getConnection();
 $auth = new Auth($db);
@@ -75,10 +94,44 @@ $to_display = date('d-m-Y', strtotime($to_str));
 $baseQuery = $_GET;
 unset($baseQuery['payments_page'], $baseQuery['bills_page'], $baseQuery['allocations_page'], $baseQuery['adjustments_page'], $baseQuery['export']);
 
+$registrationBillPredicateSql = "(EXISTS (SELECT 1 FROM bill_line_items bli_reg WHERE bli_reg.bill_id = b.id AND bli_reg.line_type = 'registration_fee') OR (b.consumption = 0 AND b.rate_per_unit = 0 AND b.base_amount = 0 AND b.service_charge > 0))";
+$monthlyBillPredicateSql = 'NOT ' . $registrationBillPredicateSql;
+$registrationPaymentPredicateSql = "(p.registration_id IS NOT NULL OR EXISTS (SELECT 1 FROM bill_line_items bli_reg WHERE bli_reg.bill_id = p.bill_id AND bli_reg.line_type = 'registration_fee') OR EXISTS (SELECT 1 FROM bills b_reg WHERE b_reg.id = p.bill_id AND b_reg.consumption = 0 AND b_reg.rate_per_unit = 0 AND b_reg.base_amount = 0 AND b_reg.service_charge > 0))";
+$monthlyPaymentPredicateSql = 'NOT ' . $registrationPaymentPredicateSql;
+$billTypeCaseSql = "CASE WHEN {$registrationBillPredicateSql} THEN 'registration' ELSE 'monthly' END";
+$paymentTypeCaseSql = "CASE WHEN {$registrationPaymentPredicateSql} THEN 'registration' ELSE 'monthly' END";
+
 // Load settings for display (currency, company name)
 $settingsService = new BillingSettings($db);
 $settings = $settingsService->getSettings();
 $currency = isset($settings['currency_code']) && $settings['currency_code'] ? $settings['currency_code'] : 'KES';
+$maintenanceResult = null;
+$auditStatus = null;
+
+$auditStatusFile = __DIR__ . '/../../logs/billing_audit_status.json';
+if (is_file($auditStatusFile) && is_readable($auditStatusFile)) {
+	$decodedAuditStatus = json_decode((string)file_get_contents($auditStatusFile), true);
+	if (is_array($decodedAuditStatus)) {
+		$auditStatus = $decodedAuditStatus;
+	}
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+	$maintenanceAction = isset($_POST['maintenance_action']) ? trim((string)$_POST['maintenance_action']) : '';
+	$scriptBase = realpath(__DIR__ . '/../../scripts');
+	if ($scriptBase !== false) {
+		if ($maintenanceAction === 'run_audit') {
+			$maintenanceResult = runReportsMaintenanceCommand($scriptBase . '/billing_integrity_audit.php');
+			$maintenanceResult['title'] = 'Billing Integrity Audit';
+		} elseif ($maintenanceAction === 'preview_repair') {
+			$maintenanceResult = runReportsMaintenanceCommand($scriptBase . '/repair_billing_journals.php');
+			$maintenanceResult['title'] = 'Billing Repair Preview';
+		} elseif ($maintenanceAction === 'apply_repair') {
+			$maintenanceResult = runReportsMaintenanceCommand($scriptBase . '/repair_billing_journals.php', ['--apply']);
+			$maintenanceResult['title'] = 'Billing Repair Apply';
+		}
+	}
+}
 
 // Handle CSV/PDF exports for payments, bills, or usage before rendering HTML
 if (isset($_GET['export'])) {
@@ -89,7 +142,7 @@ if (isset($_GET['export'])) {
 		if ($search_term !== '') {
 			$sqlWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search OR p.mpesa_receipt LIKE :search)";
 		}
-		$sql = "SELECT COALESCE(p.transaction_date, p.created_at) AS tx_date, u.account_number, u.full_name, p.amount, p.mpesa_receipt, p.status
+		$sql = "SELECT COALESCE(p.transaction_date, p.created_at) AS tx_date, u.account_number, u.full_name, p.amount, p.mpesa_receipt, p.status, {$paymentTypeCaseSql} AS payment_type
 			FROM payments p
 			LEFT JOIN bills b ON p.bill_id = b.id
 			LEFT JOIN users u ON b.user_id = u.id
@@ -108,10 +161,11 @@ if (isset($_GET['export'])) {
 			$filename = 'payments_report_' . $from_str . '_to_' . $to_str . '.csv';
 			header('Content-Disposition: attachment; filename="' . $filename . '"');
 			$out = fopen('php://output', 'w');
-			fputcsv($out, ['Date', 'Account', 'Customer', 'Amount (' . $currency . ')', 'MPESA Ref', 'Status']);
+			fputcsv($out, ['Date', 'Type', 'Account', 'Customer', 'Amount (' . $currency . ')', 'MPESA Ref', 'Status']);
 			while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
 				fputcsv($out, [
 					$row['tx_date'],
+					ucfirst((string)$row['payment_type']),
 					$row['account_number'],
 					$row['full_name'],
 					$row['amount'],
@@ -130,6 +184,7 @@ if (isset($_GET['export'])) {
 				$totalAmount += (float)$row['amount'];
 				$rowsHtml .= '<tr>'
 					. '<td>' . htmlspecialchars($row['tx_date']) . '</td>'
+					. '<td>' . htmlspecialchars(ucfirst((string)$row['payment_type'])) . '</td>'
 					. '<td>' . htmlspecialchars($row['account_number']) . '</td>'
 					. '<td>' . htmlspecialchars($row['full_name']) . '</td>'
 					. '<td style="text-align:right;">' . number_format((float)$row['amount'], 2) . '</td>'
@@ -144,7 +199,7 @@ if (isset($_GET['export'])) {
 				'<p>Period: ' . htmlspecialchars($from_str) . ' to ' . htmlspecialchars($to_str) . '</p>' .
 				'<p>Grand Total (' . htmlspecialchars($currency) . '): <strong>' . number_format($totalAmount, 2) . '</strong></p>' .
 				'<table><thead><tr>' .
-				'<th>Date</th><th>Account</th><th>Customer</th><th>Amount (' . htmlspecialchars($currency) . ')</th><th>MPESA Ref</th><th>Status</th>' .
+				'<th>Date</th><th>Type</th><th>Account</th><th>Customer</th><th>Amount (' . htmlspecialchars($currency) . ')</th><th>MPESA Ref</th><th>Status</th>' .
 				'</tr></thead><tbody>' . $rowsHtml . '</tbody></table></body></html>';
 			$dompdf->loadHtml($html);
 			$dompdf->setPaper('A4', 'portrait');
@@ -157,7 +212,7 @@ if (isset($_GET['export'])) {
 		if ($search_term !== '') {
 			$sqlWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search)";
 		}
-		$sql = "SELECT b.billing_month, u.account_number, u.full_name, b.amount, b.due_date, b.status
+		$sql = "SELECT b.billing_month, u.account_number, u.full_name, b.amount, b.due_date, b.status, {$billTypeCaseSql} AS bill_type
 			FROM bills b
 			LEFT JOIN users u ON b.user_id = u.id
 			" . $sqlWhere . "
@@ -175,10 +230,11 @@ if (isset($_GET['export'])) {
 			$filename = 'bills_report_' . $from_str . '_to_' . $to_str . '.csv';
 			header('Content-Disposition: attachment; filename="' . $filename . '"');
 			$out = fopen('php://output', 'w');
-			fputcsv($out, ['Billing Month', 'Account', 'Customer', 'Amount (' . $currency . ')', 'Due Date', 'Status']);
+			fputcsv($out, ['Billing Month', 'Type', 'Account', 'Customer', 'Amount (' . $currency . ')', 'Due Date', 'Status']);
 			while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
 				fputcsv($out, [
 					$row['billing_month'],
+					ucfirst((string)$row['bill_type']),
 					$row['account_number'],
 					$row['full_name'],
 					$row['amount'],
@@ -197,6 +253,7 @@ if (isset($_GET['export'])) {
 				$totalAmount += (float)$row['amount'];
 				$rowsHtml .= '<tr>'
 					. '<td>' . htmlspecialchars(date('Y-m', strtotime($row['billing_month']))) . '</td>'
+					. '<td>' . htmlspecialchars(ucfirst((string)$row['bill_type'])) . '</td>'
 					. '<td>' . htmlspecialchars($row['account_number']) . '</td>'
 					. '<td>' . htmlspecialchars($row['full_name']) . '</td>'
 					. '<td style="text-align:right;">' . number_format((float)$row['amount'], 2) . '</td>'
@@ -211,7 +268,7 @@ if (isset($_GET['export'])) {
 				'<p>Period: ' . htmlspecialchars($from_str) . ' to ' . htmlspecialchars($to_str) . '</p>' .
 				'<p>Grand Total (' . htmlspecialchars($currency) . '): <strong>' . number_format($totalAmount, 2) . '</strong></p>' .
 				'<table><thead><tr>' .
-				'<th>Billing Month</th><th>Account</th><th>Customer</th><th>Amount (' . htmlspecialchars($currency) . ')</th><th>Due Date</th><th>Status</th>' .
+				'<th>Billing Month</th><th>Type</th><th>Account</th><th>Customer</th><th>Amount (' . htmlspecialchars($currency) . ')</th><th>Due Date</th><th>Status</th>' .
 				'</tr></thead><tbody>' . $rowsHtml . '</tbody></table></body></html>';
 			$dompdf->loadHtml($html);
 			$dompdf->setPaper('A4', 'portrait');
@@ -281,6 +338,100 @@ if (isset($_GET['export'])) {
 			$dompdf->setPaper('A4', 'portrait');
 			$dompdf->render();
 			$dompdf->stream('usage_report_' . $from_str . '_to_' . $to_str . '.pdf', ['Attachment' => true]);
+		}
+		exit;
+	} elseif (in_array($exportType, ['payment_adjustments', 'payment_adjustments_pdf'], true)) {
+		$sqlWhere = "WHERE pa.status = 'approved' AND DATE(COALESCE(pa.processed_at, pa.approved_at, pa.created_at)) BETWEEN :from AND :to";
+		if ($search_term !== '') {
+			$sqlWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search OR p.mpesa_receipt LIKE :search OR CAST(pa.payment_id AS CHAR) LIKE :search)";
+		}
+
+		$sql = "SELECT
+				COALESCE(pa.processed_at, pa.approved_at, pa.created_at) AS decided_at,
+				pa.id,
+				pa.adjustment_type,
+				pa.amount,
+				pa.reason,
+				pa.payment_id,
+				pa.bill_id,
+				p.mpesa_receipt,
+				u.account_number,
+				u.full_name,
+				au.full_name AS approver_name
+			FROM payment_adjustments pa
+			INNER JOIN payments p ON p.id = pa.payment_id
+			LEFT JOIN users u ON u.id = pa.user_id
+			LEFT JOIN users au ON au.id = pa.approved_by
+			" . $sqlWhere . "
+			ORDER BY COALESCE(pa.processed_at, pa.approved_at, pa.created_at) DESC, pa.id DESC";
+		$stmt = $db->prepare($sql);
+		$stmt->bindParam(':from', $from_str);
+		$stmt->bindParam(':to', $to_str);
+		if ($search_term !== '') {
+			$like = '%' . $search_term . '%';
+			$stmt->bindParam(':search', $like, PDO::PARAM_STR);
+		}
+		$stmt->execute();
+
+		if ($exportType === 'payment_adjustments') {
+			header('Content-Type: text/csv; charset=utf-8');
+			$filename = 'payment_adjustments_' . $from_str . '_to_' . $to_str . '.csv';
+			header('Content-Disposition: attachment; filename="' . $filename . '"');
+			$out = fopen('php://output', 'w');
+			fputcsv($out, ['Decision Date', 'Adjustment ID', 'Type', 'Payment ID', 'Bill ID', 'MPESA Ref', 'Account', 'Customer', 'Amount (' . $currency . ')', 'Reason', 'Approved By']);
+			while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+				fputcsv($out, [
+					$row['decided_at'],
+					$row['id'],
+					ucfirst((string)$row['adjustment_type']),
+					$row['payment_id'],
+					$row['bill_id'],
+					$row['mpesa_receipt'],
+					$row['account_number'],
+					$row['full_name'],
+					$row['amount'],
+					$row['reason'],
+					$row['approver_name'],
+				]);
+			}
+			fclose($out);
+		} else {
+			require_once __DIR__ . '/../../vendor/autoload.php';
+			$dompdf = new Dompdf();
+			$rowsHtml = '';
+			$totalAdjusted = 0.0;
+			while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+				$totalAdjusted += (float)$row['amount'];
+				$rowsHtml .= '<tr>'
+					. '<td>' . htmlspecialchars((string)$row['decided_at']) . '</td>'
+					. '<td>#' . (int)$row['id'] . '</td>'
+					. '<td>' . htmlspecialchars(ucfirst((string)$row['adjustment_type'])) . '</td>'
+					. '<td>#' . (int)$row['payment_id'] . '</td>'
+					. '<td>' . (!empty($row['bill_id']) ? ('#' . (int)$row['bill_id']) : '-') . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['mpesa_receipt'] ?? '-')) . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['account_number'] ?? '-')) . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['full_name'] ?? '')) . '</td>'
+					. '<td style="text-align:right;">' . number_format((float)$row['amount'], 2) . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['reason'] ?? '')) . '</td>'
+					. '<td>' . htmlspecialchars((string)($row['approver_name'] ?? 'System')) . '</td>'
+				. '</tr>';
+			}
+
+			$html = '<html><head><meta charset="UTF-8"><title>Payment Adjustment Audit</title>'
+				. '<style>body{font-family:DejaVu Sans,Arial,sans-serif;font-size:10px;color:#111827;}h1{font-size:17px;margin-bottom:4px;}table{width:100%;border-collapse:collapse;margin-top:10px;}th,td{border:1px solid #e5e7eb;padding:4px 5px;}th{background:#f9fafb;text-align:left;font-size:9px;}td{font-size:9px;}</style>'
+				. '</head><body>'
+				. '<h1>Payment Adjustment Audit</h1>'
+				. '<p>Period: ' . htmlspecialchars($from_str) . ' to ' . htmlspecialchars($to_str) . '</p>'
+				. '<p>Total Approved Adjustments (' . htmlspecialchars($currency) . '): <strong>' . number_format($totalAdjusted, 2) . '</strong></p>'
+				. '<table><thead><tr>'
+				. '<th>Date</th><th>Adjustment</th><th>Type</th><th>Payment</th><th>Bill</th><th>Ref</th><th>Account</th><th>Customer</th><th>Amount (' . htmlspecialchars($currency) . ')</th><th>Reason</th><th>Approved By</th>'
+				. '</tr></thead><tbody>' . $rowsHtml . '</tbody></table>'
+				. '</body></html>';
+
+			$dompdf->loadHtml($html);
+			$dompdf->setPaper('A4', 'landscape');
+			$dompdf->render();
+			$dompdf->stream('payment_adjustments_' . $from_str . '_to_' . $to_str . '.pdf', ['Attachment' => true]);
 		}
 		exit;
 	} elseif (in_array($exportType, ['installment_allocations', 'installment_allocations_pdf'], true)) {
@@ -498,44 +649,76 @@ if (isset($_GET['export'])) {
 $billService = new Bill($db);
 $paymentService = new Payment($db);
 
-// Total billed in period (based on billing_month)
+// Total billed in period (monthly billing only; registration is tracked separately)
 $stmtBilled = $db->prepare("SELECT 
 	COALESCE(SUM(amount),0) AS total_billed,
 	COUNT(*) AS bills_count
-	FROM bills
-	WHERE DATE(billing_month) BETWEEN :from AND :to");
+	FROM bills b
+	WHERE DATE(b.billing_month) BETWEEN :from AND :to
+	AND {$monthlyBillPredicateSql}
+	AND b.amount > 0");
 $stmtBilled->bindParam(':from', $from_str);
 $stmtBilled->bindParam(':to', $to_str);
 $stmtBilled->execute();
 $billedRow = $stmtBilled->fetch(PDO::FETCH_ASSOC) ?: ['total_billed' => 0, 'bills_count' => 0];
 
-// Total collected in period (completed payments, use transaction_date if available)
+$stmtRegistrationBilled = $db->prepare("SELECT
+	COALESCE(SUM(b.amount),0) AS total_registration_billed,
+	COUNT(*) AS registration_bills_count
+	FROM bills b
+	WHERE DATE(b.billing_month) BETWEEN :from AND :to
+	AND {$registrationBillPredicateSql}
+	AND b.amount > 0");
+$stmtRegistrationBilled->bindParam(':from', $from_str);
+$stmtRegistrationBilled->bindParam(':to', $to_str);
+$stmtRegistrationBilled->execute();
+$registrationBilledRow = $stmtRegistrationBilled->fetch(PDO::FETCH_ASSOC) ?: ['total_registration_billed' => 0, 'registration_bills_count' => 0];
+
+// Total collected in period (monthly billing only; registration is tracked separately)
 $stmtCollected = $db->prepare("SELECT 
-	COALESCE(SUM(amount),0) AS total_collected,
+	COALESCE(SUM(p.amount),0) AS total_collected,
 	COUNT(*) AS payments_count
-	FROM payments
-	WHERE status = 'completed'
-	AND DATE(COALESCE(transaction_date, created_at)) BETWEEN :from AND :to");
+	FROM payments p
+	WHERE p.status = 'completed'
+	AND DATE(COALESCE(p.transaction_date, p.created_at)) BETWEEN :from AND :to
+	AND {$monthlyPaymentPredicateSql}
+	AND p.amount > 0");
 $stmtCollected->bindParam(':from', $from_str);
 $stmtCollected->bindParam(':to', $to_str);
 $stmtCollected->execute();
 $collectedRow = $stmtCollected->fetch(PDO::FETCH_ASSOC) ?: ['total_collected' => 0, 'payments_count' => 0];
 
-// Total outstanding overall (not just in period)
+$stmtRegistrationCollected = $db->prepare("SELECT
+	COALESCE(SUM(p.amount),0) AS total_registration_collected,
+	COUNT(*) AS registration_payments_count
+	FROM payments p
+	WHERE p.status = 'completed'
+	AND DATE(COALESCE(p.transaction_date, p.created_at)) BETWEEN :from AND :to
+	AND {$registrationPaymentPredicateSql}
+	AND p.amount > 0");
+$stmtRegistrationCollected->bindParam(':from', $from_str);
+$stmtRegistrationCollected->bindParam(':to', $to_str);
+$stmtRegistrationCollected->execute();
+$registrationCollectedRow = $stmtRegistrationCollected->fetch(PDO::FETCH_ASSOC) ?: ['total_registration_collected' => 0, 'registration_payments_count' => 0];
+
+// Total outstanding overall for monthly bills only (registration is tracked separately)
 $stmtOutstanding = $db->query("SELECT 
-	COALESCE(SUM(CASE WHEN status IN ('pending','overdue') THEN amount ELSE 0 END),0) AS total_outstanding,
-	COALESCE(SUM(CASE WHEN status IN ('pending','overdue') THEN 1 ELSE 0 END),0) AS outstanding_bills
-	FROM bills");
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') THEN b.amount ELSE 0 END),0) AS total_outstanding,
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') THEN 1 ELSE 0 END),0) AS outstanding_bills
+	FROM bills b
+	WHERE {$monthlyBillPredicateSql}
+	AND b.amount > 0");
 $outstandingRow = $stmtOutstanding->fetch(PDO::FETCH_ASSOC) ?: ['total_outstanding' => 0, 'outstanding_bills' => 0];
 
-// Accounts receivable aging (overall)
+// Accounts receivable aging for monthly bills only
 $stmtAging = $db->query("SELECT
-	COALESCE(SUM(CASE WHEN status IN ('pending','overdue') AND DATEDIFF(CURDATE(), due_date) <= 0 THEN amount ELSE 0 END),0) AS current_bucket,
-	COALESCE(SUM(CASE WHEN status IN ('pending','overdue') AND DATEDIFF(CURDATE(), due_date) BETWEEN 1 AND 30 THEN amount ELSE 0 END),0) AS bucket_1_30,
-	COALESCE(SUM(CASE WHEN status IN ('pending','overdue') AND DATEDIFF(CURDATE(), due_date) BETWEEN 31 AND 60 THEN amount ELSE 0 END),0) AS bucket_31_60,
-	COALESCE(SUM(CASE WHEN status IN ('pending','overdue') AND DATEDIFF(CURDATE(), due_date) BETWEEN 61 AND 90 THEN amount ELSE 0 END),0) AS bucket_61_90,
-	COALESCE(SUM(CASE WHEN status IN ('pending','overdue') AND DATEDIFF(CURDATE(), due_date) > 90 THEN amount ELSE 0 END),0) AS bucket_over_90
-	FROM bills");
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) <= 0 THEN b.amount ELSE 0 END),0) AS current_bucket,
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) BETWEEN 1 AND 30 THEN b.amount ELSE 0 END),0) AS bucket_1_30,
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) BETWEEN 31 AND 60 THEN b.amount ELSE 0 END),0) AS bucket_31_60,
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) BETWEEN 61 AND 90 THEN b.amount ELSE 0 END),0) AS bucket_61_90,
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) > 90 THEN b.amount ELSE 0 END),0) AS bucket_over_90
+	FROM bills b
+	WHERE {$monthlyBillPredicateSql}");
 $agingRow = $stmtAging->fetch(PDO::FETCH_ASSOC) ?: [
 	'current_bucket' => 0,
 	'bucket_1_30' => 0,
@@ -543,6 +726,51 @@ $agingRow = $stmtAging->fetch(PDO::FETCH_ASSOC) ?: [
 	'bucket_61_90' => 0,
 	'bucket_over_90' => 0,
 ];
+
+$stmtOps = $db->prepare("SELECT
+	COALESCE(SUM(consumption), 0) AS billed_units,
+	COUNT(DISTINCT user_id) AS billed_accounts,
+	COALESCE(AVG(consumption), 0) AS avg_units_per_bill
+	FROM bills b
+	WHERE DATE(b.billing_month) BETWEEN :from AND :to
+	AND {$monthlyBillPredicateSql}");
+$stmtOps->bindParam(':from', $from_str);
+$stmtOps->bindParam(':to', $to_str);
+$stmtOps->execute();
+$operationalRow = $stmtOps->fetch(PDO::FETCH_ASSOC) ?: [
+	'billed_units' => 0,
+	'billed_accounts' => 0,
+	'avg_units_per_bill' => 0,
+];
+
+$stmtUnbilledReads = $db->prepare("SELECT COUNT(*)
+	FROM meter_readings
+	WHERE status = 'approved'
+		AND bill_id IS NULL
+		AND DATE(billing_month) BETWEEN :from AND :to");
+$stmtUnbilledReads->bindParam(':from', $from_str);
+$stmtUnbilledReads->bindParam(':to', $to_str);
+$stmtUnbilledReads->execute();
+$operationalRow['unbilled_approved_readings'] = (int)$stmtUnbilledReads->fetchColumn();
+
+$stmtCycle = $db->prepare("SELECT COALESCE(AVG(DATEDIFF(COALESCE(p.transaction_date, p.created_at), b.due_date)), 0)
+	FROM payments p
+	INNER JOIN bills b ON b.id = p.bill_id
+	WHERE p.status = 'completed'
+		AND DATE(COALESCE(p.transaction_date, p.created_at)) BETWEEN :from AND :to");
+$stmtCycle->bindParam(':from', $from_str);
+$stmtCycle->bindParam(':to', $to_str);
+$stmtCycle->execute();
+$operationalRow['avg_days_to_collect'] = round((float)$stmtCycle->fetchColumn(), 1);
+
+$stmtPaymentAdjustments = $db->prepare("SELECT COUNT(*) AS adjustment_count, COALESCE(SUM(amount), 0) AS adjustment_total
+	FROM payment_adjustments
+	WHERE status = 'approved'
+		AND DATE(COALESCE(processed_at, approved_at, created_at)) BETWEEN :from AND :to");
+$stmtPaymentAdjustments->bindParam(':from', $from_str);
+$stmtPaymentAdjustments->bindParam(':to', $to_str);
+$stmtPaymentAdjustments->execute();
+$paymentAdjustmentSummary = $stmtPaymentAdjustments->fetch(PDO::FETCH_ASSOC) ?: ['adjustment_count' => 0, 'adjustment_total' => 0];
 
 // Recent payments in period (detailed list) with optional search filter + pagination
 $payments = [];
@@ -585,7 +813,8 @@ if ($report_scope === 'all' || $report_scope === 'payments') {
 
 	// Page data
 	$sqlPayments = "SELECT p.*, 
-		u.full_name, u.account_number
+		u.full_name, u.account_number,
+		{$paymentTypeCaseSql} AS payment_type
 		FROM payments p
 		LEFT JOIN bills b ON p.bill_id = b.id
 		LEFT JOIN users u ON b.user_id = u.id
@@ -662,6 +891,7 @@ if ($report_scope === 'all' || $report_scope === 'billing') {
 
 	// Page data
 	$sqlBills = "SELECT b.*, u.full_name, u.account_number
+		, {$billTypeCaseSql} AS bill_type
 		FROM bills b
 		LEFT JOIN users u ON b.user_id = u.id
 		" . $sqlBillsWhere . "
@@ -866,39 +1096,129 @@ $stmtAdjustTotal->execute();
 $adjustTotalRow = $stmtAdjustTotal->fetch(PDO::FETCH_ASSOC) ?: ['total_amount' => 0];
 $adjustments_grand_total = (float)($adjustTotalRow['total_amount'] ?? 0);
 
+// Payment adjustment audit preview with pagination
+$paymentAdjustments = [];
+$payment_adjustments_total = 0;
+$payment_adjustments_total_pages = 1;
+$payment_adjustments_grand_total = 0.0;
+$payment_adjustments_page = isset($_GET['payment_adjustments_page']) ? max(1, (int)$_GET['payment_adjustments_page']) : 1;
+
+$sqlPaymentAdjustWhere = "WHERE pa.status = 'approved' AND DATE(COALESCE(pa.processed_at, pa.approved_at, pa.created_at)) BETWEEN :from AND :to";
+if ($search_term !== '') {
+	$sqlPaymentAdjustWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search OR p.mpesa_receipt LIKE :search OR CAST(pa.payment_id AS CHAR) LIKE :search)";
+}
+
+$sqlPaymentAdjustCount = "SELECT COUNT(*) AS cnt
+	FROM payment_adjustments pa
+	INNER JOIN payments p ON p.id = pa.payment_id
+	LEFT JOIN users u ON u.id = pa.user_id
+	" . $sqlPaymentAdjustWhere;
+$stmtPaymentAdjustCount = $db->prepare($sqlPaymentAdjustCount);
+$stmtPaymentAdjustCount->bindParam(':from', $from_str);
+$stmtPaymentAdjustCount->bindParam(':to', $to_str);
+if ($search_term !== '') {
+	$likePaymentAdjust = '%' . $search_term . '%';
+	$stmtPaymentAdjustCount->bindParam(':search', $likePaymentAdjust, PDO::PARAM_STR);
+}
+$stmtPaymentAdjustCount->execute();
+$paymentAdjustCountRow = $stmtPaymentAdjustCount->fetch(PDO::FETCH_ASSOC) ?: ['cnt' => 0];
+$payment_adjustments_total = (int)($paymentAdjustCountRow['cnt'] ?? 0);
+$payment_adjustments_total_pages = max(1, (int)ceil($payment_adjustments_total / $page_size));
+if ($payment_adjustments_page > $payment_adjustments_total_pages) {
+	$payment_adjustments_page = $payment_adjustments_total_pages;
+}
+$payment_adjustments_offset = ($payment_adjustments_page - 1) * $page_size;
+
+$sqlPaymentAdjustRows = "SELECT
+		COALESCE(pa.processed_at, pa.approved_at, pa.created_at) AS decided_at,
+		pa.id,
+		pa.adjustment_type,
+		pa.amount,
+		pa.reason,
+		pa.payment_id,
+		pa.bill_id,
+		p.mpesa_receipt,
+		u.account_number,
+		u.full_name,
+		au.full_name AS approver_name
+	FROM payment_adjustments pa
+	INNER JOIN payments p ON p.id = pa.payment_id
+	LEFT JOIN users u ON u.id = pa.user_id
+	LEFT JOIN users au ON au.id = pa.approved_by
+	" . $sqlPaymentAdjustWhere . "
+	ORDER BY COALESCE(pa.processed_at, pa.approved_at, pa.created_at) DESC, pa.id DESC
+	LIMIT :limit OFFSET :offset";
+$stmtPaymentAdjustRows = $db->prepare($sqlPaymentAdjustRows);
+$stmtPaymentAdjustRows->bindParam(':from', $from_str);
+$stmtPaymentAdjustRows->bindParam(':to', $to_str);
+if ($search_term !== '') {
+	$likePaymentAdjustRows = '%' . $search_term . '%';
+	$stmtPaymentAdjustRows->bindParam(':search', $likePaymentAdjustRows, PDO::PARAM_STR);
+}
+$stmtPaymentAdjustRows->bindParam(':limit', $page_size, PDO::PARAM_INT);
+$stmtPaymentAdjustRows->bindParam(':offset', $payment_adjustments_offset, PDO::PARAM_INT);
+$stmtPaymentAdjustRows->execute();
+$paymentAdjustments = $stmtPaymentAdjustRows->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+$sqlPaymentAdjustTotal = "SELECT COALESCE(SUM(pa.amount), 0) AS total_amount
+	FROM payment_adjustments pa
+	INNER JOIN payments p ON p.id = pa.payment_id
+	LEFT JOIN users u ON u.id = pa.user_id
+	" . $sqlPaymentAdjustWhere;
+$stmtPaymentAdjustTotal = $db->prepare($sqlPaymentAdjustTotal);
+$stmtPaymentAdjustTotal->bindParam(':from', $from_str);
+$stmtPaymentAdjustTotal->bindParam(':to', $to_str);
+if ($search_term !== '') {
+	$likePaymentAdjustTotal = '%' . $search_term . '%';
+	$stmtPaymentAdjustTotal->bindParam(':search', $likePaymentAdjustTotal, PDO::PARAM_STR);
+}
+$stmtPaymentAdjustTotal->execute();
+$paymentAdjustTotalRow = $stmtPaymentAdjustTotal->fetch(PDO::FETCH_ASSOC) ?: ['total_amount' => 0];
+$payment_adjustments_grand_total = (float)($paymentAdjustTotalRow['total_amount'] ?? 0);
+
 $is_admin_page = true;
 require_once __DIR__ . '/../../templates/header.php';
 ?>
 
 <div class="container mt-4 mb-4 admin-shell admin-reports-page" id="reportsDensityTarget">
-	<div class="financial-dashboard-header mb-4 admin-hero-header admin-hero-header--reports">
-		<div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
-			<div class="financial-dashboard-header-main admin-hero-main">
-				<div class="financial-dashboard-eyebrow mb-2">
-					<span class="badge rounded-pill financial-live-pill" style="color:#ffffff !important; background:#0b3a63 !important; border:1px solid #082a48 !important; font-weight:700 !important; text-shadow:0 1px 0 rgba(0,0,0,.25);">Live Reporting</span>
-				</div>
-				<h2 class="financial-dashboard-header-title mb-1 d-flex align-items-center gap-2">
-					<i class="bi bi-graph-up-arrow text-primary"></i>
-					<span>Financial Dashboard</span>
-				</h2>
-				<p class="financial-dashboard-header-subtitle mb-2">Key financial KPIs, aging, and detailed payment and billing reports.</p>
-				<p class="financial-dashboard-tagline mb-0">
-					Water Billing System for fast collections tracking and M-Pesa reconciliation.
-				</p>
+	<div class="fdb-header mb-4" role="banner">
+		<!-- Decorative background layer -->
+		<div class="fdb-bg" aria-hidden="true">
+			<div class="fdb-grid-overlay"></div>
+			<div class="fdb-glow fdb-glow--tr"></div>
+			<div class="fdb-glow fdb-glow--bl"></div>
+			<i class="bi bi-graph-up-arrow fdb-watermark-icon"></i>
+		</div>
+		<!-- Main content -->
+		<div class="fdb-content">
+			<div class="fdb-eyebrow">
+				<span class="fdb-live-chip">
+					<span class="fdb-live-dot" aria-hidden="true"></span>
+					<span>Live Reporting</span>
+				</span>
+				<span class="fdb-sys-chip">
+					<i class="bi bi-droplet-half" aria-hidden="true"></i>
+					Water Billing System
+				</span>
 			</div>
-			<div class="financial-dashboard-summary-grid admin-hero-actions" aria-label="Reporting summary">
-				<div class="financial-dashboard-summary-item">
-					<div class="financial-dashboard-summary-label">Company</div>
-					<div class="financial-dashboard-summary-value"><?php echo htmlspecialchars($settings['company_name'] ?? ''); ?></div>
-				</div>
-				<div class="financial-dashboard-summary-item">
-					<div class="financial-dashboard-summary-label">Reporting Currency</div>
-					<div class="financial-dashboard-summary-value"><?php echo htmlspecialchars($currency); ?></div>
-				</div>
-				<div class="financial-dashboard-summary-item financial-dashboard-summary-item-period">
-					<div class="financial-dashboard-summary-label">Period</div>
-					<div class="financial-dashboard-summary-value financial-period-range"><?php echo htmlspecialchars($from_display); ?> &ndash; <?php echo htmlspecialchars($to_display); ?></div>
-				</div>
+			<h2 class="fdb-title">Financial Dashboard</h2>
+			<p class="fdb-desc">Key financial KPIs, aging, and detailed payment and billing reports for fast collections tracking and M-Pesa reconciliation.</p>
+		</div>
+		<!-- Bottom info bar -->
+		<div class="fdb-bar">
+			<div class="fdb-bar-item">
+				<span class="fdb-bar-label"><i class="bi bi-building" aria-hidden="true"></i> Company</span>
+				<span class="fdb-bar-value"><?php echo htmlspecialchars($settings['company_name'] ?? ''); ?></span>
+			</div>
+			<div class="fdb-bar-sep" aria-hidden="true"></div>
+			<div class="fdb-bar-item">
+				<span class="fdb-bar-label"><i class="bi bi-currency-exchange" aria-hidden="true"></i> Reporting Currency</span>
+				<span class="fdb-bar-value"><?php echo htmlspecialchars($currency); ?></span>
+			</div>
+			<div class="fdb-bar-sep" aria-hidden="true"></div>
+			<div class="fdb-bar-item fdb-bar-item--period">
+				<span class="fdb-bar-label"><i class="bi bi-calendar-range" aria-hidden="true"></i> Reporting Period</span>
+				<span class="fdb-bar-value fdb-bar-period"><?php echo htmlspecialchars($from_display); ?> &ndash; <?php echo htmlspecialchars($to_display); ?></span>
 			</div>
 		</div>
 	</div>
@@ -956,185 +1276,280 @@ require_once __DIR__ . '/../../templates/header.php';
 		</div>
 	</div>
 
+	<?php if ($maintenanceResult !== null): ?>
+		<div class="alert <?php echo $maintenanceResult['succeeded'] ? 'alert-success' : 'alert-warning'; ?> mb-3" role="alert">
+			<div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+				<div>
+					<strong><?php echo htmlspecialchars((string)$maintenanceResult['title']); ?></strong>
+					<div class="small mt-1">Exit code: <?php echo (int)$maintenanceResult['exit_code']; ?></div>
+				</div>
+				<div class="small text-muted">Admin-only maintenance command output</div>
+			</div>
+			<pre class="mt-3 mb-0 p-3 bg-dark text-light rounded small" style="white-space:pre-wrap;"><?php echo htmlspecialchars(implode(PHP_EOL, $maintenanceResult['output'])); ?></pre>
+		</div>
+	<?php endif; ?>
+
 	<?php
 		$totalBilledAmount = (float)($billedRow['total_billed'] ?? 0);
 		$totalCollectedAmount = (float)($collectedRow['total_collected'] ?? 0);
 		$collectionRate = $totalBilledAmount > 0 ? min(100, round(($totalCollectedAmount / $totalBilledAmount) * 100, 1)) : 0.0;
+		$auditBadgeClass = 'bg-success';
+		$auditLabel = 'Healthy';
+		$auditGeneratedAt = !empty($auditStatus['generated_at']) ? date('d-m-Y H:i', strtotime((string)$auditStatus['generated_at'])) : 'Unknown';
+		$auditChecks = isset($auditStatus['checks']) && is_array($auditStatus['checks']) ? $auditStatus['checks'] : [];
+		$auditHighlights = array_values(array_filter($auditChecks, static function ($check) {
+			return in_array((string)($check['status'] ?? ''), ['FAIL', 'WARN'], true);
+		}));
+		if (($auditStatus['status'] ?? '') === 'failure') {
+			$auditBadgeClass = 'bg-danger';
+			$auditLabel = 'Failures Found';
+		} elseif (($auditStatus['status'] ?? '') === 'warning') {
+			$auditBadgeClass = 'bg-warning text-dark';
+			$auditLabel = 'Warnings Found';
+		} elseif ($auditStatus === null) {
+			$auditBadgeClass = 'bg-secondary';
+			$auditLabel = 'Not Run';
+			$auditGeneratedAt = 'Not run yet';
+		}
 	?>
-	<div class="card mb-3 financial-snapshot-card">
-		<div class="card-body py-3">
-			<div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
-				<div>
-					<div class="financial-section-title mb-1">Performance Snapshot</div>
-					<div class="small text-muted">Collection efficiency for the selected reporting range.</div>
-				</div>
-				<div class="financial-collection-rate">
-					<span class="small text-muted me-2">Collection Rate</span>
-					<strong><?php echo number_format($collectionRate, 1); ?>%</strong>
+	<?php
+		$usageExportCsvUrl = '/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage'])));
+		$usageExportPdfUrl = '/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage_pdf'])));
+		$allocExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'installment_allocations'])));
+		$allocExportPdfUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'installment_allocations_pdf'])));
+		$adjustExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'writeoff_waiver'])));
+		$adjustExportPdfUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'writeoff_waiver_pdf'])));
+		$paymentAdjustExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'payment_adjustments'])));
+		$paymentAdjustExportPdfUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'payment_adjustments_pdf'])));
+	?>
+	<div class="row g-3 mb-3 reports-overview-grid">
+		<div class="col-xl-8 d-flex flex-column gap-3">
+			<div class="card financial-snapshot-card reports-overview-panel">
+				<div class="card-body py-3">
+					<div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+						<div>
+							<div class="financial-section-title mb-1">Performance Snapshot</div>
+							<div class="small text-muted">Collection efficiency for the selected reporting range.</div>
+						</div>
+						<div class="financial-collection-rate">
+							<span class="small text-muted me-2">Collection Rate</span>
+							<strong><?php echo number_format($collectionRate, 1); ?>%</strong>
+						</div>
+					</div>
+					<div class="progress mt-3 financial-collection-progress" role="progressbar" aria-label="Collection rate" aria-valuenow="<?php echo (int)$collectionRate; ?>" aria-valuemin="0" aria-valuemax="100">
+						<div class="progress-bar" style="width: <?php echo number_format($collectionRate, 1, '.', ''); ?>%"></div>
+					</div>
 				</div>
 			</div>
-			<div class="progress mt-3 financial-collection-progress" role="progressbar" aria-label="Collection rate" aria-valuenow="<?php echo (int)$collectionRate; ?>" aria-valuemin="0" aria-valuemax="100">
-				<div class="progress-bar" style="width: <?php echo number_format($collectionRate, 1, '.', ''); ?>%"></div>
+
+			<div>
+				<h5 class="mb-2 financial-section-title">Key Metrics</h5>
+				<div class="row g-3">
+					<div class="col-md-6 col-xl-3">
+						<div class="card shadow-sm h-100 metric-card metric-card-primary reports-kpi-card">
+							<div class="card-body">
+								<div class="d-flex justify-content-between align-items-center mb-1">
+									<span class="text-muted text-uppercase small">Monthly Billed</span>
+									<span class="badge bg-light text-dark">Bills: <?php echo (int)$billedRow['bills_count']; ?></span>
+								</div>
+								<div class="h5 mb-0"><?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)$billedRow['total_billed'], 2); ?></div>
+								<div class="text-muted small mt-1">For period <?php echo htmlspecialchars($from_display); ?> to <?php echo htmlspecialchars($to_display); ?></div>
+							</div>
+						</div>
+					</div>
+					<div class="col-md-6 col-xl-3">
+						<div class="card shadow-sm h-100 metric-card metric-card-success reports-kpi-card">
+							<div class="card-body">
+								<div class="d-flex justify-content-between align-items-center mb-1">
+									<span class="text-muted text-uppercase small">Monthly Collected</span>
+									<span class="badge bg-light text-dark">Payments: <?php echo (int)$collectedRow['payments_count']; ?></span>
+								</div>
+								<div class="h5 mb-0 text-success"><?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)$collectedRow['total_collected'], 2); ?></div>
+								<div class="text-muted small mt-1">Completed non-registration payments in the selected period.</div>
+							</div>
+						</div>
+					</div>
+					<div class="col-md-6 col-xl-3">
+						<div class="card shadow-sm h-100 metric-card reports-kpi-card border-info-subtle">
+							<div class="card-body">
+								<div class="d-flex justify-content-between align-items-center mb-1">
+									<span class="text-muted text-uppercase small">Registration Fees</span>
+									<span class="badge bg-info-subtle text-info-emphasis">Bills: <?php echo (int)$registrationBilledRow['registration_bills_count']; ?></span>
+								</div>
+								<div class="h5 mb-0 text-info-emphasis"><?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)$registrationBilledRow['total_registration_billed'], 2); ?></div>
+								<div class="text-muted small mt-1">Collected: <?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)$registrationCollectedRow['total_registration_collected'], 2); ?> across <?php echo (int)$registrationCollectedRow['registration_payments_count']; ?> payment(s).</div>
+							</div>
+						</div>
+					</div>
+					<div class="col-md-6 col-xl-3">
+						<div class="card shadow-sm h-100 metric-card metric-card-danger reports-kpi-card">
+							<div class="card-body">
+								<div class="d-flex justify-content-between align-items-center mb-1">
+									<span class="text-muted text-uppercase small">Monthly Outstanding</span>
+									<span class="badge bg-warning text-dark">Bills: <?php echo (int)$outstandingRow['outstanding_bills']; ?></span>
+								</div>
+								<div class="h5 mb-0 text-danger"><?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)$outstandingRow['total_outstanding'], 2); ?></div>
+								<div class="text-muted small mt-1">Pending and overdue non-registration balances (overall).</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="col-xl-4 d-flex flex-column gap-3">
+			<div class="card border-0 shadow-sm reports-audit-card">
+				<div class="card-body py-3">
+					<div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+						<div>
+							<div class="financial-section-title mb-1">Last Audit Status</div>
+							<?php if ($auditStatus !== null): ?>
+								<div class="d-flex align-items-center gap-2 flex-wrap">
+									<span class="badge <?php echo $auditBadgeClass; ?>"><?php echo htmlspecialchars($auditLabel); ?></span>
+									<span class="small text-muted">Last run: <?php echo htmlspecialchars($auditGeneratedAt); ?></span>
+								</div>
+								<div class="small text-muted mt-2"><?php echo htmlspecialchars((string)($auditStatus['summary_line'] ?? 'No summary available.')); ?></div>
+								<?php if (!empty($auditHighlights)): ?>
+									<div class="mt-2">
+										<?php foreach (array_slice($auditHighlights, 0, 2) as $highlight): ?>
+											<div class="small text-muted"><?php echo htmlspecialchars((string)($highlight['label'] ?? 'Check')); ?>: <?php echo htmlspecialchars((string)($highlight['detail'] ?? '')); ?></div>
+										<?php endforeach; ?>
+									</div>
+								<?php else: ?>
+									<div class="small text-success mt-2">All billing integrity checks passed on the most recent run.</div>
+								<?php endif; ?>
+							<?php else: ?>
+								<div class="small text-muted">No stored audit result yet. Run the audit once to populate this status card.</div>
+							<?php endif; ?>
+						</div>
+						<div class="text-end">
+							<a href="/reports#billingIntegrityTools" class="btn btn-outline-primary btn-sm">
+								<i class="bi bi-shield-check me-1"></i> Open Integrity Tools
+							</a>
+						</div>
+					</div>
+				</div>
 			</div>
 		</div>
 	</div>
 
-	<h5 class="mb-2 financial-section-title">Key Metrics</h5>
-	<div class="row g-3 mb-3">
-		<div class="col-lg-8">
-			<div class="row g-3">
-				<div class="col-md-4">
-					<div class="card shadow-sm h-100 metric-card metric-card-primary">
-						<div class="card-body">
-							<div class="d-flex justify-content-between align-items-center mb-1">
-								<span class="text-muted text-uppercase small">Total Billed</span>
-								<span class="badge bg-light text-dark">Bills: <?php echo (int)$billedRow['bills_count']; ?></span>
-							</div>
-							<div class="h5 mb-0"><?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)$billedRow['total_billed'], 2); ?></div>
-							<div class="text-muted small mt-1">For period <?php echo htmlspecialchars($from_display); ?> to <?php echo htmlspecialchars($to_display); ?></div>
-						</div>
+	<div class="row g-3 mb-4 reports-operations-row">
+		<div class="col-xl-8 d-flex flex-column gap-3">
+			<div class="card shadow-sm h-100 aging-card reports-surface-card">
+				<div class="card-header bg-light d-flex justify-content-between align-items-center">
+					<h6 class="mb-0">Accounts Receivable Aging</h6>
+					<small class="text-muted">Current exposure across the monthly receivables ledger.</small>
+				</div>
+				<div class="card-body">
+					<div class="table-responsive">
+						<table class="table table-sm mb-0 align-middle table-density-target">
+							<thead class="table-light">
+								<tr>
+									<th>Bucket</th>
+									<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr><td>Current (Not Yet Due)</td><td class="text-end"><?php echo number_format((float)$agingRow['current_bucket'], 2); ?></td></tr>
+								<tr><td>1 - 30 Days Overdue</td><td class="text-end"><?php echo number_format((float)$agingRow['bucket_1_30'], 2); ?></td></tr>
+								<tr><td>31 - 60 Days Overdue</td><td class="text-end"><?php echo number_format((float)$agingRow['bucket_31_60'], 2); ?></td></tr>
+								<tr><td>61 - 90 Days Overdue</td><td class="text-end"><?php echo number_format((float)$agingRow['bucket_61_90'], 2); ?></td></tr>
+								<tr><td>Over 90 Days Overdue</td><td class="text-end text-danger"><?php echo number_format((float)$agingRow['bucket_over_90'], 2); ?></td></tr>
+							</tbody>
+						</table>
+					</div>
+					<p class="text-muted small mt-3 mb-0">This aging view follows a standard 0/30/60/90+ day breakdown for receivables.</p>
+				</div>
+			</div>
+
+			<div class="card shadow-sm reports-surface-card">
+				<div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap gap-2">
+					<div>
+						<h6 class="mb-0">Operational Billing Analytics</h6>
+						<small class="text-muted">Selected-period monthly billing coverage and finance pressure indicators.</small>
 					</div>
 				</div>
-				<div class="col-md-4">
-					<div class="card shadow-sm h-100 metric-card metric-card-success">
-						<div class="card-body">
-							<div class="d-flex justify-content-between align-items-center mb-1">
-								<span class="text-muted text-uppercase small">Total Collected</span>
-								<span class="badge bg-light text-dark">Payments: <?php echo (int)$collectedRow['payments_count']; ?></span>
-							</div>
-							<div class="h5 mb-0 text-success"><?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)$collectedRow['total_collected'], 2); ?></div>
-							<div class="text-muted small mt-1">Completed payments in selected period.</div>
-						</div>
-					</div>
-				</div>
-				<div class="col-md-4">
-					<div class="card shadow-sm h-100 metric-card metric-card-danger">
-						<div class="card-body">
-							<div class="d-flex justify-content-between align-items-center mb-1">
-								<span class="text-muted text-uppercase small">Outstanding</span>
-								<span class="badge bg-warning text-dark">Bills: <?php echo (int)$outstandingRow['outstanding_bills']; ?></span>
-							</div>
-							<div class="h5 mb-0 text-danger"><?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)$outstandingRow['total_outstanding'], 2); ?></div>
-							<div class="text-muted small mt-1">Pending and overdue balances (overall).</div>
-						</div>
+				<div class="card-body">
+					<div class="row g-3 reports-analytics-grid">
+						<div class="col-md-6 col-xl-4"><div class="accounting-muted-box reports-analytics-tile p-3 h-100"><div class="small text-muted">Billed Consumption</div><div class="fw-semibold"><?php echo number_format((float)$operationalRow['billed_units'], 2); ?> units</div><div class="small text-muted mt-1">Across <?php echo (int)$operationalRow['billed_accounts']; ?> billed accounts.</div></div></div>
+						<div class="col-md-6 col-xl-4"><div class="accounting-muted-box reports-analytics-tile p-3 h-100"><div class="small text-muted">Average Units per Bill</div><div class="fw-semibold"><?php echo number_format((float)$operationalRow['avg_units_per_bill'], 2); ?> units</div><div class="small text-muted mt-1">Tracks consumption mix over time.</div></div></div>
+						<div class="col-md-6 col-xl-4"><div class="accounting-muted-box reports-analytics-tile p-3 h-100"><div class="small text-muted">Approved Reads Not Billed</div><div class="fw-semibold"><?php echo (int)$operationalRow['unbilled_approved_readings']; ?></div><div class="small text-muted mt-1">Practical proxy for billing coverage gaps.</div></div></div>
+						<div class="col-md-6 col-xl-4"><div class="accounting-muted-box reports-analytics-tile p-3 h-100"><div class="small text-muted">Average Days to Collect</div><div class="fw-semibold"><?php echo number_format((float)$operationalRow['avg_days_to_collect'], 1); ?> days</div><div class="small text-muted mt-1">Measured from due date to completed payment.</div></div></div>
+						<div class="col-md-6 col-xl-4"><div class="accounting-muted-box reports-analytics-tile p-3 h-100"><div class="small text-muted">Approved Payment Adjustments</div><div class="fw-semibold"><?php echo (int)($paymentAdjustmentSummary['adjustment_count'] ?? 0); ?> requests</div><div class="small text-muted mt-1">Total value: <?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)($paymentAdjustmentSummary['adjustment_total'] ?? 0), 2); ?></div></div></div>
+						<div class="col-md-6 col-xl-4"><div class="accounting-muted-box reports-analytics-tile p-3 h-100"><div class="small text-muted">Collections Interpretation</div><div class="fw-semibold"><?php echo number_format($collectionRate, 1); ?>% billing-to-cash conversion</div><div class="small text-muted mt-1">Use with aging and unbilled reads to monitor operational leakage.</div></div></div>
 					</div>
 				</div>
 			</div>
 		</div>
-		<div class="col-lg-4 d-flex flex-column gap-3">
-			<div class="card quick-links-card">
+
+		<div class="col-xl-4 d-flex flex-column gap-3 reports-side-rail">
+			<div class="card shadow-sm reports-tools-card" id="billingIntegrityTools">
+				<div class="card-header d-flex justify-content-between align-items-center">
+					<h6 class="card-title mb-0"><i class="bi bi-shield-lock me-1"></i> Billing Integrity Tools</h6>
+					<span class="badge bg-danger-subtle text-danger border border-danger-subtle">Admin Only</span>
+				</div>
+				<div class="card-body py-3">
+					<p class="text-muted small mb-3">Run the billing audit, preview repair actions, or apply the repair workflow without leaving the admin dashboard.</p>
+					<div class="d-grid gap-2">
+						<form method="post" action="/reports#billingIntegrityTools">
+							<input type="hidden" name="maintenance_action" value="run_audit">
+							<button type="submit" class="btn btn-outline-primary btn-sm w-100"><i class="bi bi-activity me-1"></i> Run Audit</button>
+						</form>
+						<form method="post" action="/reports#billingIntegrityTools">
+							<input type="hidden" name="maintenance_action" value="preview_repair">
+							<button type="submit" class="btn btn-outline-secondary btn-sm w-100"><i class="bi bi-search me-1"></i> Preview Repair</button>
+						</form>
+						<form method="post" action="/reports#billingIntegrityTools" onsubmit="return confirm('Apply billing repair actions now? This updates live finance records.');">
+							<input type="hidden" name="maintenance_action" value="apply_repair">
+							<button type="submit" class="btn btn-danger btn-sm w-100"><i class="bi bi-wrench-adjustable-circle me-1"></i> Apply Repair</button>
+						</form>
+					</div>
+				</div>
+			</div>
+
+			<div class="card quick-links-card reports-utility-card">
 				<div class="card-header d-flex justify-content-between align-items-center">
 					<h6 class="card-title mb-0"><i class="bi bi-lightning-charge me-1"></i> Quick Links</h6>
 				</div>
 				<div class="card-body py-3">
 					<div class="quick-links-list d-flex flex-wrap gap-2">
-						<a href="/dashboard" class="btn btn-sm btn-quick-link" title="Go to main dashboard">
-							<i class="bi bi-speedometer2"></i>
-							<span>Dashboard</span>
-						</a>
-						<a href="/bills" class="btn btn-sm btn-quick-link" title="View customer bills">
-							<i class="bi bi-receipt"></i>
-							<span>My Bills</span>
-						</a>
-						<a href="/pay" class="btn btn-sm btn-quick-link" title="Initiate bill payment">
-							<i class="bi bi-credit-card"></i>
-							<span>Pay Bill</span>
-						</a>
-						<a href="/complaints" class="btn btn-sm btn-quick-link" title="View and manage complaints">
-							<i class="bi bi-chat-left-text"></i>
-							<span>Complaints</span>
-						</a>
-						<a href="/invoicing" class="btn btn-sm btn-quick-link" title="Open invoicing workspace">
-							<i class="bi bi-file-earmark-text"></i>
-							<span>Invoicing</span>
-						</a>
+						<a href="/dashboard" class="btn btn-sm btn-quick-link" title="Go to main dashboard"><i class="bi bi-speedometer2"></i><span>Dashboard</span></a>
+						<a href="/bills" class="btn btn-sm btn-quick-link" title="View customer bills"><i class="bi bi-receipt"></i><span>My Bills</span></a>
+						<a href="/pay" class="btn btn-sm btn-quick-link" title="Initiate bill payment"><i class="bi bi-credit-card"></i><span>Pay Bill</span></a>
+						<a href="/complaints" class="btn btn-sm btn-quick-link" title="View and manage complaints"><i class="bi bi-chat-left-text"></i><span>Complaints</span></a>
+						<a href="/invoicing" class="btn btn-sm btn-quick-link" title="Open invoicing workspace"><i class="bi bi-file-earmark-text"></i><span>Invoicing</span></a>
+						<a href="/reports#billingIntegrityTools" class="btn btn-sm btn-quick-link" title="Open billing integrity tools"><i class="bi bi-shield-check"></i><span>Integrity Tools</span></a>
+					</div>
+				</div>
+			</div>
+
+			<div class="card shadow-sm reports-export-card reports-utility-card">
+				<div class="card-header d-flex justify-content-between align-items-center">
+					<h6 class="card-title mb-0"><i class="bi bi-box-arrow-down me-1"></i> Export Center</h6>
+				</div>
+				<div class="card-body py-3">
+					<div class="reports-export-group">
+						<div class="small text-uppercase text-muted fw-semibold mb-2">Usage Exports</div>
+						<div class="d-flex flex-wrap gap-2 mb-3">
+							<a href="<?php echo $usageExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-download"></i> Usage CSV</a>
+							<a href="<?php echo $usageExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark-pdf"></i> Usage PDF</a>
 						</div>
 					</div>
-				</div>
-				<div class="card shadow-sm usage-exports-card">
-					<div class="card-header d-flex justify-content-between align-items-center">
-						<h6 class="card-title mb-0"><i class="bi bi-droplet-half me-1"></i> Usage Exports</h6>
-					</div>
-					<div class="card-body py-3 d-flex flex-wrap gap-2">
-						<?php $usageExportCsvUrl = '/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage']))); ?>
-						<?php $usageExportPdfUrl = '/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'usage_pdf']))); ?>
-						<a href="<?php echo $usageExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm">
-							<i class="bi bi-download"></i> Download Usage CSV
-						</a>
-						<a href="<?php echo $usageExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm">
-							<i class="bi bi-file-earmark-pdf"></i> Download Usage PDF
-						</a>
-					</div>
-				</div>
-				<div class="card shadow-sm usage-exports-card mt-3">
-					<div class="card-header d-flex justify-content-between align-items-center">
-						<h6 class="card-title mb-0"><i class="bi bi-shield-check me-1"></i> Finance Audit Exports</h6>
-					</div>
-					<div class="card-body py-3 d-flex flex-wrap gap-2">
-						<?php $allocExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'installment_allocations']))); ?>
-						<?php $allocExportPdfUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'installment_allocations_pdf']))); ?>
-						<?php $adjustExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'writeoff_waiver']))); ?>
-						<?php $adjustExportPdfUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'writeoff_waiver_pdf']))); ?>
-						<a href="<?php echo $allocExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm">
-							<i class="bi bi-download"></i> Installment Allocations CSV
-						</a>
-						<a href="<?php echo $allocExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm">
-							<i class="bi bi-file-earmark-pdf"></i> Installment Allocations PDF
-						</a>
-						<a href="<?php echo $adjustExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm">
-							<i class="bi bi-download"></i> Write-off/Waiver CSV
-						</a>
-						<a href="<?php echo $adjustExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm">
-							<i class="bi bi-file-earmark-pdf"></i> Write-off/Waiver PDF
-						</a>
+					<div class="reports-export-group">
+						<div class="small text-uppercase text-muted fw-semibold mb-2">Finance Audit Exports</div>
+						<div class="d-flex flex-wrap gap-2">
+							<a href="<?php echo $allocExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-download"></i> Installments CSV</a>
+							<a href="<?php echo $allocExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark-pdf"></i> Installments PDF</a>
+							<a href="<?php echo $adjustExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-download"></i> Write-offs CSV</a>
+							<a href="<?php echo $adjustExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark-pdf"></i> Write-offs PDF</a>
+							<a href="<?php echo $paymentAdjustExportCsvUrl; ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-download"></i> Adjustments CSV</a>
+							<a href="<?php echo $paymentAdjustExportPdfUrl; ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark-pdf"></i> Adjustments PDF</a>
+						</div>
 					</div>
 				</div>
 			</div>
 		</div>
-		<div class="row g-3 mb-3">
-			<div class="col-12">
-				<div class="card shadow-sm h-100 aging-card">
-					<div class="card-header bg-light">
-						<h6 class="mb-0">Accounts Receivable Aging</h6>
-					</div>
-					<div class="card-body">
-						<div class="table-responsive">
-							<table class="table table-sm mb-0 align-middle table-density-target">
-								<thead class="table-light">
-									<tr>
-										<th>Bucket</th>
-										<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
-									</tr>
-								</thead>
-								<tbody>
-									<tr>
-										<td>Current (Not Yet Due)</td>
-										<td class="text-end"><?php echo number_format((float)$agingRow['current_bucket'], 2); ?></td>
-									</tr>
-									<tr>
-										<td>1 - 30 Days Overdue</td>
-										<td class="text-end"><?php echo number_format((float)$agingRow['bucket_1_30'], 2); ?></td>
-									</tr>
-									<tr>
-										<td>31 - 60 Days Overdue</td>
-										<td class="text-end"><?php echo number_format((float)$agingRow['bucket_31_60'], 2); ?></td>
-									</tr>
-									<tr>
-										<td>61 - 90 Days Overdue</td>
-										<td class="text-end"><?php echo number_format((float)$agingRow['bucket_61_90'], 2); ?></td>
-									</tr>
-									<tr>
-										<td>Over 90 Days Overdue</td>
-										<td class="text-end text-danger"><?php echo number_format((float)$agingRow['bucket_over_90'], 2); ?></td>
-									</tr>
-								</tbody>
-							</table>
-						</div>
-						<p class="text-muted small mt-2 mb-0">This aging view follows a standard 0/30/60/90+ day breakdown for receivables.</p>
-					</div>
-				</div>
-			</div>
-		</div>
+	</div>
 
 	<h5 class="mt-4 mb-2 financial-section-title">Detailed Reports</h5>
 	<p class="text-muted small mb-3">Review transaction-level details and download export-ready files.</p>
@@ -1145,7 +1560,7 @@ require_once __DIR__ . '/../../templates/header.php';
 				<div class="card-header d-flex justify-content-between align-items-center report-card-header">
 					<div>
 						<h5 class="card-title mb-0">Payment Report</h5>
-						<small class="text-muted">All payments for the selected period and filters.</small>
+						<small class="text-muted">All payments for the selected period and filters, labelled as monthly or registration.</small>
 					</div>
 					<div>
 						<?php $paymentsExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'payments']))); ?>
@@ -1164,6 +1579,7 @@ require_once __DIR__ . '/../../templates/header.php';
 							<thead class="table-light">
 								<tr>
 									<th>Date</th>
+									<th>Type</th>
 									<th>Account</th>
 									<th>Customer</th>
 									<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
@@ -1174,12 +1590,13 @@ require_once __DIR__ . '/../../templates/header.php';
 							<tbody>
 							<?php if (empty($payments)): ?>
 								<tr>
-									<td colspan="6" class="text-center text-muted py-3">No payments found for this period.</td>
+									<td colspan="7" class="text-center text-muted py-3">No payments found for this period.</td>
 								</tr>
 							<?php else: ?>
 								<?php foreach ($payments as $p): ?>
 									<tr>
 										<td data-label="Date"><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime($p['transaction_date'] ?? $p['created_at']))); ?></td>
+										<td data-label="Type"><span class="badge bg-<?php echo ($p['payment_type'] ?? 'monthly') === 'registration' ? 'info' : 'primary'; ?>-subtle text-<?php echo ($p['payment_type'] ?? 'monthly') === 'registration' ? 'info' : 'primary'; ?>-emphasis"><?php echo htmlspecialchars(ucfirst((string)($p['payment_type'] ?? 'monthly'))); ?></span></td>
 										<td data-label="Account"><?php echo htmlspecialchars($p['account_number'] ?? '-'); ?></td>
 										<td data-label="Customer"><?php echo htmlspecialchars($p['full_name'] ?? ''); ?></td>
 										<td data-label="Amount (<?php echo htmlspecialchars($currency); ?>)" class="text-end"><?php echo number_format((float)$p['amount'], 2); ?></td>
@@ -1249,7 +1666,7 @@ require_once __DIR__ . '/../../templates/header.php';
 				<div class="card-header d-flex justify-content-between align-items-center report-card-header">
 					<div>
 						<h5 class="card-title mb-0">Billing Report</h5>
-						<small class="text-muted">Bills issued for the selected period and filters.</small>
+						<small class="text-muted">Bills issued for the selected period and filters, labelled as monthly or registration.</small>
 					</div>
 					<div>
 						<?php $billsExportCsvUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['export' => 'bills']))); ?>
@@ -1268,6 +1685,7 @@ require_once __DIR__ . '/../../templates/header.php';
 							<thead class="table-light">
 								<tr>
 									<th>Billing Month</th>
+									<th>Type</th>
 									<th>Account</th>
 									<th>Customer</th>
 									<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
@@ -1278,12 +1696,13 @@ require_once __DIR__ . '/../../templates/header.php';
 							<tbody>
 							<?php if (empty($bills)): ?>
 								<tr>
-									<td colspan="6" class="text-center text-muted py-3">No bills found for this period.</td>
+									<td colspan="7" class="text-center text-muted py-3">No bills found for this period.</td>
 								</tr>
 							<?php else: ?>
 								<?php foreach ($bills as $bill): ?>
 									<tr>
 										<td data-label="Billing Month"><?php echo htmlspecialchars(date('M Y', strtotime($bill['billing_month']))); ?></td>
+										<td data-label="Type"><span class="badge bg-<?php echo ($bill['bill_type'] ?? 'monthly') === 'registration' ? 'info' : 'primary'; ?>-subtle text-<?php echo ($bill['bill_type'] ?? 'monthly') === 'registration' ? 'info' : 'primary'; ?>-emphasis"><?php echo htmlspecialchars(ucfirst((string)($bill['bill_type'] ?? 'monthly'))); ?></span></td>
 										<td data-label="Account"><?php echo htmlspecialchars($bill['account_number'] ?? '-'); ?></td>
 										<td data-label="Customer"><?php echo htmlspecialchars($bill['full_name'] ?? ''); ?></td>
 										<td data-label="Amount (<?php echo htmlspecialchars($currency); ?>)" class="text-end"><?php echo number_format((float)$bill['amount'], 2); ?></td>
@@ -1526,6 +1945,98 @@ require_once __DIR__ . '/../../templates/header.php';
 							<li class="page-item <?php echo $adjustments_page >= $adjustments_total_pages ? 'disabled' : ''; ?>">
 								<?php $adjustLastUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['adjustments_page' => $adjustments_total_pages, 'allocations_page' => $allocations_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
 								<a class="page-link js-adjust-page-link" href="<?php echo $adjustLastUrl; ?>" aria-label="Last" title="Go to last page"><span aria-hidden="true">&raquo;&raquo;</span></a>
+							</li>
+						</ul>
+					</nav>
+					<?php endif; ?>
+				</div>
+			</div>
+		</div>
+
+		<div class="col-12" id="paymentAdjustmentAuditSection">
+			<div class="card h-100 report-table-card">
+				<div class="card-header d-flex justify-content-between align-items-center report-card-header">
+					<div>
+						<h5 class="card-title mb-0">Payment Adjustment Audit</h5>
+						<small class="text-muted">Approved refunds and chargebacks for the selected period.</small>
+					</div>
+				</div>
+				<div class="card-body p-0">
+					<div class="table-responsive">
+						<table class="table table-striped table-sm mb-0 align-middle table-density-target">
+							<thead class="table-light">
+								<tr>
+									<th>Date</th>
+									<th>Adjustment</th>
+									<th>Type</th>
+									<th>Payment</th>
+									<th>Account</th>
+									<th>Customer</th>
+									<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
+									<th>Approved By</th>
+									<th>Action</th>
+								</tr>
+							</thead>
+							<tbody>
+							<?php if (empty($paymentAdjustments)): ?>
+								<tr>
+									<td colspan="9" class="text-center text-muted py-3">No approved payment adjustments found for this period.</td>
+								</tr>
+							<?php else: ?>
+								<?php foreach ($paymentAdjustments as $paymentAdjustment): ?>
+									<tr>
+										<td><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime((string)$paymentAdjustment['decided_at']))); ?></td>
+										<td>#<?php echo (int)$paymentAdjustment['id']; ?></td>
+										<td><?php echo htmlspecialchars(ucfirst((string)$paymentAdjustment['adjustment_type'])); ?></td>
+										<td>#<?php echo (int)$paymentAdjustment['payment_id']; ?> <?php echo !empty($paymentAdjustment['mpesa_receipt']) ? '(' . htmlspecialchars((string)$paymentAdjustment['mpesa_receipt']) . ')' : ''; ?></td>
+										<td><?php echo htmlspecialchars((string)($paymentAdjustment['account_number'] ?? '-')); ?></td>
+										<td><?php echo htmlspecialchars((string)($paymentAdjustment['full_name'] ?? '')); ?></td>
+										<td class="text-end"><?php echo number_format((float)$paymentAdjustment['amount'], 2); ?></td>
+										<td><?php echo htmlspecialchars((string)($paymentAdjustment['approver_name'] ?? 'System')); ?></td>
+										<td class="d-flex gap-1 flex-wrap">
+											<?php if (!empty($paymentAdjustment['bill_id'])): ?>
+												<a class="btn btn-outline-dark btn-sm" href="/admin/bill-detail?bill_id=<?php echo (int)$paymentAdjustment['bill_id']; ?>">Bill</a>
+											<?php endif; ?>
+											<a class="btn btn-outline-secondary btn-sm" href="/admin/approvals?status=approved#finance-items">Approval</a>
+										</td>
+									</tr>
+								<?php endforeach; ?>
+							<?php endif; ?>
+							</tbody>
+						</table>
+					</div>
+					<div class="px-3 py-2 border-top small text-end report-grand-total">
+						<strong>Grand Total (<?php echo htmlspecialchars($currency); ?>):</strong>
+						<?php echo number_format($payment_adjustments_grand_total, 2); ?>
+					</div>
+					<?php if ($payment_adjustments_total_pages > 1): ?>
+					<nav class="mt-2">
+						<ul class="pagination pagination-sm justify-content-end mb-0 px-3 pb-2">
+							<?php
+								$paymentAdjustPrevPage = max(1, $payment_adjustments_page - 1);
+								$paymentAdjustNextPage = min($payment_adjustments_total_pages, $payment_adjustments_page + 1);
+							?>
+							<li class="page-item <?php echo $payment_adjustments_page <= 1 ? 'disabled' : ''; ?>">
+								<?php $paymentAdjustFirstUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['payment_adjustments_page' => 1, 'adjustments_page' => $adjustments_page, 'allocations_page' => $allocations_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link" href="<?php echo $paymentAdjustFirstUrl; ?>" aria-label="First"><span aria-hidden="true">&laquo;&laquo;</span></a>
+							</li>
+							<li class="page-item <?php echo $payment_adjustments_page <= 1 ? 'disabled' : ''; ?>">
+								<?php $paymentAdjustPrevUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['payment_adjustments_page' => $paymentAdjustPrevPage, 'adjustments_page' => $adjustments_page, 'allocations_page' => $allocations_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link" href="<?php echo $paymentAdjustPrevUrl; ?>" aria-label="Previous"><span aria-hidden="true">&laquo;</span></a>
+							</li>
+							<?php for ($i = 1; $i <= $payment_adjustments_total_pages; $i++): ?>
+								<?php $paymentAdjustPageUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['payment_adjustments_page' => $i, 'adjustments_page' => $adjustments_page, 'allocations_page' => $allocations_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<li class="page-item <?php echo $i === $payment_adjustments_page ? 'active' : ''; ?>">
+									<a class="page-link" href="<?php echo $paymentAdjustPageUrl; ?>"><?php echo $i; ?></a>
+								</li>
+							<?php endfor; ?>
+							<li class="page-item <?php echo $payment_adjustments_page >= $payment_adjustments_total_pages ? 'disabled' : ''; ?>">
+								<?php $paymentAdjustNextUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['payment_adjustments_page' => $paymentAdjustNextPage, 'adjustments_page' => $adjustments_page, 'allocations_page' => $allocations_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link" href="<?php echo $paymentAdjustNextUrl; ?>" aria-label="Next"><span aria-hidden="true">&raquo;</span></a>
+							</li>
+							<li class="page-item <?php echo $payment_adjustments_page >= $payment_adjustments_total_pages ? 'disabled' : ''; ?>">
+								<?php $paymentAdjustLastUrl = '/admin/reports?' . htmlspecialchars(http_build_query(array_merge($baseQuery, ['payment_adjustments_page' => $payment_adjustments_total_pages, 'adjustments_page' => $adjustments_page, 'allocations_page' => $allocations_page, 'payments_page' => $payments_page, 'bills_page' => $bills_page]))); ?>
+								<a class="page-link" href="<?php echo $paymentAdjustLastUrl; ?>" aria-label="Last"><span aria-hidden="true">&raquo;&raquo;</span></a>
 							</li>
 						</ul>
 					</nav>

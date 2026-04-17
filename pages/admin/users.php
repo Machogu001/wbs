@@ -117,6 +117,38 @@ function normalizePhoneFromForm($countryCode, $localNumber)
 	return $code . $local;
 }
 
+function normalizeMeterNumberInput($meterNumber)
+{
+	$meter = strtoupper(trim((string)$meterNumber));
+	return preg_replace('/\s+/', '', $meter);
+}
+
+function normalizeCurrencyAmountInput($amount)
+{
+	$normalized = preg_replace('/[^0-9.\-]/', '', (string)$amount);
+	if ($normalized === '' || $normalized === '-' || $normalized === '.') {
+		return 0.0;
+	}
+	return round((float)$normalized, 2);
+}
+
+function buildUsersPageUrl(array $params = [])
+{
+	$query = [];
+	if (isset($params['page']) && (int)$params['page'] > 1) {
+		$query['page'] = (int)$params['page'];
+	}
+	if (isset($params['customer_search']) && trim((string)$params['customer_search']) !== '') {
+		$query['customer_search'] = trim((string)$params['customer_search']);
+	}
+	if (isset($params['edit_id']) && (int)$params['edit_id'] > 0) {
+		$query['edit_id'] = (int)$params['edit_id'];
+	}
+
+	$queryString = http_build_query($query);
+	return '/admin/users' . ($queryString !== '' ? '?' . $queryString : '');
+}
+
 $countryCodeOptions = [
 	['value' => '254', 'label' => 'Kenya (+254)'],
 	['value' => '256', 'label' => 'Uganda (+256)'],
@@ -147,6 +179,12 @@ if (isset($_SESSION['flash_message'])) {
 	unset($_SESSION['flash_message'], $_SESSION['flash_type']);
 }
 
+$currentPage = isset($_REQUEST['page']) ? (int)$_REQUEST['page'] : 1;
+if ($currentPage < 1) {
+	$currentPage = 1;
+}
+$customerSearch = trim((string)($_REQUEST['customer_search'] ?? ''));
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	$formType = $_POST['form_type'] ?? 'create_user';
 
@@ -164,7 +202,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			if ($stmt->execute()) {
 				$_SESSION['flash_message'] = 'User status updated.';
 				$_SESSION['flash_type'] = 'success';
-				header('Location: /admin/users?page=' . max(1, (int)$currentPage));
+				header('Location: ' . buildUsersPageUrl([
+					'page' => $currentPage,
+					'customer_search' => $customerSearch
+				]));
 				exit;
 			} else {
 				throw new Exception('Failed to update user status.');
@@ -186,7 +227,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			if ($stmt->execute()) {
 				$_SESSION['flash_message'] = 'User deleted successfully.';
 				$_SESSION['flash_type'] = 'success';
-				header('Location: /admin/users');
+				header('Location: ' . buildUsersPageUrl([
+					'page' => $currentPage,
+					'customer_search' => $customerSearch
+				]));
 				exit;
 			} else {
 				throw new Exception('Failed to delete user.');
@@ -212,6 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$id_number = trim($_POST['id_number'] ?? '');
 			$address = trim($_POST['address'] ?? '');
 			$tax_pin = trim($_POST['tax_pin'] ?? '');
+			$meter_number = normalizeMeterNumberInput($_POST['meter_number'] ?? '');
 			$connection_type = trim($_POST['connection_type'] ?? 'domestic');
 			$location_label = trim($_POST['location_label'] ?? '');
 			$latitude = trim($_POST['latitude'] ?? '');
@@ -223,6 +268,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				throw new Exception('Please fill in all required fields.');
 			}
 
+			if ($meter_number === '') {
+				$existingUser = (new User($db))->getById($userId);
+				$meter_number = normalizeMeterNumberInput((string)($existingUser['meter_number'] ?? $existingUser['account_number'] ?? ''));
+			}
+
 			// Ensure phone is unique to this user
 			$stmtCheck = $db->prepare('SELECT id FROM users WHERE phone_number = :phone AND id <> :id LIMIT 1');
 			$stmtCheck->bindParam(':phone', $phone_number);
@@ -232,11 +282,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				throw new Exception('The phone number is already registered to another user.');
 			}
 
+			$stmtMeterCheck = $db->prepare('SELECT id FROM users WHERE meter_number = :meter_number AND id <> :id LIMIT 1');
+			$stmtMeterCheck->bindParam(':meter_number', $meter_number);
+			$stmtMeterCheck->bindParam(':id', $userId, PDO::PARAM_INT);
+			$stmtMeterCheck->execute();
+			if ($stmtMeterCheck->fetch(PDO::FETCH_ASSOC)) {
+				throw new Exception('The meter number is already assigned to another user.');
+			}
+
 			// Build update query
 			// Customers page always stores customer role
 			$role = 'customer';
 
-			$sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, connection_type = :connection_type, location_label = :location_label, latitude = :latitude, longitude = :longitude, role = :role';
+			$sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, meter_number = :meter_number, connection_type = :connection_type, location_label = :location_label, latitude = :latitude, longitude = :longitude, role = :role';
 			$updatePassword = ($password !== '');
 			if ($updatePassword) {
 				$sql .= ', password_hash = :password_hash';
@@ -251,6 +309,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$stmt->bindParam(':address', $address);
 			$taxPinValue = $tax_pin !== '' ? $tax_pin : null;
 			$stmt->bindParam(':tax_pin', $taxPinValue);
+			$stmt->bindParam(':meter_number', $meter_number);
 			$stmt->bindParam(':connection_type', $connection_type);
 			$locValue = $location_label !== '' ? $location_label : null;
 			$latValue = $latitude !== '' ? (float)$latitude : null;
@@ -268,7 +327,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			if ($stmt->execute()) {
 				$_SESSION['flash_message'] = 'User updated successfully.';
 				$_SESSION['flash_type'] = 'success';
-				header('Location: /admin/users?page=' . max(1, (int)$currentPage));
+				header('Location: ' . buildUsersPageUrl([
+					'page' => $currentPage,
+					'customer_search' => $customerSearch
+				]));
 				exit;
 			} else {
 				throw new Exception('Failed to update user.');
@@ -299,6 +361,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$registration_already_paid = isset($_POST['registration_already_paid']);
 			$send_stk = isset($_POST['send_stk']);
 			$registration_mpesa_code = trim($_POST['registration_mpesa_code'] ?? '');
+			$registration_paid_amount = normalizeCurrencyAmountInput($_POST['registration_paid_amount'] ?? '');
 
 			// Basic validation
 			if ($first_name === '' || $last_name === '' || $phone_number === '' || $email === '' || $id_number === '' || $address === '' || $password === '') {
@@ -310,6 +373,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				throw new Exception('The phone number is already registered to another user.');
 			}
 
+			if ($registrationFee > 0 && $registration_already_paid) {
+				if ($registration_paid_amount <= 0) {
+					$registration_paid_amount = round($registrationFee, 2);
+				}
+				if ($registration_paid_amount <= 0) {
+					throw new Exception('Enter a valid amount already paid toward the registration fee.');
+				}
+				if ($registration_paid_amount - round($registrationFee, 2) > 0.01) {
+					throw new Exception('Amount already paid cannot exceed the configured registration fee.');
+				}
+			}
+
 			// Generate sequential account number like public registration
 			$stmt = $db->query("SELECT account_number FROM users WHERE account_number LIKE 'MTR%' ORDER BY id DESC LIMIT 1");
 			$last = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : false;
@@ -318,6 +393,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				$nextNumber = (int)$m[1] + 1;
 			}
 			$account_number = 'MTR' . str_pad((string)$nextNumber, 4, '0', STR_PAD_LEFT);
+			$meter_number = $account_number;
 
 			// Populate user model
 			$user->account_number = $account_number;
@@ -327,7 +403,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$user->id_number = $id_number;
 			$user->address = $address;
 			$user->tax_pin = $tax_pin !== '' ? $tax_pin : null;
-			$user->meter_number = $account_number;
+			$user->meter_number = $meter_number;
 			$user->connection_type = $connection_type !== '' ? $connection_type : 'domestic';
 			$user->location_label = $location_label !== '' ? $location_label : null;
 			$user->latitude = $latitude !== '' ? (float)$latitude : null;
@@ -338,29 +414,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$billService = new Bill($db);
 			$paymentModel = new Payment($db);
 
-			// Case 1: No registration fee configured OR admin marks as already paid
+			// Case 1: No registration fee configured OR admin records an existing payment
 			if ($registrationFee <= 0 || $registration_already_paid) {
-				$user->status = 'active';
+				$user->status = $registrationFee > 0 ? 'inactive' : 'active';
 				if (!$user->create()) {
 					throw new Exception('Failed to create user account.');
 				}
 
-				// If a registration fee exists and is marked as already paid, record a paid registration bill + payment
+				$registrationBalance = 0.0;
+
+				// If a registration fee exists and is marked as already paid, record the amount already received
 				if ($registrationFee > 0 && $registration_already_paid) {
 					$dueDate = date('Y-m-d');
-					$billId = $billService->createRegistrationFeeBill($user->id, $user->account_number, $registrationFee, $dueDate, 'paid');
+					$billId = $billService->createRegistrationFeeBill($user->id, $user->account_number, $registrationFee, $dueDate, 'pending');
 					if ($billId) {
 						$payment = new Payment($db);
 						$payment->bill_id = $billId;
 						$payment->user_id = $user->id;
 						$payment->phone_number = $phone_number;
-						$payment->amount = $registrationFee;
+						$payment->amount = $registration_paid_amount;
 						$payment->merchant_request_id = null;
 						$payment->checkout_request_id = null;
 						$payment->mpesa_receipt = $registration_mpesa_code !== '' ? $registration_mpesa_code : null;
 						$payment->status = 'completed';
 						$payment->registration_id = $user->id;
-						$payment->create();
+						if (!$payment->create()) {
+							throw new Exception('Failed to record the completed registration payment for the new user.');
+						}
+						$registrationBalance = $paymentModel->getBillOutstandingAmount((int)$billId);
+						$billRow = $billService->getById((int)$billId);
+						if ($registrationBalance <= 0.01 && (($billRow['status'] ?? '') === 'paid')) {
+							$stmtActivate = $db->prepare('UPDATE users SET status = "active" WHERE id = :id');
+							$stmtActivate->execute([':id' => (int)$user->id]);
+							$user->status = 'active';
+						} else {
+							$user->status = 'inactive';
+						}
 					}
 				}
 
@@ -368,12 +457,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				$sms = new SMS();
 				$companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
 				$loginUrl = 'https://wbs.bremac.co.ke/';
-				$messageText = "Dear " . $user->full_name . ",\n" .
-					"Your water account has been created successfully.\n" .
-					"Account No: " . $user->account_number . "\n" .
-					"Meter No: " . $user->meter_number . "\n" .
-					"You can now log in at " . $loginUrl . " using your account number, phone or email to view your bills and make payments.\n" .
-					$companyName;
+				if ($registrationFee > 0 && $registration_already_paid && $user->status !== 'active') {
+					$messageText = "Dear " . $user->full_name . ",\n" .
+						"Your water account has been created successfully.\n" .
+						"Account No: " . $user->account_number . "\n" .
+						"Meter No: " . $user->meter_number . "\n" .
+						"Registration paid: KES " . number_format($registration_paid_amount, 2) . "\n" .
+						"Registration balance due: KES " . number_format($registrationBalance, 2) . "\n" .
+						"Your account will be activated after the full registration fee is paid.\n" .
+						"Log in at https://wbs.bremac.co.ke/registration-payment to complete the balance payment.\n" .
+						$companyName;
+				} else {
+					$messageText = "Dear " . $user->full_name . ",\n" .
+						"Your water account has been created successfully.\n" .
+						"Account No: " . $user->account_number . "\n" .
+						"Meter No: " . $user->meter_number . "\n" .
+						"You can now log in at " . $loginUrl . " using your account number, phone or email to view your bills and make payments.\n" .
+						$companyName;
+				}
 				$sms->send($user->phone_number, $messageText);
 
 				// Also send an email if available
@@ -389,7 +490,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 				$_SESSION['flash_message'] = 'User created successfully.';
 				$_SESSION['flash_type'] = 'success';
-				header('Location: /admin/users');
+				header('Location: ' . buildUsersPageUrl([
+					'page' => $currentPage,
+					'customer_search' => $customerSearch
+				]));
 				exit;
 			} else {
 				// Case 2: Registration fee configured and not marked as already paid
@@ -450,7 +554,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 				$_SESSION['flash_message'] = 'User created and registration payment initiated via M-Pesa STK. The account will be activated automatically after payment is received.';
 				$_SESSION['flash_type'] = 'success';
-				header('Location: /admin/users');
+				header('Location: ' . buildUsersPageUrl([
+					'page' => $currentPage,
+					'customer_search' => $customerSearch
+				]));
 				exit;
 			}
 		} catch (Exception $e) {
@@ -462,16 +569,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Pagination for existing users list
 $usersList = [];
 $totalUsers = 0;
-$currentPage = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-if ($currentPage < 1) {
-	$currentPage = 1;
-}
 $perPage = 10;
 
 if ($db) {
 	try {
-		$stmtCount = $db->query("SELECT COUNT(*) AS total FROM users WHERE role = 'customer'");
-		$rowCount = $stmtCount ? $stmtCount->fetch(PDO::FETCH_ASSOC) : ['total' => 0];
+		$whereClause = "role = 'customer'";
+		$queryParams = [];
+
+		if ($customerSearch !== '') {
+			$whereClause .= " AND (account_number LIKE :customer_search OR full_name LIKE :customer_search OR meter_number LIKE :customer_search OR phone_number LIKE :customer_search)";
+			$queryParams[':customer_search'] = '%' . $customerSearch . '%';
+		}
+
+		$stmtCount = $db->prepare("SELECT COUNT(*) AS total FROM users WHERE $whereClause");
+		foreach ($queryParams as $param => $value) {
+			$stmtCount->bindValue($param, $value, PDO::PARAM_STR);
+		}
+		$stmtCount->execute();
+		$rowCount = $stmtCount->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0];
 		$totalUsers = (int)($rowCount['total'] ?? 0);
 		$totalPages = max(1, (int)ceil($totalUsers / $perPage));
 		if ($currentPage > $totalPages) {
@@ -479,7 +594,10 @@ if ($db) {
 		}
 		$offset = ($currentPage - 1) * $perPage;
 
-		$stmtUsers = $db->prepare("SELECT id, account_number, full_name, phone_number, meter_number, status, role FROM users WHERE role = 'customer' ORDER BY full_name ASC LIMIT :limit OFFSET :offset");
+		$stmtUsers = $db->prepare("SELECT id, account_number, full_name, phone_number, meter_number, status, role FROM users WHERE $whereClause ORDER BY full_name ASC LIMIT :limit OFFSET :offset");
+		foreach ($queryParams as $param => $value) {
+			$stmtUsers->bindValue($param, $value, PDO::PARAM_STR);
+		}
 		$stmtUsers->bindValue(':limit', $perPage, PDO::PARAM_INT);
 		$stmtUsers->bindValue(':offset', $offset, PDO::PARAM_INT);
 		$stmtUsers->execute();
@@ -531,19 +649,27 @@ require_once __DIR__ . '/../../templates/header.php';
 <div class="container mt-4 admin-shell admin-users-page" id="usersPageDensityTarget">
 	<div class="row">
 		<div class="col-md-12">
-			<div class="admin-page-header admin-hero-header">
-				<div class="admin-hero-main">
-					<p class="admin-hero-eyebrow mb-2"><i class="bi bi-people"></i> Customer Administration</p>
-					<h2 class="mb-1">Customers</h2>
-					<p class="text-muted mb-0">Create and manage customer accounts.</p>
+			<div class="pb-banner pb-banner--emerald mb-4">
+				<div class="pb-bg" aria-hidden="true">
+					<div class="pb-grid"></div>
+					<div class="pb-blob pb-blob--a"></div>
+					<div class="pb-blob pb-blob--b"></div>
+					<i class="bi bi-people-fill pb-watermark"></i>
 				</div>
-				<div class="admin-hero-actions">
-					<a href="/admin/staff-users" class="btn btn-outline-secondary btn-sm">
-						<i class="bi bi-person-badge"></i> Staff Users
-					</a>
-					<a href="/admin/customer-locations" class="btn btn-outline-primary btn-sm">
-						<i class="bi bi-geo-alt"></i> View customer map
-					</a>
+				<div class="pb-inner">
+					<div class="pb-left">
+						<div class="pb-eyebrow-row">
+							<span class="pb-eyebrow-chip"><i class="bi bi-people-fill"></i> Customer Administration</span>
+						</div>
+						<h2 class="pb-title">Customers</h2>
+						<p class="pb-subtitle">Create and manage customer accounts.</p>
+					</div>
+					<div class="pb-right">
+						<div class="pb-btn-row">
+							<a href="/admin/staff-users" class="pb-btn"><i class="bi bi-person-badge"></i> Staff Users</a>
+							<a href="/admin/customer-locations" class="pb-btn pb-btn--accent"><i class="bi bi-geo-alt"></i> Customer Map</a>
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -561,18 +687,32 @@ require_once __DIR__ . '/../../templates/header.php';
 						</button>
 					</div>
 				</div>
+				<div class="card-body border-bottom bg-light-subtle">
+					<form method="get" action="/admin/users" class="row g-2 align-items-end">
+						<div class="col-md-8 col-lg-9">
+							<label for="customer_search" class="form-label mb-1">Search customers</label>
+							<input type="text" class="form-control" id="customer_search" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>" placeholder="Search by Account No, Name, Meter No or Phone">
+						</div>
+						<div class="col-md-4 col-lg-3 d-flex gap-2">
+							<button type="submit" class="btn btn-primary flex-fill"><i class="bi bi-search"></i> Search</button>
+							<?php if ($customerSearch !== ''): ?>
+								<a href="/admin/users" class="btn btn-outline-secondary">Clear</a>
+							<?php endif; ?>
+						</div>
+					</form>
+				</div>
 				<div class="card-body p-0">
 					<?php if (empty($usersList)): ?>
-						<p class="p-3 mb-0 text-muted">No customers found.</p>
+						<p class="p-3 mb-0 text-muted"><?php echo $customerSearch !== '' ? 'No customers matched that search.' : 'No customers found.'; ?></p>
 					<?php else: ?>
 						<div class="table-responsive">
 							<table class="table table-striped mb-0 table-density-target">
 								<thead>
 									<tr>
-										<th scope="col">Account</th>
-										<th scope="col">Name</th>
-										<th scope="col">Phone</th>
-										<th scope="col">Meter</th>
+										<th scope="col">Account No</th>
+										<th scope="col">Client Name</th>
+										<th scope="col">Phone No</th>
+										<th scope="col">Meter No</th>
 										<th scope="col">Status</th>
 										<th scope="col">Role</th>
 										<th scope="col">Actions</th>
@@ -619,7 +759,7 @@ require_once __DIR__ . '/../../templates/header.php';
 											</td>
 											<td>
 												<div class="d-flex flex-wrap gap-1">
-													<a href="<?php echo htmlspecialchars('/admin/users?page=' . $currentPage . '&edit_id=' . (int)$u['id']); ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil-square"></i> Edit</a>
+													<a href="<?php echo htmlspecialchars(buildUsersPageUrl(['page' => $currentPage, 'customer_search' => $customerSearch, 'edit_id' => (int)$u['id']])); ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil-square"></i> Edit</a>
 													<a href="<?php echo htmlspecialchars('/admin/customer-locations?user_id=' . (int)$u['id']); ?>" class="btn btn-sm btn-outline-info" title="View on map">
 														<i class="bi bi-geo-alt"></i>
 													</a>
@@ -627,6 +767,8 @@ require_once __DIR__ . '/../../templates/header.php';
 														<form method="post" action="" class="d-inline">
 															<input type="hidden" name="form_type" value="update_status">
 															<input type="hidden" name="user_id" value="<?php echo (int)$u['id']; ?>">
+															<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
+															<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
 															<input type="hidden" name="new_status" value="active">
 															<button type="submit" class="btn btn-sm btn-outline-success">Activate</button>
 														</form>
@@ -635,6 +777,8 @@ require_once __DIR__ . '/../../templates/header.php';
 														<form method="post" action="" class="d-inline">
 															<input type="hidden" name="form_type" value="update_status">
 															<input type="hidden" name="user_id" value="<?php echo (int)$u['id']; ?>">
+															<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
+															<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
 															<input type="hidden" name="new_status" value="inactive">
 															<button type="submit" class="btn btn-sm btn-outline-secondary">Deactivate</button>
 														</form>
@@ -643,6 +787,8 @@ require_once __DIR__ . '/../../templates/header.php';
 														<form method="post" action="" class="d-inline">
 															<input type="hidden" name="form_type" value="update_status">
 															<input type="hidden" name="user_id" value="<?php echo (int)$u['id']; ?>">
+															<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
+															<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
 															<input type="hidden" name="new_status" value="suspended">
 															<button type="submit" class="btn btn-sm btn-outline-warning">Suspend</button>
 														</form>
@@ -650,6 +796,8 @@ require_once __DIR__ . '/../../templates/header.php';
 															<form method="post" action="" class="d-inline" data-confirm-message="Are you sure you want to delete this user? This action cannot be undone.">
 														<input type="hidden" name="form_type" value="delete_user">
 														<input type="hidden" name="user_id" value="<?php echo (int)$u['id']; ?>">
+																<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
+																<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
 														<button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Delete</button>
 													</form>
 												</div>
@@ -665,17 +813,16 @@ require_once __DIR__ . '/../../templates/header.php';
 					<div class="card-footer">
 						<nav aria-label="User pagination">
 							<ul class="pagination mb-0">
-								<?php $baseUrl = strtok($_SERVER['REQUEST_URI'], '?'); ?>
 								<li class="page-item <?php echo $currentPage <= 1 ? 'disabled' : ''; ?>">
-									<a class="page-link" href="<?php echo $currentPage <= 1 ? '#' : htmlspecialchars($baseUrl . '?page=' . ($currentPage - 1)); ?>" tabindex="-1">Previous</a>
+									<a class="page-link" href="<?php echo $currentPage <= 1 ? '#' : htmlspecialchars(buildUsersPageUrl(['page' => ($currentPage - 1), 'customer_search' => $customerSearch])); ?>" tabindex="-1">Previous</a>
 								</li>
 								<?php for ($p = 1; $p <= $totalPages; $p++): ?>
 									<li class="page-item <?php echo $p === $currentPage ? 'active' : ''; ?>">
-										<a class="page-link" href="<?php echo htmlspecialchars($baseUrl . '?page=' . $p); ?>"><?php echo $p; ?></a>
+										<a class="page-link" href="<?php echo htmlspecialchars(buildUsersPageUrl(['page' => $p, 'customer_search' => $customerSearch])); ?>"><?php echo $p; ?></a>
 									</li>
 								<?php endfor; ?>
 								<li class="page-item <?php echo $currentPage >= $totalPages ? 'disabled' : ''; ?>">
-									<a class="page-link" href="<?php echo $currentPage >= $totalPages ? '#' : htmlspecialchars($baseUrl . '?page=' . ($currentPage + 1)); ?>">Next</a>
+									<a class="page-link" href="<?php echo $currentPage >= $totalPages ? '#' : htmlspecialchars(buildUsersPageUrl(['page' => ($currentPage + 1), 'customer_search' => $customerSearch])); ?>">Next</a>
 								</li>
 							</ul>
 						</nav>
@@ -721,6 +868,8 @@ require_once __DIR__ . '/../../templates/header.php';
 				<div class="card-body">
 					<form method="post" action="">
 						<input type="hidden" name="form_type" value="<?php echo $isEditMode ? 'edit_user_save' : 'create_user'; ?>">
+						<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
+						<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
 						<?php if ($isEditMode && !empty($editUser['id'])): ?>
 							<input type="hidden" name="user_id" value="<?php echo (int)$editUser['id']; ?>">
 						<?php endif; ?>
@@ -769,11 +918,22 @@ require_once __DIR__ . '/../../templates/header.php';
 								<input type="text" class="form-control" id="address" name="address" autocomplete="street-address" required value="<?php echo htmlspecialchars(isset($_POST['address']) ? $_POST['address'] : ($editUser['address'] ?? '')); ?>">
 							</div>
 							<div class="col-md-6 mb-3">
-								<label for="tax_pin" class="form-label">KRA PIN (optional)</label>
-								<input type="text" class="form-control" id="tax_pin" name="tax_pin" autocomplete="off" value="<?php echo htmlspecialchars(isset($_POST['tax_pin']) ? $_POST['tax_pin'] : ($editUser['tax_pin'] ?? '')); ?>">
+								<?php if ($isEditMode): ?>
+									<label for="meter_number" class="form-label">Meter No *</label>
+									<input type="text" class="form-control" id="meter_number" name="meter_number" autocomplete="off" required value="<?php echo htmlspecialchars(isset($_POST['meter_number']) ? $_POST['meter_number'] : ($editUser['meter_number'] ?? '')); ?>">
+									<div class="form-text">Only authorised staff can change the meter number after installation at the customer premises.</div>
+								<?php else: ?>
+									<label for="meter_number_preview" class="form-label">Meter No</label>
+									<input type="text" class="form-control" id="meter_number_preview" value="Auto: same as generated Account No" readonly>
+									<div class="form-text">On registration, Meter No will automatically start as the generated Account No. Staff can update it later to the actual installed meter number.</div>
+								<?php endif; ?>
 							</div>
 						</div>
 						<div class="row">
+							<div class="col-md-6 mb-3">
+								<label for="tax_pin" class="form-label">KRA PIN (optional)</label>
+								<input type="text" class="form-control" id="tax_pin" name="tax_pin" autocomplete="off" value="<?php echo htmlspecialchars(isset($_POST['tax_pin']) ? $_POST['tax_pin'] : ($editUser['tax_pin'] ?? '')); ?>">
+							</div>
 							<div class="col-md-6 mb-3">
 								<label for="location_label" class="form-label">Location (optional)</label>
 								<input type="text" class="form-control location-autocomplete" id="location_label" name="location_label" value="<?php echo htmlspecialchars(isset($_POST['location_label']) ? $_POST['location_label'] : ($editUser['location_label'] ?? '')); ?>" placeholder="e.g. P5PP+CJ, Nguluni" autocomplete="off">
@@ -839,6 +999,11 @@ require_once __DIR__ . '/../../templates/header.php';
 									<label for="registration_mpesa_code" class="form-label">M-Pesa Transaction Code (if paid via M-Pesa)</label>
 									<input type="text" class="form-control" id="registration_mpesa_code" name="registration_mpesa_code" autocomplete="off" value="<?php echo htmlspecialchars($_POST['registration_mpesa_code'] ?? ''); ?>" placeholder="e.g. QEU1XYZ123">
 									<div class="form-text">Optional. Enter the M-Pesa transaction code for reconciliation when the registration fee was paid via M-Pesa.</div>
+								</div>
+								<div class="mt-2">
+									<label for="registration_paid_amount" class="form-label">Amount Already Paid</label>
+									<input type="number" class="form-control" id="registration_paid_amount" name="registration_paid_amount" min="0" step="0.01" value="<?php echo htmlspecialchars($_POST['registration_paid_amount'] ?? ''); ?>" placeholder="Leave blank to treat as fully paid">
+									<div class="form-text">Use this when the client has paid only part of the registration fee. The system will keep the remaining balance outstanding and notify the client to clear it.</div>
 								</div>
 								<div class="form-text mt-1">If neither option is selected, you will be asked to choose one.</div>
 							</div>

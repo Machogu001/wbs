@@ -399,8 +399,23 @@ require_once __DIR__ . '/../templates/header.php';
 <div class="container mt-4">
 	<div class="row">
 		<div class="col-md-12">
-			<h2>My Profile</h2>
-			<p class="text-muted">Your account details and security settings.</p>
+			<div class="pb-banner pb-banner--plum mb-4">
+				<div class="pb-bg" aria-hidden="true">
+					<div class="pb-grid"></div>
+					<div class="pb-blob pb-blob--a"></div>
+					<div class="pb-blob pb-blob--b"></div>
+					<i class="bi bi-person-circle pb-watermark"></i>
+				</div>
+				<div class="pb-inner">
+					<div class="pb-left">
+						<div class="pb-eyebrow-row">
+							<span class="pb-eyebrow-chip"><i class="bi bi-person-circle"></i> My Account</span>
+						</div>
+						<h2 class="pb-title">My Profile</h2>
+						<p class="pb-subtitle">Your account details and security settings.</p>
+					</div>
+				</div>
+			</div>
 		</div>
 	</div>
 

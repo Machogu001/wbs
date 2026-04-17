@@ -273,25 +273,37 @@ include __DIR__ . '/../../templates/header.php';
     <div class="container-fluid mt-4 admin-shell system-monitor-board">
         <div class="row" id="recentErrorLogsSection">
             <div class="col-md-12">
-                <div class="admin-page-header mb-4 system-monitor-header">
-                    <div class="system-monitor-header-main">
-                        <span class="system-monitor-eyebrow">Operations Center</span>
-                        <h2 class="mb-2">System Monitoring Dashboard</h2>
-                        <p class="admin-page-subtitle mb-0">Track SMS delivery health, service errors, and recent system events in one place.</p>
+                <div class="pb-banner pb-banner--slate mb-4">
+                    <div class="pb-bg" aria-hidden="true">
+                        <div class="pb-grid"></div>
+                        <div class="pb-blob pb-blob--a"></div>
+                        <div class="pb-blob pb-blob--b"></div>
+                        <i class="bi bi-server pb-watermark"></i>
                     </div>
-                    <div class="system-monitor-header-metrics">
-                        <div class="metric-chip">
-                            <span class="metric-chip-label">SMS Records</span>
-                            <span class="metric-chip-value"><?php echo (int)$totalSmsRecords; ?></span>
+                    <div class="pb-inner">
+                        <div class="pb-left">
+                            <div class="pb-eyebrow-row">
+                                <span class="pb-eyebrow-chip"><i class="bi bi-server"></i> Operations Center</span>
+                            </div>
+                            <h2 class="pb-title">System Monitoring Dashboard</h2>
+                            <p class="pb-subtitle">Track SMS delivery health, service errors, and recent system events in one place.</p>
                         </div>
-                        <div class="metric-chip">
-                            <span class="metric-chip-label">Errors (24h)</span>
-                            <span class="metric-chip-value"><?php echo (int)$totalErrors24; ?></span>
-                        </div>
-                        <div class="metric-chip">
-                            <button type="button" class="btn btn-sm btn-outline-primary w-100" data-density-toggle data-density-target=".system-monitor-board" data-density-key="system-logs-table" data-density-compact-text="Compact View" data-density-comfy-text="Comfortable View">
-                                <i class="bi bi-arrows-collapse"></i> <span class="js-density-label">Compact View</span>
-                            </button>
+                        <div class="pb-right">
+                            <div class="pb-kpi-row">
+                                <div class="pb-kpi">
+                                    <span class="pb-kpi-label">SMS Records</span>
+                                    <span class="pb-kpi-value"><?php echo (int)$totalSmsRecords; ?></span>
+                                </div>
+                                <div class="pb-kpi">
+                                    <span class="pb-kpi-label">Errors (24h)</span>
+                                    <span class="pb-kpi-value"><?php echo (int)$totalErrors24; ?></span>
+                                </div>
+                            </div>
+                            <div class="pb-btn-row">
+                                <button type="button" class="pb-btn" data-density-toggle data-density-target=".system-monitor-board" data-density-key="system-logs-table" data-density-compact-text="Compact View" data-density-comfy-text="Comfortable View">
+                                    <i class="bi bi-arrows-collapse"></i> <span class="js-density-label">Compact View</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -26,9 +26,22 @@ $page_title = 'My Receipts';
 include __DIR__ . '/../templates/header.php';
 ?>
 <div class="container py-4">
-    <div class="admin-page-header mb-4">
-        <h2 class="mb-1">Receipt History</h2>
-        <p class="admin-page-subtitle">View and download your completed payment receipts.</p>
+    <div class="pb-banner pb-banner--teal mb-4">
+        <div class="pb-bg" aria-hidden="true">
+            <div class="pb-grid"></div>
+            <div class="pb-blob pb-blob--a"></div>
+            <div class="pb-blob pb-blob--b"></div>
+            <i class="bi bi-file-earmark-check-fill pb-watermark"></i>
+        </div>
+        <div class="pb-inner">
+            <div class="pb-left">
+                <div class="pb-eyebrow-row">
+                    <span class="pb-eyebrow-chip"><i class="bi bi-file-earmark-check-fill"></i> Payment History</span>
+                </div>
+                <h2 class="pb-title">Receipt History</h2>
+                <p class="pb-subtitle">View and download your completed payment receipts.</p>
+            </div>
+        </div>
     </div>
 
     <div class="card">

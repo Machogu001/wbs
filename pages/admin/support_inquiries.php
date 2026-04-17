@@ -68,6 +68,9 @@ if (!empty($_SESSION['support_inquiries_flash']) && is_array($_SESSION['support_
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
     $action = (string)($_POST['action'] ?? '');
     $inquiryId = isset($_POST['inquiry_id']) ? (int)$_POST['inquiry_id'] : 0;
+    $selectedInquiryIds = array_values(array_filter(array_map('intval', (array)($_POST['inquiry_ids'] ?? [])), static function ($value) {
+        return $value > 0;
+    }));
 
     try {
         ensureSupportInquiryTable($db);
@@ -178,6 +181,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
         header('Location: /admin/support-inquiries');
         exit;
     }
+
+    if ($isAdminUser && $action === 'delete_selected') {
+        if (empty($selectedInquiryIds)) {
+            $_SESSION['support_inquiries_flash'] = [
+                'message' => 'Select at least one inquiry to delete.',
+                'type' => 'warning',
+            ];
+            header('Location: /admin/support-inquiries');
+            exit;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($selectedInquiryIds), '?'));
+        $stmt = $db->prepare("DELETE FROM support_inquiries WHERE id IN ($placeholders)");
+        $stmt->execute($selectedInquiryIds);
+        $deletedCount = (int)$stmt->rowCount();
+
+        $_SESSION['support_inquiries_flash'] = [
+            'message' => $deletedCount === 1 ? '1 inquiry deleted.' : ($deletedCount . ' inquiries deleted.'),
+            'type' => 'success',
+        ];
+        header('Location: /admin/support-inquiries');
+        exit;
+    }
 }
 
 $statusFilter = trim((string)($_GET['status'] ?? 'open'));
@@ -228,15 +254,30 @@ require_once __DIR__ . '/../../templates/header.php';
 
 <div class="container-fluid mt-4 admin-shell">
     <div class="row mb-3">
-        <div class="col-12 d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <div>
-                <h2 class="mb-1"><i class="bi bi-inbox"></i> Support Inquiries</h2>
-                <p class="text-muted mb-0">Offline visitor inquiries are stored here for follow-up.</p>
-            </div>
-            <div class="d-flex gap-2 flex-wrap">
-                <a class="btn btn-outline-primary btn-sm <?php echo $statusFilter === 'open' ? 'active' : ''; ?>" href="/admin/support-inquiries?status=open">Open (<?php echo (int)$summary['open']; ?>)</a>
-                <a class="btn btn-outline-secondary btn-sm <?php echo $statusFilter === 'handled' ? 'active' : ''; ?>" href="/admin/support-inquiries?status=handled">Handled (<?php echo (int)$summary['handled']; ?>)</a>
-                <a class="btn btn-outline-dark btn-sm <?php echo $statusFilter === 'all' ? 'active' : ''; ?>" href="/admin/support-inquiries?status=all">All (<?php echo (int)$summary['all']; ?>)</a>
+        <div class="col-12">
+            <div class="pb-banner pb-banner--indigo">
+                <div class="pb-bg" aria-hidden="true">
+                    <div class="pb-grid"></div>
+                    <div class="pb-blob pb-blob--a"></div>
+                    <div class="pb-blob pb-blob--b"></div>
+                    <i class="bi bi-inbox-fill pb-watermark"></i>
+                </div>
+                <div class="pb-inner">
+                    <div class="pb-left">
+                        <div class="pb-eyebrow-row">
+                            <span class="pb-eyebrow-chip"><i class="bi bi-inbox-fill"></i> Support Desk</span>
+                        </div>
+                        <h2 class="pb-title">Support Inquiries</h2>
+                        <p class="pb-subtitle">Offline visitor inquiries are stored here for follow-up.</p>
+                    </div>
+                    <div class="pb-right">
+                        <div class="pb-btn-row">
+                            <a class="pb-btn <?php echo $statusFilter === 'open' ? 'pb-btn--accent' : ''; ?>" href="/admin/support-inquiries?status=open">Open (<?php echo (int)$summary['open']; ?>)</a>
+                            <a class="pb-btn <?php echo $statusFilter === 'handled' ? 'pb-btn--accent' : ''; ?>" href="/admin/support-inquiries?status=handled">Handled (<?php echo (int)$summary['handled']; ?>)</a>
+                            <a class="pb-btn <?php echo $statusFilter === 'all' ? 'pb-btn--accent' : ''; ?>" href="/admin/support-inquiries?status=all">All (<?php echo (int)$summary['all']; ?>)</a>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -252,10 +293,28 @@ require_once __DIR__ . '/../../templates/header.php';
             <?php if (empty($inquiries)): ?>
                 <div class="p-4 text-muted">No support inquiries found for this filter.</div>
             <?php else: ?>
+                <?php if ($isAdminUser): ?>
+                    <div class="d-flex justify-content-between align-items-center gap-2 px-3 py-3 border-bottom bg-light">
+                        <div class="small text-muted">
+                            Select one or more inquiries, then use bulk delete.
+                        </div>
+                        <form method="post" id="bulkDeleteInquiriesForm" class="d-inline">
+                            <input type="hidden" name="action" value="delete_selected">
+                            <button type="submit" class="btn btn-outline-danger btn-sm" id="bulkDeleteInquiriesBtn" disabled>
+                                <i class="bi bi-trash"></i> Delete Selected
+                            </button>
+                        </form>
+                    </div>
+                <?php endif; ?>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
+                                <?php if ($isAdminUser): ?>
+                                    <th style="width:48px;" class="text-center">
+                                        <input type="checkbox" class="form-check-input" id="selectAllInquiries" aria-label="Select all inquiries">
+                                    </th>
+                                <?php endif; ?>
                                 <th>Visitor</th>
                                 <th>Message</th>
                                 <th>Status</th>
@@ -272,6 +331,18 @@ require_once __DIR__ . '/../../templates/header.php';
                                     $badgeClass = $isHandled ? 'success' : 'warning';
                                 ?>
                                 <tr>
+                                    <?php if ($isAdminUser): ?>
+                                        <td class="text-center">
+                                            <input
+                                                type="checkbox"
+                                                class="form-check-input inquiry-select-checkbox"
+                                                name="inquiry_ids[]"
+                                                value="<?php echo (int)$inquiry['id']; ?>"
+                                                form="bulkDeleteInquiriesForm"
+                                                aria-label="Select inquiry <?php echo (int)$inquiry['id']; ?>"
+                                            >
+                                        </td>
+                                    <?php endif; ?>
                                     <td>
                                         <div class="fw-semibold"><?php echo htmlspecialchars((string)$inquiry['name']); ?></div>
                                         <div class="text-muted small"><?php echo htmlspecialchars((string)($inquiry['phone'] ?: 'No phone provided')); ?></div>
@@ -311,7 +382,7 @@ require_once __DIR__ . '/../../templates/header.php';
                                                 <?php endif; ?>
                                             </form>
                                             <?php if ($isAdminUser): ?>
-                                                <form method="post" class="d-inline" onsubmit="return confirm('Delete this inquiry?');">
+                                                <form method="post" class="d-inline inquiry-delete-form" data-confirm-message="Delete this inquiry?">
                                                     <input type="hidden" name="inquiry_id" value="<?php echo (int)$inquiry['id']; ?>">
                                                     <input type="hidden" name="action" value="delete">
                                                     <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
@@ -363,5 +434,136 @@ Support Team</textarea>
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const globalToastElement = document.getElementById('globalToast');
+    const globalToastBody = document.getElementById('globalToastBody');
+    const confirmModalElement = document.getElementById('confirmModal');
+    const confirmModalMessage = document.getElementById('confirmModalMessage');
+    const confirmModalConfirm = document.getElementById('confirmModalConfirm');
+    const flashAlert = document.querySelector('.container-fluid.mt-4.admin-shell .alert');
+    const selectAllCheckbox = document.getElementById('selectAllInquiries');
+    const inquiryCheckboxes = Array.from(document.querySelectorAll('.inquiry-select-checkbox'));
+    const bulkDeleteForm = document.getElementById('bulkDeleteInquiriesForm');
+    const bulkDeleteButton = document.getElementById('bulkDeleteInquiriesBtn');
+    const singleDeleteForms = Array.from(document.querySelectorAll('.inquiry-delete-form'));
+
+    function showToast(message, variant) {
+        if (!globalToastElement || !globalToastBody || !message || typeof bootstrap === 'undefined' || !bootstrap.Toast) {
+            return;
+        }
+
+        globalToastBody.textContent = message;
+        globalToastElement.classList.remove('bg-success', 'bg-danger', 'bg-warning', 'text-dark');
+        if (variant === 'danger') {
+            globalToastElement.classList.add('bg-danger');
+        } else if (variant === 'warning') {
+            globalToastElement.classList.add('bg-warning', 'text-dark');
+        } else {
+            globalToastElement.classList.add('bg-success');
+        }
+
+        bootstrap.Toast.getOrCreateInstance(globalToastElement).show();
+    }
+
+    function requestConfirmation(message, onConfirm) {
+        if (!confirmModalElement || !confirmModalMessage || !confirmModalConfirm || typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+            if (window.confirm(message)) {
+                onConfirm();
+            }
+            return;
+        }
+
+        confirmModalMessage.textContent = message;
+        const modalInstance = bootstrap.Modal.getOrCreateInstance(confirmModalElement);
+        const handleConfirm = function () {
+            confirmModalConfirm.removeEventListener('click', handleConfirm);
+            modalInstance.hide();
+            onConfirm();
+        };
+
+        confirmModalConfirm.removeEventListener('click', handleConfirm);
+        confirmModalConfirm.addEventListener('click', handleConfirm);
+        modalInstance.show();
+    }
+
+    function updateBulkDeleteState() {
+        if (!bulkDeleteButton) {
+            return;
+        }
+
+        const checkedCount = inquiryCheckboxes.filter(function (checkbox) {
+            return checkbox.checked;
+        }).length;
+
+        bulkDeleteButton.disabled = checkedCount === 0;
+        bulkDeleteButton.textContent = checkedCount > 0 ? 'Delete Selected (' + checkedCount + ')' : 'Delete Selected';
+
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = checkedCount > 0 && checkedCount === inquiryCheckboxes.length;
+            selectAllCheckbox.indeterminate = checkedCount > 0 && checkedCount < inquiryCheckboxes.length;
+        }
+    }
+
+    if (flashAlert) {
+        const message = flashAlert.textContent.trim();
+        let variant = 'success';
+        if (flashAlert.classList.contains('alert-danger')) {
+            variant = 'danger';
+        } else if (flashAlert.classList.contains('alert-warning')) {
+            variant = 'warning';
+        }
+        flashAlert.classList.add('d-none');
+        showToast(message, variant);
+    }
+
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function () {
+            inquiryCheckboxes.forEach(function (checkbox) {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+            updateBulkDeleteState();
+        });
+    }
+
+    inquiryCheckboxes.forEach(function (checkbox) {
+        checkbox.addEventListener('change', updateBulkDeleteState);
+    });
+    updateBulkDeleteState();
+
+    singleDeleteForms.forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            const message = form.getAttribute('data-confirm-message') || 'Delete this inquiry?';
+            requestConfirmation(message, function () {
+                form.submit();
+            });
+        });
+    });
+
+    if (bulkDeleteForm) {
+        bulkDeleteForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            const checkedCount = inquiryCheckboxes.filter(function (checkbox) {
+                return checkbox.checked;
+            }).length;
+
+            if (checkedCount === 0) {
+                showToast('Select at least one inquiry to delete.', 'warning');
+                return;
+            }
+
+            const message = checkedCount === 1
+                ? 'Delete the selected inquiry?'
+                : 'Delete ' + checkedCount + ' selected inquiries?';
+
+            requestConfirmation(message, function () {
+                bulkDeleteForm.submit();
+            });
+        });
+    }
+});
+</script>
 
 <?php require_once __DIR__ . '/../../templates/footer.php'; ?>

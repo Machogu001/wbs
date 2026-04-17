@@ -60,4 +60,7 @@ return [
     'admin/customer-locations' => 'pages/admin/customer_locations.php',
     'system-logs' => 'pages/admin/system_logs.php',
     'admin/system-logs' => 'pages/admin/system_logs.php',
+    // Blog / News
+    'blog' => 'pages/blog.php',
+    'admin/blog' => 'pages/admin/blog.php',
 ];

@@ -20,9 +20,22 @@ $is_admin_page = true;
 include __DIR__ . '/../../templates/header.php';
 ?>
 <div class="container-fluid mt-4 admin-shell integration-health-page">
-    <div class="admin-page-header mb-4">
-        <h2 class="mb-1">Integration Health</h2>
-        <p class="admin-page-subtitle">Monitor configuration, last success, and last errors across external services.</p>
+    <div class="pb-banner pb-banner--cyan mb-4">
+        <div class="pb-bg" aria-hidden="true">
+            <div class="pb-grid"></div>
+            <div class="pb-blob pb-blob--a"></div>
+            <div class="pb-blob pb-blob--b"></div>
+            <i class="bi bi-activity pb-watermark"></i>
+        </div>
+        <div class="pb-inner">
+            <div class="pb-left">
+                <div class="pb-eyebrow-row">
+                    <span class="pb-eyebrow-chip"><i class="bi bi-activity"></i> System Integrations</span>
+                </div>
+                <h2 class="pb-title">Integration Health</h2>
+                <p class="pb-subtitle">Monitor configuration, last success, and last errors across external services.</p>
+            </div>
+        </div>
     </div>
 
     <div class="row g-3">

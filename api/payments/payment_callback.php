@@ -73,10 +73,7 @@ try {
             'Success'
         );
 
-        // Update bill status and credit if linked to a bill
-        if (!empty($paymentData['bill_id'])) {
-            $bill->markAsPaid($paymentData['bill_id'], $paymentData['id']);
-        }
+        $paymentData = $payment->getById((int)$paymentData['id']) ?: $paymentData;
 
         // Send SMS notification (queued)
         $userService = new User($db);
@@ -84,19 +81,23 @@ try {
         if ($user) {
             // Registration-related payment is identified via registration_id
             $isRegistrationPayment = !empty($paymentData['registration_id']);
+            $billRow = !empty($paymentData['bill_id']) ? ($bill->getById((int)$paymentData['bill_id']) ?: null) : null;
+            $registrationOutstanding = ($isRegistrationPayment && !empty($paymentData['bill_id']))
+                ? $payment->getBillOutstandingAmount((int)$paymentData['bill_id'])
+                : 0.0;
             $wasInactive = $isRegistrationPayment && isset($user['status']) && $user['status'] !== 'active';
+            $registrationFullyPaid = $isRegistrationPayment && $registrationOutstanding <= 0.01 && $billRow && (($billRow['status'] ?? '') === 'paid');
 
-            // If user was pending/inactive for registration, activate them now
-            if ($wasInactive) {
+            if ($wasInactive && $registrationFullyPaid) {
                 $stmtActivate = $db->prepare('UPDATE users SET status = "active" WHERE id = :id');
                 $stmtActivate->bindParam(':id', $user['id'], PDO::PARAM_INT);
                 $stmtActivate->execute();
+                $user['status'] = 'active';
             }
 
             $sms = new SMS($db);
 
             // Try to get account number from latest bill data
-            $billRow = $bill->getById($paymentData['bill_id']);
             $accountNumber = $billRow && !empty($billRow['account_number'])
                 ? $billRow['account_number']
                 : ($user['account_number'] ?? '');
@@ -106,7 +107,7 @@ try {
             $settings = $settingsService->getSettings();
             $companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
 
-            if ($wasInactive) {
+            if ($registrationFullyPaid) {
                 // Registration fee success: send SMS/Email with account details
                 $messageText = "Dear " . ($user['full_name'] ?? 'Customer') . ",\n" .
                     "Your registration payment of KES " . number_format($amount, 2) .
@@ -115,6 +116,13 @@ try {
                     "Account No: " . $accountNumber . "\n" .
                     (isset($user['meter_number']) && $user['meter_number'] !== '' ? "Meter No: " . $user['meter_number'] . "\n" : '') .
                     "You can now log in to view your bills and make payments.\n" .
+                    $companyName;
+            } elseif ($isRegistrationPayment) {
+                $messageText = "Dear " . ($user['full_name'] ?? 'Customer') . ",\n" .
+                    "We have received KES " . number_format($amount, 2) . " toward your registration fee." . "\n" .
+                    "Remaining registration balance: KES " . number_format($registrationOutstanding, 2) . "\n" .
+                    "Your account will be activated after the full registration fee is paid.\n" .
+                    "Please log in and complete payment at https://wbs.bremac.co.ke/registration-payment\n" .
                     $companyName;
             } else {
                 // Normal bill payment SMS/Email

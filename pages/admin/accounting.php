@@ -442,9 +442,22 @@ include __DIR__ . '/../../templates/header.php';
 	}
 </style>
 <div class="container-fluid mt-4 admin-shell">
-	<div class="admin-page-header mb-4">
-		<h2 class="mb-1">Accounting Management</h2>
-		<p class="admin-page-subtitle">Manage the chart of accounts, post journal entries, and review trial balance output.</p>
+	<div class="pb-banner pb-banner--teal mb-4">
+		<div class="pb-bg" aria-hidden="true">
+			<div class="pb-grid"></div>
+			<div class="pb-blob pb-blob--a"></div>
+			<div class="pb-blob pb-blob--b"></div>
+			<i class="bi bi-journal-bookmark-fill pb-watermark"></i>
+		</div>
+		<div class="pb-inner">
+			<div class="pb-left">
+				<div class="pb-eyebrow-row">
+					<span class="pb-eyebrow-chip"><i class="bi bi-journal-bookmark-fill"></i> Finance &amp; Accounting</span>
+				</div>
+				<h2 class="pb-title">Accounting Management</h2>
+				<p class="pb-subtitle">Manage the chart of accounts, post journal entries, and review trial balance output.</p>
+			</div>
+		</div>
 	</div>
 	<?php if ($message !== ''): ?>
 		<div class="alert alert-<?php echo htmlspecialchars($messageType); ?> mb-4" role="alert">
