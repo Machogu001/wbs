@@ -24,7 +24,7 @@ try {
             exit;
         }
 
-        if (!($auth->isAdmin() || $auth->hasRole('support'))) {
+        if (!$auth->isAdmin() && !$auth->hasPermission('handle_support') && !$auth->hasPermission('send_messages')) {
             http_response_code(403);
             echo json_encode(['success' => false, 'message' => 'Forbidden']);
             exit;
@@ -78,7 +78,7 @@ try {
 
     $currentUserAvailable = false;
     $user = $auth->check();
-    if ($user && ($auth->isAdmin() || $auth->hasRole('support'))) {
+    if ($user && ($auth->isAdmin() || $auth->hasPermission('handle_support') || $auth->hasPermission('send_messages'))) {
         $currentUserId = (int)($auth->getUserId() ?? 0);
         if ($currentUserId > 0) {
             $currentUserAvailable = $chat->isAgentAvailable($currentUserId);

@@ -25,7 +25,7 @@ try {
         exit;
     }
 
-    if (!($auth->isAdmin() || $auth->hasRole('support'))) {
+    if (!$auth->isAdmin() && !$auth->hasPermission('handle_support')) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Forbidden']);
         exit;

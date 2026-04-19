@@ -25,7 +25,7 @@ try {
         exit;
     }
 
-    if (!$auth->hasRole(['admin', 'reader', 'finance', 'support'])) {
+    if (!$auth->isAdmin() && !$auth->hasPermission('send_messages')) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Access denied']);
         exit;

@@ -37,7 +37,7 @@ $auth = new Auth($db);
 new FinanceApproval($db);
 new InstallmentPlan($db);
 
-if(!$auth->isLoggedIn() || !$auth->isAdmin()) {
+if(!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_reports'))) {
 	header("Location: /login");
 	exit;
 }
@@ -1702,7 +1702,13 @@ require_once __DIR__ . '/../../templates/header.php';
 								<?php foreach ($bills as $bill): ?>
 									<tr>
 										<td data-label="Billing Month"><?php echo htmlspecialchars(date('M Y', strtotime($bill['billing_month']))); ?></td>
-										<td data-label="Type"><span class="badge bg-<?php echo ($bill['bill_type'] ?? 'monthly') === 'registration' ? 'info' : 'primary'; ?>-subtle text-<?php echo ($bill['bill_type'] ?? 'monthly') === 'registration' ? 'info' : 'primary'; ?>-emphasis"><?php echo htmlspecialchars(ucfirst((string)($bill['bill_type'] ?? 'monthly'))); ?></span></td>
+										<td data-label="Type">
+								<?php if (($bill['bill_type'] ?? 'monthly') === 'registration'): ?>
+									<span class="badge badge-registration"><i class="bi bi-person-fill-check me-1"></i>Registration</span>
+								<?php else: ?>
+									<span class="badge badge-monthly"><i class="bi bi-calendar3 me-1"></i>Monthly</span>
+								<?php endif; ?>
+							</td>
 										<td data-label="Account"><?php echo htmlspecialchars($bill['account_number'] ?? '-'); ?></td>
 										<td data-label="Customer"><?php echo htmlspecialchars($bill['full_name'] ?? ''); ?></td>
 										<td data-label="Amount (<?php echo htmlspecialchars($currency); ?>)" class="text-end"><?php echo number_format((float)$bill['amount'], 2); ?></td>

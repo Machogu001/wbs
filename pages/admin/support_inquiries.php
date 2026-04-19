@@ -9,7 +9,7 @@ $database = new Database();
 $db = $database->getConnection();
 
 $auth = new Auth($db);
-if (!$auth->isLoggedIn() || !($auth->isAdmin() || $auth->hasRole('support'))) {
+if (!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('handle_support'))) {
     header('Location: /login');
     exit;
 }
@@ -66,6 +66,11 @@ if (!empty($_SESSION['support_inquiries_flash']) && is_array($_SESSION['support_
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
+    // CSRF validation
+    if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        die('Invalid CSRF token.');
+    }
     $action = (string)($_POST['action'] ?? '');
     $inquiryId = isset($_POST['inquiry_id']) ? (int)$_POST['inquiry_id'] : 0;
     $selectedInquiryIds = array_values(array_filter(array_map('intval', (array)($_POST['inquiry_ids'] ?? [])), static function ($value) {

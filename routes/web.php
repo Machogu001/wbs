@@ -33,6 +33,8 @@ return [
     'admin/bill-detail' => 'pages/admin/bill_detail.php',
     'admin/users' => 'pages/admin/users.php',
     'admin/staff-users' => 'pages/admin/staff_users.php',
+    // Role permissions management (admin-only)
+    'admin/role-permissions' => 'pages/admin/role_permissions.php',
     // Invoicing workspace
     'invoicing' => 'pages/admin/invoicing.php',
     'admin/invoicing' => 'pages/admin/invoicing.php',

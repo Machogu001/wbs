@@ -7,7 +7,9 @@ if($_SERVER['REQUEST_METHOD'] != 'POST') {
 }
 
 $db_host    = trim($_POST['db_host'] ?? 'localhost');
-$db_name    = trim($_POST['db_name'] ?? 'water_billing');
+// Strip anything that isn't a valid MySQL identifier character to prevent injection
+$db_name    = preg_replace('/[^A-Za-z0-9_]/', '', trim($_POST['db_name'] ?? 'water_billing'));
+if ($db_name === '') { $db_name = 'water_billing'; }
 $db_user    = trim($_POST['db_user'] ?? 'root');
 $db_pass    = $_POST['db_pass'] ?? '';
 $admin_phone  = trim($_POST['admin_phone'] ?? '254717996492');
@@ -614,6 +616,35 @@ try {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     Accounting::ensureTables($conn);
+
+    // Role permissions table — configurable per-role access grants (admin-managed)
+    $conn->exec("CREATE TABLE IF NOT EXISTS role_permissions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        role ENUM('finance','reader','support') NOT NULL,
+        permission VARCHAR(60) NOT NULL,
+        UNIQUE KEY unique_role_permission (role, permission)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Seed default role permissions (matching built-in defaults)
+    $rpCount = $conn->query("SELECT COUNT(*) AS total FROM role_permissions")->fetch(PDO::FETCH_ASSOC);
+    if (!$rpCount || (int)$rpCount['total'] === 0) {
+        $conn->exec("INSERT INTO role_permissions (role, permission) VALUES
+            ('finance','view_customers'),
+            ('finance','view_accounting'),
+            ('finance','view_reports'),
+            ('finance','view_payments'),
+            ('finance','view_invoicing'),
+            ('finance','view_bill_detail'),
+            ('finance','manage_demand_notices'),
+            ('finance','manage_approvals'),
+            ('finance','send_messages'),
+            ('reader','view_invoicing'),
+            ('reader','send_messages'),
+            ('support','handle_support'),
+            ('support','view_customers'),
+            ('support','view_bill_detail'),
+            ('support','send_messages')");
+    }
 
     // IP geo-lookup cache table (used by activity log)
     $conn->exec("CREATE TABLE IF NOT EXISTS activity_ip_lookup (

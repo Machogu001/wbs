@@ -2,9 +2,24 @@
 class Auth {
     private $conn;
     private $table = "user_sessions";
+    private static $permissionCache = [];
     
     public function __construct($db) {
-        session_start();
+        if (session_status() === PHP_SESSION_NONE) {
+            $secure = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on');
+            session_set_cookie_params([
+                'lifetime' => 0,
+                'path'     => '/',
+                'secure'   => $secure,
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
+            session_start();
+        }
+        // Ensure a session-level CSRF token exists for form protection
+        if (empty($_SESSION['app_csrf_token'])) {
+            $_SESSION['app_csrf_token'] = bin2hex(random_bytes(32));
+        }
         $this->conn = $db;
     }
 
@@ -78,6 +93,36 @@ class Auth {
         }
         
         $_SESSION['last_activity'] = time();
+
+        // Refresh role from DB once per request so admin role changes take effect immediately.
+        // Using a static variable (not session) so it resets every request.
+        static $roleRefreshed = false;
+        if (!$roleRefreshed && $this->conn) {
+            $roleRefreshed = true;
+            try {
+                $stmt = $this->conn->prepare("SELECT role, status FROM users WHERE id = :id LIMIT 1");
+                $stmt->bindValue(':id', (int)$_SESSION['user_id'], PDO::PARAM_INT);
+                $stmt->execute();
+                $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($row) {
+                    $newRole = strtolower((string)($row['role'] ?? 'customer'));
+                    $oldRole = strtolower((string)($_SESSION['user_data']['role'] ?? ''));
+                    if ($newRole !== $oldRole) {
+                        $_SESSION['user_data']['role'] = $newRole;
+                        // Clear cached permissions so the new role's permissions load fresh
+                        self::$permissionCache = [];
+                    }
+                    // Force logout if account was deactivated
+                    if ((string)($row['status'] ?? '') === 'inactive') {
+                        $this->logout();
+                        return false;
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Non-fatal: continue with session-cached role
+            }
+        }
+
         return true;
     }
     
@@ -125,6 +170,7 @@ class Auth {
 
     // Check if the current user has a named permission.
     // Admin users implicitly have all permissions.
+    // Permissions are loaded from the role_permissions DB table (per-request cached).
     public function hasPermission($permission) {
         if (!$this->isLoggedIn()) {
             return false;
@@ -136,33 +182,57 @@ class Auth {
         }
 
         $permission = (string)$permission;
+        $role = strtolower((string)$this->getRole());
 
-        // Default role-to-permissions mapping.
-        // This can be expanded as more granular checks are needed.
+        // Load DB-driven permissions (per-request cache)
+        $dbPerms = $this->loadRolePermissionsFromDb($role);
+        if ($dbPerms !== null) {
+            return in_array($permission, $dbPerms, true);
+        }
+
+        // Fallback hardcoded defaults (used when role_permissions table is not yet created)
         $map = [
-            'customer' => [
-                'view_own_bills',
-                'submit_own_reading',
-            ],
-            'reader' => [
-                'submit_reading',
-            ],
-            'finance' => [
-                'view_payments',
-                'view_reports',
-                'manage_settings',
-            ],
-            'support' => [
-                'handle_complaints',
-            ],
+            'customer' => ['view_own_bills', 'submit_own_reading'],
+            'reader'   => ['view_invoicing', 'send_messages'],
+            'finance'  => ['view_customers', 'view_accounting', 'view_reports', 'view_payments', 'view_invoicing', 'view_bill_detail', 'manage_demand_notices', 'manage_approvals', 'send_messages'],
+            'support'  => ['handle_support', 'view_customers', 'view_bill_detail', 'send_messages'],
         ];
 
-        $role = strtolower((string)$this->getRole());
         if (!isset($map[$role])) {
             return false;
         }
 
         return in_array($permission, $map[$role], true);
+    }
+
+    // Load permissions for a given role from the DB.
+    // Returns an array of permission strings on success, or null if table unavailable.
+    private function loadRolePermissionsFromDb(string $role): ?array {
+        if (array_key_exists($role, self::$permissionCache)) {
+            return self::$permissionCache[$role];
+        }
+
+        if (!$this->conn) {
+            return null;
+        }
+
+        try {
+            $stmt = $this->conn->prepare("SELECT permission FROM role_permissions WHERE role = :role");
+            $stmt->bindParam(':role', $role);
+            $stmt->execute();
+            self::$permissionCache[$role] = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+        } catch (\Throwable $e) {
+            // Table may not exist on older installs; return null to trigger fallback
+            return null;
+        }
+
+        return self::$permissionCache[$role];
+    }
+
+    // Clear the per-request permission cache.
+    // Call after saving role permissions so subsequent checks reflect the change.
+    public static function clearPermissionCache(): void {
+        self::$permissionCache = [];
     }
     
     // Get current user ID

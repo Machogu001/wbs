@@ -24,6 +24,11 @@ $message = null;
 $message_type = "success";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
+    // CSRF validation
+    if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        die('Invalid CSRF token.');
+    }
     $current_reading = (float)$_POST['current_reading'];
     $billing_month = $_POST['billing_month'];
     $due_date = $_POST['due_date'];

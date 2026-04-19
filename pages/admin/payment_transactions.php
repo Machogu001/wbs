@@ -9,7 +9,7 @@ $database = new Database();
 $db = $database->getConnection();
 $auth = new Auth($db);
 
-if (!$auth->isLoggedIn() || !$auth->isAdmin()) {
+if (!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_payments'))) {
     header('Location: /login');
     exit;
 }

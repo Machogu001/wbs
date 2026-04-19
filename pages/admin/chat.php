@@ -8,7 +8,7 @@ $database = new Database();
 $db = $database->getConnection();
 
 $auth = new Auth($db);
-if (!$auth->isLoggedIn() || !($auth->isAdmin() || $auth->hasRole('support'))) {
+if (!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('handle_support'))) {
     header('Location: /login');
     exit;
 }
@@ -242,19 +242,19 @@ $custom_scripts = <<<HTML
                 namesEl.classList.remove('text-muted');
                 namesEl.classList.add('text-success');
             } else if (recentAgents.length > 0) {
-                var offlineDetails = recentAgents.map(function(agent) {
-                    var label = agent && agent.name ? String(agent.name) : 'Support';
-                    var updatedAt = agent && agent.updated_at ? String(agent.updated_at) : '';
-                    var timeLabel = '';
-                    if (updatedAt) {
-                        var parsed = new Date(updatedAt.replace(' ', 'T'));
-                        if (!isNaN(parsed.getTime())) {
-                            timeLabel = parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                        }
+                var latest = recentAgents[0];
+                var label = latest && latest.name ? String(latest.name) : 'Support';
+                var updatedAt = latest && latest.updated_at ? String(latest.updated_at) : '';
+                var timeLabel = '';
+                if (updatedAt) {
+                    var parsed = new Date(updatedAt.replace(' ', 'T'));
+                    if (!isNaN(parsed.getTime())) {
+                        timeLabel = parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     }
-                    return timeLabel ? (label + ' (last seen ' + timeLabel + ')') : label;
-                });
-                namesEl.textContent = offlineDetails.join(', ');
+                }
+                namesEl.textContent = timeLabel
+                    ? 'Offline. ' + label + ' (last seen ' + timeLabel + ')'
+                    : 'Offline. ' + label;
                 namesEl.classList.remove('text-success');
                 namesEl.classList.add('text-muted');
             } else {

@@ -24,6 +24,22 @@ if ($name === '' || $email === '' || $message === '') {
     exit;
 }
 
+// Basic rate limiting: max 5 submissions per IP in a 10-minute window
+session_start();
+$_ipKey = 'contact_rate_' . md5($_SERVER['REMOTE_ADDR'] ?? '');
+$_rateData = $_SESSION[$_ipKey] ?? ['count' => 0, 'window_start' => time()];
+if ((time() - $_rateData['window_start']) > 600) {
+    $_rateData = ['count' => 0, 'window_start' => time()];
+}
+if ($_rateData['count'] >= 5) {
+    http_response_code(429);
+    echo json_encode(['success' => false, 'message' => 'Too many requests. Please try again later.']);
+    exit;
+}
+$_rateData['count']++;
+$_SESSION[$_ipKey] = $_rateData;
+unset($_ipKey, $_rateData);
+
 try {
     $db = null;
     try {

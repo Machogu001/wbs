@@ -91,6 +91,18 @@ class User {
     }
     
     // Check if phone exists
+    public function meterNumberExists(string $meterNumber, int $excludeId = 0): bool {
+        $query = "SELECT id FROM " . $this->table . "
+                 WHERE meter_number = :meter_number
+                 AND id <> :exclude_id
+                 LIMIT 1";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":meter_number", $meterNumber);
+        $stmt->bindParam(":exclude_id", $excludeId, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->rowCount() > 0;
+    }
+
     public function phoneExists($phone) {
         $query = "SELECT id FROM " . $this->table . " 
                  WHERE phone_number = :phone_number 

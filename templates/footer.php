@@ -71,7 +71,16 @@
                                     if ($updatedAt !== '') {
                                         $timestamp = strtotime($updatedAt);
                                         if ($timestamp) {
-                                            return $label . ' (last seen ' . date('h:i A', $timestamp) . ')';
+                                            $today    = strtotime('today');
+                                            $yesterday = strtotime('yesterday');
+                                            if ($timestamp >= $today) {
+                                                $dateLabel = 'today';
+                                            } elseif ($timestamp >= $yesterday) {
+                                                $dateLabel = 'yesterday';
+                                            } else {
+                                                $dateLabel = date('D, M j', $timestamp);
+                                            }
+                                            return $label . ' (last seen ' . $dateLabel . ' at ' . date('H:i', $timestamp) . ')';
                                         }
                                     }
                                     return $label;
@@ -1993,6 +2002,25 @@
         <?php echo $custom_scripts; ?>
     <?php endif; ?>
 
+    <script>
+    /* Auto-inject CSRF token into any POST form that doesn't already have one */
+    (function() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        if (!meta) { return; }
+        var token = meta.getAttribute('content');
+        document.querySelectorAll('form').forEach(function(form) {
+            var method = (form.getAttribute('method') || '').toUpperCase();
+            if (method !== 'POST') { return; }
+            if (form.querySelector('input[name="csrf_token"]')) { return; }
+            var inp = document.createElement('input');
+            inp.type = 'hidden';
+            inp.name = 'csrf_token';
+            inp.value = token;
+            form.insertBefore(inp, form.firstChild);
+        });
+    })();
+    </script>
+
     <!-- ═══════════════════════════════════════════════
          PWA INSTALL BANNER
          Shows on phones & tablets only.  Handles:
@@ -2053,8 +2081,8 @@
             try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (e) {}
         }
 
-        function hideBanner()  { banner.classList.remove('pwa-show'); }
-        function showBanner()  { banner.classList.add('pwa-show'); }
+        function hideBanner()  { banner.classList.remove('pwa-show'); document.body.classList.remove('pwa-banner-visible'); }
+        function showBanner()  { banner.classList.add('pwa-show'); document.body.classList.add('pwa-banner-visible'); }
         function hideIosTip()  { iosTip.classList.remove('pwa-show'); }
         function showIosTip()  { iosTip.classList.add('pwa-show'); }
 

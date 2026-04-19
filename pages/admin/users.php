@@ -14,10 +14,12 @@ $database = new Database();
 $db = $database->getConnection();
 $auth = new Auth($db);
 
-if(!$auth->isLoggedIn() || !$auth->isAdmin()) {
+if(!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_customers'))) {
 	header("Location: /login");
 	exit;
 }
+
+$isAdminUser = $auth->isAdmin();
 
 // Load registration fee setting for display and logic
 $settingsService = new BillingSettings($db);
@@ -186,7 +188,16 @@ if ($currentPage < 1) {
 $customerSearch = trim((string)($_REQUEST['customer_search'] ?? ''));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-	$formType = $_POST['form_type'] ?? 'create_user';
+	// CSRF validation
+	$_csrfToken = (string)($_POST['csrf_token'] ?? '');
+	if (!hash_equals($_SESSION['app_csrf_token'] ?? '', $_csrfToken)) {
+		http_response_code(403);
+		die('Invalid CSRF token.');
+	}
+	// Finance users have read-only access; block all write operations
+	if (!$isAdminUser) {
+		$errorMessage = 'You do not have permission to modify customer records.';
+	} else {
 
 	if ($formType === 'update_status') {
 		try {
@@ -282,11 +293,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				throw new Exception('The phone number is already registered to another user.');
 			}
 
-			$stmtMeterCheck = $db->prepare('SELECT id FROM users WHERE meter_number = :meter_number AND id <> :id LIMIT 1');
-			$stmtMeterCheck->bindParam(':meter_number', $meter_number);
-			$stmtMeterCheck->bindParam(':id', $userId, PDO::PARAM_INT);
-			$stmtMeterCheck->execute();
-			if ($stmtMeterCheck->fetch(PDO::FETCH_ASSOC)) {
+			$editUserModel = new User($db);
+			if ($editUserModel->meterNumberExists($meter_number, $userId)) {
 				throw new Exception('The meter number is already assigned to another user.');
 			}
 
@@ -394,6 +402,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			}
 			$account_number = 'MTR' . str_pad((string)$nextNumber, 4, '0', STR_PAD_LEFT);
 			$meter_number = $account_number;
+
+			// Ensure auto-generated meter number is unique (edge case: concurrent inserts)
+			if ($user->meterNumberExists($meter_number)) {
+				throw new Exception('Generated meter number is already in use. Please try again.');
+			}
 
 			// Populate user model
 			$user->account_number = $account_number;
@@ -564,6 +577,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$errorMessage = $e->getMessage();
 		}
 	}
+	} // end isAdminUser write gate
 }
 
 // Pagination for existing users list
@@ -666,7 +680,9 @@ require_once __DIR__ . '/../../templates/header.php';
 					</div>
 					<div class="pb-right">
 						<div class="pb-btn-row">
+							<?php if ($isAdminUser): ?>
 							<a href="/admin/staff-users" class="pb-btn"><i class="bi bi-person-badge"></i> Staff Users</a>
+							<?php endif; ?>
 							<a href="/admin/customer-locations" class="pb-btn pb-btn--accent"><i class="bi bi-geo-alt"></i> Customer Map</a>
 						</div>
 					</div>
@@ -758,17 +774,21 @@ require_once __DIR__ . '/../../templates/header.php';
 												<span class="badge bg-<?php echo $badgeClass; ?>"><?php echo htmlspecialchars($roleText); ?></span>
 											</td>
 											<td>
-												<div class="d-flex flex-wrap gap-1">
-													<a href="<?php echo htmlspecialchars(buildUsersPageUrl(['page' => $currentPage, 'customer_search' => $customerSearch, 'edit_id' => (int)$u['id']])); ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil-square"></i> Edit</a>
-													<a href="<?php echo htmlspecialchars('/admin/customer-locations?user_id=' . (int)$u['id']); ?>" class="btn btn-sm btn-outline-info" title="View on map">
-														<i class="bi bi-geo-alt"></i>
-													</a>
-													<?php if (($u['status'] ?? '') !== 'active'): ?>
+				<div class="d-flex flex-wrap gap-1">
+												<?php if ($isAdminUser): ?>
+												<a href="<?php echo htmlspecialchars(buildUsersPageUrl(['page' => $currentPage, 'customer_search' => $customerSearch, 'edit_id' => (int)$u['id']])); ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil-square"></i> Edit</a>
+												<?php endif; ?>
+												<a href="<?php echo htmlspecialchars('/admin/customer-locations?user_id=' . (int)$u['id']); ?>" class="btn btn-sm btn-outline-info" title="View on map">
+													<i class="bi bi-geo-alt"></i>
+												</a>
+												<?php if ($isAdminUser): ?>
+												<?php if (($u['status'] ?? '') !== 'active'): ?>
 														<form method="post" action="" class="d-inline">
 															<input type="hidden" name="form_type" value="update_status">
 															<input type="hidden" name="user_id" value="<?php echo (int)$u['id']; ?>">
 															<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
 															<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
+															<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($usersCsrfToken); ?>">
 															<input type="hidden" name="new_status" value="active">
 															<button type="submit" class="btn btn-sm btn-outline-success">Activate</button>
 														</form>
@@ -779,6 +799,7 @@ require_once __DIR__ . '/../../templates/header.php';
 															<input type="hidden" name="user_id" value="<?php echo (int)$u['id']; ?>">
 															<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
 															<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
+															<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($usersCsrfToken); ?>">
 															<input type="hidden" name="new_status" value="inactive">
 															<button type="submit" class="btn btn-sm btn-outline-secondary">Deactivate</button>
 														</form>
@@ -789,6 +810,7 @@ require_once __DIR__ . '/../../templates/header.php';
 															<input type="hidden" name="user_id" value="<?php echo (int)$u['id']; ?>">
 															<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
 															<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
+															<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($usersCsrfToken); ?>">
 															<input type="hidden" name="new_status" value="suspended">
 															<button type="submit" class="btn btn-sm btn-outline-warning">Suspend</button>
 														</form>
@@ -800,6 +822,7 @@ require_once __DIR__ . '/../../templates/header.php';
 																<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
 														<button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Delete</button>
 													</form>
+												<?php endif; // isAdminUser ?>
 												</div>
 											</td>
 										</tr>
@@ -866,6 +889,7 @@ require_once __DIR__ . '/../../templates/header.php';
 					<h5 class="mb-0"><?php echo $isEditMode ? 'Edit Customer' : 'Create New Customer'; ?></h5>
 				</div>
 				<div class="card-body">
+				<?php if ($isAdminUser): ?>
 					<form method="post" action="">
 						<input type="hidden" name="form_type" value="<?php echo $isEditMode ? 'edit_user_save' : 'create_user'; ?>">
 						<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
@@ -1013,6 +1037,11 @@ require_once __DIR__ . '/../../templates/header.php';
 								<button type="submit" class="btn btn-primary"><?php echo $isEditMode ? 'Save Changes' : 'Create Customer'; ?></button>
 						</div>
 					</form>
+				<?php else: ?>
+					<div class="alert alert-info mb-0">
+						<i class="bi bi-lock"></i> Finance accounts have read-only access to customer records. Contact an administrator to create or edit customers.
+					</div>
+				<?php endif; ?>
 				</div>
 			</div>
 		</div>

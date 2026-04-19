@@ -145,7 +145,7 @@ class SupportChat
                 FROM {$this->availabilityTable} a
                 INNER JOIN users u ON u.id = a.user_id
                 WHERE a.is_available = 1
-                  AND u.role IN ('admin', 'support')";
+                  AND u.role IN ('admin', 'support', 'finance')";
             if ($hasStatus) {
                 $sql .= " AND u.status = 'active'";
             }
@@ -167,7 +167,7 @@ class SupportChat
             $sql = "SELECT a.user_id, a.is_available, a.updated_at, u.full_name, u.role
                 FROM {$this->availabilityTable} a
                 INNER JOIN users u ON u.id = a.user_id
-                WHERE u.role IN ('admin', 'support')";
+                WHERE u.role IN ('admin', 'support', 'finance')";
             if ($hasStatus) {
                 $sql .= " AND u.status = 'active'";
             }

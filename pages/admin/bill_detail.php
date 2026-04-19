@@ -11,7 +11,7 @@ $database = new Database();
 $db = $database->getConnection();
 $auth = new Auth($db);
 
-if (!$auth->isLoggedIn() || !$auth->hasRole(['admin', 'finance', 'support'])) {
+if (!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_bill_detail'))) {
     header('Location: /login');
     exit;
 }

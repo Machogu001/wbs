@@ -347,16 +347,19 @@ $(document).ready(function() {
             if (!updatedAt) return label;
             var parsed = new Date(updatedAt.replace(' ', 'T'));
             if (isNaN(parsed.getTime())) return label;
-            var timeLabel = parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            return label + ' (last seen ' + timeLabel + ')';
+            var timeLabel = parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            var now = new Date();
+            var dayDiff = Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())) / 86400000);
+            var dateLabel = dayDiff === 0 ? 'today' : dayDiff === 1 ? 'yesterday' : parsed.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+            return label + ' (last seen ' + dateLabel + ' at ' + timeLabel + ')';
         }
 
         var namesWithPresence = agents.map(function(agent) {
             return formatAgentPresence(agent, false);
         });
-        var offlinePresence = recentAgents.map(function(agent) {
-            return formatAgentPresence(agent, true);
-        });
+        var offlinePresence = recentAgents.length > 0
+            ? [formatAgentPresence(recentAgents[0], true)]
+            : [];
 
         if ($supportAvailabilityBadge.length) {
             $supportAvailabilityBadge.removeClass('is-online is-offline').addClass(available ? 'is-online' : 'is-offline');

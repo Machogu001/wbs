@@ -42,6 +42,11 @@ function blogFlash(string $msg, string $type = 'success'): void {
 // Handle POST actions
 // -------------------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite) {
+    // CSRF validation
+    if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        die('Invalid CSRF token.');
+    }
     $action = $_POST['action'] ?? '';
 
     if ($action === 'save_post') {

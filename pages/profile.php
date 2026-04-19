@@ -55,6 +55,11 @@ if (isset($_SESSION['profile_active_section'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+	// CSRF validation
+	if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+		http_response_code(403);
+		die('Invalid CSRF token.');
+	}
 	// Decide which logical action to run for this POST
 	$rawFormAction = isset($_POST['form_action']) ? trim((string)$_POST['form_action']) : '';
 	if ($rawFormAction !== '') {

@@ -7,7 +7,7 @@ require_once __DIR__ . '/../../includes/DemandNotice.php';
 $database = new Database();
 $db = $database->getConnection();
 $auth = new Auth($db);
-if (!$auth->isLoggedIn() || !$auth->hasRole(['admin', 'finance'])) {
+if (!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('manage_demand_notices'))) {
     header('Location: /login');
     exit;
 }

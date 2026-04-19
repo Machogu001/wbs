@@ -18,6 +18,11 @@ $message = null;
 $message_type = 'success';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
+    // CSRF validation
+    if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        die('Invalid CSRF token.');
+    }
     $subject = trim($_POST['subject'] ?? '');
     $details = trim($_POST['message'] ?? '');
 

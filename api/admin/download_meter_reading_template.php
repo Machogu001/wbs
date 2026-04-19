@@ -11,7 +11,7 @@ if (!$db) {
 }
 
 $auth = new Auth($db);
-if (!$auth->isLoggedIn() || !$auth->isAdmin()) {
+if (!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_invoicing'))) {
     http_response_code(403);
     echo 'Forbidden';
     exit;

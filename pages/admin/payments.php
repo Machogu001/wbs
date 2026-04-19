@@ -16,7 +16,7 @@ require_once __DIR__ . '/../../includes/FinanceApproval.php';
 $database = new Database();
 $db = $database->getConnection();
 $auth = new Auth($db);
-if (!$auth->isLoggedIn() || !$auth->isAdmin()) {
+if (!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_payments'))) {
 	header('Location: /login');
 	exit;
 }
@@ -39,6 +39,11 @@ $client_list = $userService->listAll();
 
 // Handle account lookup
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'search_account') {
+	// CSRF validation
+	if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+		http_response_code(403);
+		die('Invalid CSRF token.');
+	}
 	$account = trim($_POST['account_number'] ?? '');
 	if ($account === '') {
 		$message = 'Please enter an account number.';
@@ -58,6 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Handle manual payment
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'manual_payment') {
+	// CSRF validation
+	if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+		http_response_code(403);
+		die('Invalid CSRF token.');
+	}
 	$account = trim($_POST['account_number'] ?? '');
 	$billId = (int)($_POST['bill_id'] ?? 0);
 	$txnCode = trim($_POST['transaction_code'] ?? '');
@@ -190,6 +200,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Handle credit note
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'credit_note') {
+	// CSRF validation
+	if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+		http_response_code(403);
+		die('Invalid CSRF token.');
+	}
 	$account = trim($_POST['account_number'] ?? '');
 	$billId = (int)($_POST['bill_id'] ?? 0);
 	$type = $_POST['credit_type'] ?? 'full';
@@ -272,6 +287,11 @@ after_credit:
 
 // Handle refund / chargeback request
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'payment_adjustment_request') {
+	// CSRF validation
+	if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+		http_response_code(403);
+		die('Invalid CSRF token.');
+	}
 	$account = trim($_POST['account_number'] ?? '');
 	$paymentId = (int)($_POST['payment_id'] ?? 0);
 	$adjustmentType = trim((string)($_POST['adjustment_type'] ?? 'refund'));

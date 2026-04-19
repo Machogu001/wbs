@@ -30,6 +30,9 @@ if (!isset($appName) || $appName === '') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?php if (!empty($_SESSION['app_csrf_token'])): ?>
+    <meta name="csrf-token" content="<?php echo htmlspecialchars($_SESSION['app_csrf_token'], ENT_QUOTES, 'UTF-8'); ?>">
+    <?php endif; ?>
     <title><?php echo isset($page_title) ? $page_title . ' - ' : ''; ?><?php echo htmlspecialchars($appName, ENT_QUOTES, 'UTF-8'); ?></title>
     <link rel="icon" type="image/svg+xml" href="/public/images/favicon-water.svg">
     <link rel="alternate icon" type="image/png" href="/public/images/favicon-water.png">
@@ -104,6 +107,18 @@ if (!isset($appName) || $appName === '') {
                 $navHasPublishedNews = $_navStmt && $_navStmt->fetch() !== false;
             }
         } catch (\Throwable $_navEx) { /* table may not exist yet on fresh install */ }
+
+        // Ensure $auth is available for permission checks in the nav.
+        // Pages that already create $auth will reuse it; others get a lightweight instance here.
+        if (!isset($auth) && $navIsStaff) {
+            try {
+                if (!class_exists('Auth')) {
+                    require_once __DIR__ . '/../includes/Auth.php';
+                }
+                $_navDb = $_navDb ?? ((isset($db) ? $db : (new Database())->getConnection()));
+                $auth = new Auth($_navDb);
+            } catch (\Throwable $_navAuthEx) { /* silently skip if DB unavailable */ }
+        }
     ?>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
         <div class="container">
@@ -139,6 +154,7 @@ if (!isset($appName) || $appName === '') {
                             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarOperations">
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/users' ? ' active' : ''; ?>" href="/admin/users"><i class="bi bi-people"></i> Customers</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/staff-users' ? ' active' : ''; ?>" href="/admin/staff-users"><i class="bi bi-person-badge"></i> Staff Users</a></li>
+                                <li><a class="dropdown-item<?php echo $currentPath === '/admin/role-permissions' ? ' active' : ''; ?>" href="/admin/role-permissions"><i class="bi bi-shield-lock"></i> Role Permissions</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/invoicing' ? ' active' : ''; ?>" href="/invoicing"><i class="bi bi-file-earmark-text"></i> Invoicing</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/reports' ? ' active' : ''; ?>" href="/reports"><i class="bi bi-graph-up-arrow"></i> Reports</a></li>
@@ -157,7 +173,7 @@ if (!isset($appName) || $appName === '') {
                         <!-- Admin/Staff: Monitoring dropdown -->
                         <?php if ($navIsStaff): ?>
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/integration-health','/admin/messaging','/admin/support-inquiries','/activity_log','/system-logs','/chat','/internal-chat']) || (!$navIsAdmin && (str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/blog'))) ? ' active' : ''; ?>"
+                            <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/integration-health','/admin/messaging','/admin/support-inquiries','/activity_log','/system-logs','/chat','/internal-chat','/admin/users','/invoicing','/accounting','/reports','/admin/payments','/admin/demand-notices','/admin/approvals']) || (!$navIsAdmin && (str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/blog'))) ? ' active' : ''; ?>"
                                href="#" id="navbarMonitoring" role="button"
                                <?php if (!empty($is_admin_page)): ?>
                                    onclick="(function(el){var m=el.nextElementSibling;if(!m)return;var shown=m.classList.contains('show');var open=document.querySelectorAll('.dropdown-menu.show');open.forEach(function(mm){mm.classList.remove('show');});if(!shown){m.classList.add('show');}})(this); return false;"
@@ -171,15 +187,48 @@ if (!isset($appName) || $appName === '') {
                                     <li><a class="dropdown-item<?php echo $currentPath === '/admin/integration-health' ? ' active' : ''; ?>" href="/admin/integration-health"><i class="bi bi-hdd-network"></i> Integration Health</a></li>
                                     <li><hr class="dropdown-divider"></li>
                                 <?php endif; ?>
+                                <?php
+                                // For non-admin staff: show links for each granted permission
+                                if (!$navIsAdmin && isset($auth)) {
+                                    $permNavItems = [
+                                        'view_customers'        => ['/admin/users',           'bi-people',                  'Customers'],
+                                        'view_invoicing'        => ['/invoicing',              'bi-file-earmark-text',       'Invoicing'],
+                                        'view_accounting'       => ['/accounting',             'bi-journal-text',            'Accounting'],
+                                        'view_reports'          => ['/reports',                'bi-bar-chart',               'Reports'],
+                                        'view_payments'         => ['/admin/payments',         'bi-cash-stack',              'Payments'],
+                                        'manage_demand_notices' => ['/admin/demand-notices',   'bi-file-earmark-exclamation','Demand Notices'],
+                                        'manage_approvals'      => ['/admin/approvals',        'bi-check2-square',           'Approvals'],
+                                    ];
+                                    $shownCount = 0;
+                                    foreach ($permNavItems as $perm => [$href, $icon, $label]) {
+                                        if ($auth->hasPermission($perm)) {
+                                            $isActive = ($currentPath === $href) ? ' active' : '';
+                                            echo "<li><a class=\"dropdown-item{$isActive}\" href=\"{$href}\"><i class=\"bi {$icon}\"></i> {$label}</a></li>\n";
+                                            $shownCount++;
+                                        }
+                                    }
+                                    if ($shownCount > 0) {
+                                        echo '<li><hr class="dropdown-divider"></li>';
+                                    }
+                                }
+                                ?>
+                                <?php if ($navIsAdmin || (isset($auth) && $auth->hasPermission('send_messages'))): ?>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/messaging' ? ' active' : ''; ?>" href="/admin/messaging"><i class="bi bi-chat-dots"></i> Messaging</a></li>
+                                <?php endif; ?>
+                                <?php if ($navIsAdmin || (isset($auth) && $auth->hasPermission('handle_support'))): ?>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/support-inquiries' ? ' active' : ''; ?>" href="/admin/support-inquiries"><i class="bi bi-inbox"></i> Support Inquiries</a></li>
+                                <?php endif; ?>
                                 <?php if ($navIsAdmin): ?>
                                     <li><a class="dropdown-item<?php echo $currentPath === '/activity_log' ? ' active' : ''; ?>" href="/activity_log"><i class="bi bi-clipboard-check"></i> Activity Log</a></li>
                                     <li><a class="dropdown-item<?php echo $currentPath === '/system-logs' ? ' active' : ''; ?>" href="/system-logs"><i class="bi bi-terminal"></i> System Logs</a></li>
                                     <li><hr class="dropdown-divider"></li>
+                                <?php endif; ?>
+                                <?php if ($navIsAdmin || (isset($auth) && $auth->hasPermission('handle_support'))): ?>
                                     <li><a class="dropdown-item<?php echo $currentPath === '/chat' ? ' active' : ''; ?>" href="/chat"><i class="bi bi-headset"></i> Support Chat</a></li>
                                 <?php endif; ?>
+                                <?php if ($navIsAdmin || (isset($auth) && $auth->hasPermission('send_messages'))): ?>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/internal-chat' ? ' active' : ''; ?>" href="/internal-chat"><i class="bi bi-people-fill"></i> Internal Chat</a></li>
+                                <?php endif; ?>
                                 <?php if (!$navIsAdmin): ?>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item<?php echo str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/blog') ? ' active' : ''; ?>" href="/admin/blog"><i class="bi bi-newspaper"></i> News &amp; Updates</a></li>

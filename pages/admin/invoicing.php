@@ -14,7 +14,7 @@ $database = new Database();
 $db = $database->getConnection();
 
 $auth = new Auth($db);
-if(!$auth->isLoggedIn() || !$auth->isAdmin()) {
+if(!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_invoicing'))) {
 	header("Location: /login");
 	exit;
 }
@@ -190,6 +190,11 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
+	// CSRF validation
+	if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+		http_response_code(403);
+		die('Invalid CSRF token.');
+	}
 	if (isset($_POST['action']) && $_POST['action'] === 'add_reading') {
 		$identifiers = $_POST['account_or_meter'] ?? [];
 		$currentReadings = $_POST['current_reading'] ?? [];

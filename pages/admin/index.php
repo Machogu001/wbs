@@ -30,6 +30,11 @@ if ($db) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
+	// CSRF validation
+	if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+		http_response_code(403);
+		die('Invalid CSRF token.');
+	}
 	if (isset($_POST['action']) && $_POST['action'] === 'update_settings') {
 		$rate = (float)$_POST['rate_per_unit'];
 		$service = (float)$_POST['service_charge'];

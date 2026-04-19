@@ -1,5 +1,15 @@
 <?php
 // Main entry point for the application
+// Harden session cookie: HttpOnly, SameSite=Lax, Secure (when on HTTPS)
+$_secure = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on');
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path'     => '/',
+    'secure'   => $_secure,
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
+unset($_secure);
 session_start();
 
 // Define base path

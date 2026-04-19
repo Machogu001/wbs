@@ -35,7 +35,7 @@ try {
 
     $chat = new SupportChat($db);
     $user = $auth->check();
-    $isStaff = $user && ($auth->isAdmin() || $auth->hasRole('support'));
+    $isStaff = $user && ($auth->isAdmin() || $auth->hasPermission('handle_support'));
     $ownerId = $user ? (int)$user['id'] : getGuestChatUserId();
 
     if (!$isStaff && !$chat->isThreadOwnedByUser($threadId, $ownerId)) {

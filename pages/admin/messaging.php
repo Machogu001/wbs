@@ -13,12 +13,13 @@ if (!$auth->isLoggedIn()) {
     exit;
 }
 
-if (!$auth->hasRole(['admin', 'reader', 'finance', 'support'])) {
+if (!$auth->isAdmin() && !$auth->hasPermission('send_messages')) {
     header('Location: /dashboard');
     exit;
 }
 
 $isAdmin = $auth->isAdmin();
+$canSendMessages = $isAdmin || $auth->hasPermission('send_messages');
 $currentUserId = (int)($auth->getUserId() ?? 0);
 
 $comms = new InternalComms($db);
@@ -36,7 +37,7 @@ if (!empty($_SESSION['messaging_flash']) && is_array($_SESSION['messaging_flash'
     unset($_SESSION['messaging_flash']);
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $isAdmin) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canSendMessages) {
     $token = (string)($_POST['csrf_token'] ?? '');
     if (!hash_equals($_SESSION['messaging_csrf'], $token)) {
         $errorMessage = 'Security validation failed. Please refresh and try again.';
@@ -115,11 +116,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $isAdmin) {
     exit;
 }
 
-$clients = $isAdmin ? $comms->getActiveClients() : [];
-$staff = $isAdmin ? $comms->getActiveStaff() : [];
-$recentBroadcasts = $isAdmin ? $comms->getRecentBroadcasts(15) : [];
-$customClientTemplates = $isAdmin ? $comms->getCustomTemplates('clients', 200) : [];
-$customStaffTemplates = $isAdmin ? $comms->getCustomTemplates('staff', 200) : [];
+$clients = $canSendMessages ? $comms->getActiveClients() : [];
+$staff = $canSendMessages ? $comms->getActiveStaff() : [];
+$recentBroadcasts = $canSendMessages ? $comms->getRecentBroadcasts(15) : [];
+$customClientTemplates = $canSendMessages ? $comms->getCustomTemplates('clients', 200) : [];
+$customStaffTemplates = $canSendMessages ? $comms->getCustomTemplates('staff', 200) : [];
 $initialMessages = $comms->getInternalMessages(null, 120);
 
 $page_title = 'Messaging Center';
@@ -150,6 +151,31 @@ require_once __DIR__ . '/../../templates/header.php';
         </div>
     </div>
 
+    <div class="row mb-3 g-2 align-items-center">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-body py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <div class="fw-semibold" style="font-size:0.92rem;">Support availability</div>
+                        <div class="text-muted" style="font-size:0.8rem;">Enable to appear online to customers and visitors.</div>
+                    </div>
+                    <div class="form-check form-switch m-0">
+                        <input class="form-check-input" type="checkbox" id="msgAvailabilityToggle">
+                        <label class="form-check-label" for="msgAvailabilityToggle" id="msgAvailabilityToggleLabel">Offline</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-body py-2">
+                    <div class="fw-semibold mb-1" style="font-size:0.92rem;">Available team members</div>
+                    <div id="msgAvailabilityNames" class="text-muted" style="font-size:0.82rem;">Checking availability...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row g-3">
         <div class="col-xl-5">
             <div class="card h-100">
@@ -157,7 +183,7 @@ require_once __DIR__ . '/../../templates/header.php';
                     <h5 class="mb-0"><i class="bi bi-megaphone"></i> SMS Notifications</h5>
                 </div>
                 <div class="card-body">
-                    <?php if (!$isAdmin): ?>
+                    <?php if (!$canSendMessages): ?>
                         <div class="alert alert-info mb-0">Only admins can send SMS notifications and manage templates.</div>
                     <?php else: ?>
                         <form method="post" id="clientBroadcastForm">
@@ -302,7 +328,7 @@ require_once __DIR__ . '/../../templates/header.php';
         </div>
     </div>
 
-    <?php if ($isAdmin): ?>
+    <?php if ($canSendMessages): ?>
     <div class="row g-3 mt-1">
         <div class="col-12">
             <div class="card">
@@ -842,5 +868,85 @@ $custom_scripts = <<<JS
 })();
 </script>
 JS;
+
+?>
+<script>
+(function() {
+    var toggle = document.getElementById('msgAvailabilityToggle');
+    var toggleLabel = document.getElementById('msgAvailabilityToggleLabel');
+    var namesEl = document.getElementById('msgAvailabilityNames');
+    if (!toggle) return;
+
+    function renderAvailability(resp) {
+        if (!resp || !resp.success) {
+            if (namesEl) namesEl.textContent = 'Could not load availability right now.';
+            return;
+        }
+        var agents = Array.isArray(resp.agents) ? resp.agents : [];
+        var recentAgents = Array.isArray(resp.recent_agents) ? resp.recent_agents : [];
+        if (namesEl) {
+            if (agents.length > 0) {
+                var details = agents.map(function(a) { return (a.name || 'Support') + ' (online)'; });
+                namesEl.textContent = details.join(', ');
+                namesEl.className = 'text-success';
+                namesEl.style.fontSize = '0.82rem';
+            } else if (recentAgents.length > 0) {
+                var latest = recentAgents[0];
+                var label = latest.name || 'Support';
+                var timeLabel = '';
+                if (latest.updated_at) {
+                    var parsed = new Date(String(latest.updated_at).replace(' ', 'T'));
+                    if (!isNaN(parsed.getTime())) {
+                        timeLabel = parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    }
+                }
+                namesEl.textContent = timeLabel ? 'Offline. ' + label + ' (last seen ' + timeLabel + ')' : 'Offline. ' + label;
+                namesEl.className = 'text-muted';
+                namesEl.style.fontSize = '0.82rem';
+            } else {
+                namesEl.textContent = 'No support agents currently available.';
+                namesEl.className = 'text-muted';
+                namesEl.style.fontSize = '0.82rem';
+            }
+        }
+        toggle.checked = !!resp.current_user_available;
+        toggleLabel.textContent = resp.current_user_available ? 'Online' : 'Offline';
+    }
+
+    function loadAvailability() {
+        fetch('/api/chat/availability?_ts=' + Date.now())
+            .then(function(r) { return r.json(); })
+            .then(renderAvailability)
+            .catch(function() {});
+    }
+
+    toggle.addEventListener('change', function() {
+        var isAvailable = toggle.checked ? 1 : 0;
+        toggle.disabled = true;
+        var fd = new FormData();
+        fd.append('available', isAvailable);
+        fetch('/api/chat/availability', { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(resp) {
+                if (resp && resp.success) {
+                    toggleLabel.textContent = isAvailable ? 'Online' : 'Offline';
+                    if (window.Swal) {
+                        Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: isAvailable ? 'Status set to ONLINE.' : 'Status set to OFFLINE.', showConfirmButton: false, timer: 2400, timerProgressBar: true });
+                    }
+                } else {
+                    toggle.checked = !toggle.checked;
+                    toggleLabel.textContent = toggle.checked ? 'Online' : 'Offline';
+                }
+            })
+            .catch(function() { toggle.checked = !toggle.checked; toggleLabel.textContent = toggle.checked ? 'Online' : 'Offline'; })
+            .finally(function() { toggle.disabled = false; loadAvailability(); });
+    });
+
+    loadAvailability();
+    setInterval(loadAvailability, 10000);
+})();
+</script>
+
+<?php
 
 require_once __DIR__ . '/../../templates/footer.php';
