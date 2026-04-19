@@ -169,7 +169,7 @@ if (isset($_GET['edit'])) {
 $posts           = $blog->getAllPosts(50);
 $pendingComments = $blog->getPendingComments();
 
-$page_title = 'Blog Management';
+$page_title = 'News & Updates Management';
 $is_admin_page = true;
 include __DIR__ . '/../../templates/header.php';
 ?>
@@ -187,8 +187,8 @@ include __DIR__ . '/../../templates/header.php';
                 <div class="pb-eyebrow-row">
                     <span class="pb-eyebrow-chip"><i class="bi bi-newspaper"></i> Content Management</span>
                 </div>
-                <h2 class="pb-title">Blog Management</h2>
-                <p class="pb-subtitle">Create, edit, and moderate blog posts and comments.</p>
+                <h2 class="pb-title">News &amp; Updates Management</h2>
+                <p class="pb-subtitle">Create, edit, and moderate news posts and comments.</p>
             </div>
         </div>
     </div>
