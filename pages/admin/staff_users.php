@@ -763,19 +763,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Swal is loaded synchronously in footer.php, so it is available by DOMContentLoaded
-    if (typeof Swal !== 'undefined') {
-        Swal.fire({
-            toast: true,
-            position: 'top-end',
-            icon: 'info',
-            title: 'No meter number for staff',
-            text: 'Staff accounts are created without a meter number.',
-            showConfirmButton: false,
-            timer: 4500,
-            timerProgressBar: true,
-        });
-    }
 });
 </script>
 

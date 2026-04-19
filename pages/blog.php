@@ -49,6 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 $slug       = isset($_GET['post']) ? trim($_GET['post']) : '';
 $singlePost = null;
 $comments   = [];
+$attachments = [];
 
 if ($slug !== '') {
     $singlePost = $blog->getPostBySlug($slug);
@@ -56,7 +57,8 @@ if ($slug !== '') {
         http_response_code(404);
         $singlePost = null;
     } else {
-        $comments = $blog->getApprovedComments((int)$singlePost['id']);
+        $comments    = $blog->getApprovedComments((int)$singlePost['id']);
+        $attachments = $blog->getAttachments((int)$singlePost['id']);
     }
 }
 
@@ -128,6 +130,70 @@ require_once __DIR__ . '/../templates/header.php';
             <div class="blog-post-body card card-body border-0 shadow-sm p-4 mb-4">
                 <?php echo nl2br(htmlspecialchars($singlePost['body'], ENT_QUOTES, 'UTF-8')); ?>
             </div>
+
+            <?php if (!empty($attachments)): ?>
+            <?php
+                $attVideos = array_filter($attachments, fn($a) => $a['file_type'] === 'video');
+                $attImages = array_filter($attachments, fn($a) => $a['file_type'] === 'image');
+                $attDocs   = array_filter($attachments, fn($a) => $a['file_type'] === 'document');
+            ?>
+
+            <?php if (!empty($attVideos)): ?>
+            <div class="mb-4">
+                <h5 class="fw-semibold mb-3"><i class="bi bi-camera-video me-2"></i>Videos</h5>
+                <?php foreach ($attVideos as $v): ?>
+                <div class="mb-3">
+                    <video controls class="w-100 rounded shadow-sm" style="max-height:480px;background:#000;"
+                           preload="metadata">
+                        <source src="/<?php echo htmlspecialchars($v['file_path'], ENT_QUOTES, 'UTF-8'); ?>"
+                                type="<?php echo htmlspecialchars($v['mime_type'], ENT_QUOTES, 'UTF-8'); ?>">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="small text-muted mt-1"><?php echo htmlspecialchars($v['file_name'], ENT_QUOTES, 'UTF-8'); ?></div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+
+            <?php if (!empty($attImages)): ?>
+            <div class="mb-4">
+                <h5 class="fw-semibold mb-3"><i class="bi bi-images me-2"></i>Images</h5>
+                <div class="row g-2">
+                <?php foreach ($attImages as $img): ?>
+                    <div class="col-6 col-md-4">
+                        <a href="/<?php echo htmlspecialchars($img['file_path'], ENT_QUOTES, 'UTF-8'); ?>"
+                           target="_blank" rel="noopener">
+                            <img src="/<?php echo htmlspecialchars($img['file_path'], ENT_QUOTES, 'UTF-8'); ?>"
+                                 alt="<?php echo htmlspecialchars($img['file_name'], ENT_QUOTES, 'UTF-8'); ?>"
+                                 class="img-fluid rounded shadow-sm w-100" style="height:160px;object-fit:cover;">
+                        </a>
+                    </div>
+                <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php if (!empty($attDocs)): ?>
+            <div class="mb-4">
+                <h5 class="fw-semibold mb-3"><i class="bi bi-paperclip me-2"></i>Documents</h5>
+                <div class="list-group">
+                <?php foreach ($attDocs as $doc): ?>
+                    <a href="/<?php echo htmlspecialchars($doc['file_path'], ENT_QUOTES, 'UTF-8'); ?>"
+                       target="_blank" rel="noopener"
+                       class="list-group-item list-group-item-action d-flex align-items-center gap-3">
+                        <i class="bi bi-file-earmark-text fs-4 text-secondary flex-shrink-0"></i>
+                        <div>
+                            <div class="fw-semibold"><?php echo htmlspecialchars($doc['file_name'], ENT_QUOTES, 'UTF-8'); ?></div>
+                            <div class="small text-muted"><?php echo round($doc['file_size'] / 1024, 1); ?> KB</div>
+                        </div>
+                        <i class="bi bi-download ms-auto text-muted"></i>
+                    </a>
+                <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php endif; /* end attachments */ ?>
 
             <!-- Comments -->
             <div id="comments">

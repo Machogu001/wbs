@@ -64,11 +64,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite) {
             (new ActivityLog($db))->log($_SESSION['user_id'], 'update_blog_post', 'blog_post', $postId, 'Updated: ' . $title);
             blogFlash('Post updated.');
         } else {
-            $newId = $blog->createPost((int)$_SESSION['user_id'], $title, $body, $status, $excerpt, $coverImg);
-            (new ActivityLog($db))->log($_SESSION['user_id'], 'create_blog_post', 'blog_post', $newId, 'Created: ' . $title);
+            $postId = $blog->createPost((int)$_SESSION['user_id'], $title, $body, $status, $excerpt, $coverImg);
+            (new ActivityLog($db))->log($_SESSION['user_id'], 'create_blog_post', 'blog_post', $postId, 'Created: ' . $title);
             blogFlash('Post created.');
         }
+
+        // Handle file attachments
+        if ($postId > 0 && !empty($_FILES['attachments']['name'][0])) {
+            $allowedTypes = [
+                'image'    => ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'gif' => 'image/gif', 'webp' => 'image/webp'],
+                'video'    => ['mp4' => 'video/mp4', 'webm' => 'video/webm', 'ogg' => 'video/ogg', 'ogv' => 'video/ogg'],
+                'document' => ['pdf' => 'application/pdf', 'doc' => 'application/msword',
+                               'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                               'xls' => 'application/vnd.ms-excel',
+                               'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+            ];
+            $maxSizes = ['image' => 10 * 1024 * 1024, 'video' => 100 * 1024 * 1024, 'document' => 20 * 1024 * 1024];
+            $uploadDir = __DIR__ . '/../../uploads/blog/' . $postId . '/';
+            if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+
+            foreach ($_FILES['attachments']['name'] as $i => $origName) {
+                if ($_FILES['attachments']['error'][$i] !== UPLOAD_ERR_OK) continue;
+                $origName = basename((string)$origName);
+                $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+                $fileType = null;
+                $mimeType = null;
+                foreach ($allowedTypes as $type => $exts) {
+                    if (isset($exts[$ext])) { $fileType = $type; $mimeType = $exts[$ext]; break; }
+                }
+                if (!$fileType) continue;
+                $fileSize = (int)$_FILES['attachments']['size'][$i];
+                if ($fileSize > $maxSizes[$fileType]) continue;
+                // Verify actual MIME via finfo
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $realMime = finfo_file($finfo, $_FILES['attachments']['tmp_name'][$i]);
+                finfo_close($finfo);
+                $allMimes = array_merge(...array_values(array_map('array_values', $allowedTypes)));
+                if (!in_array($realMime, $allMimes, true)) continue;
+                // Save with a safe random name
+                $safeName = bin2hex(random_bytes(8)) . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $origName);
+                $destPath = $uploadDir . $safeName;
+                if (move_uploaded_file($_FILES['attachments']['tmp_name'][$i], $destPath)) {
+                    $blog->addAttachment($postId, $origName, 'uploads/blog/' . $postId . '/' . $safeName, $fileType, $realMime, $fileSize);
+                }
+            }
+        }
+
         header('Location: /admin/blog');
+        exit;
+
+    } elseif ($action === 'delete_attachment') {
+        $attachId = (int)($_POST['attachment_id'] ?? 0);
+        $postId   = (int)($_POST['post_id'] ?? 0);
+        if ($attachId > 0) {
+            $filePath = $blog->deleteAttachment($attachId);
+            if ($filePath) {
+                $abs = __DIR__ . '/../../' . ltrim($filePath, '/');
+                if (is_file($abs)) @unlink($abs);
+            }
+            blogFlash('Attachment removed.');
+        }
+        header('Location: /admin/blog' . ($postId > 0 ? '?edit=' . $postId : ''));
         exit;
 
     } elseif ($action === 'delete_post') {
@@ -156,8 +212,9 @@ include __DIR__ . '/../../templates/header.php';
         <?php endif; ?>
     </div>
     <div class="card-body">
-        <form method="POST" action="/admin/blog">
+        <form method="POST" action="/admin/blog" enctype="multipart/form-data">
             <input type="hidden" name="action" value="save_post">
+            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
             <?php if ($editPost): ?>
             <input type="hidden" name="post_id" value="<?php echo (int)$editPost['id']; ?>">
             <?php endif; ?>
@@ -189,6 +246,45 @@ include __DIR__ . '/../../templates/header.php';
                            value="<?php echo htmlspecialchars($editPost['cover_image'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
                            placeholder="https://...">
                 </div>
+                <div class="col-12">
+                    <label class="form-label fw-semibold">Attach Files <small class="text-muted">(images, videos, documents — multiple allowed)</small></label>
+                    <input type="file" name="attachments[]" class="form-control" multiple
+                           accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm,video/ogg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                    <div class="form-text">Images ≤10 MB · Videos ≤100 MB · Documents ≤20 MB</div>
+                </div>
+                <?php if ($editPost):
+                    $existingAttachments = $blog->getAttachments((int)$editPost['id']);
+                    if (!empty($existingAttachments)): ?>
+                <div class="col-12">
+                    <label class="form-label fw-semibold">Existing Attachments</label>
+                    <div class="d-flex flex-wrap gap-2">
+                    <?php foreach ($existingAttachments as $att): ?>
+                        <div class="border rounded p-2 d-flex align-items-center gap-2 bg-light" style="max-width:280px;">
+                            <?php if ($att['file_type'] === 'image'): ?>
+                                <img src="/<?php echo htmlspecialchars($att['file_path'], ENT_QUOTES, 'UTF-8'); ?>"
+                                     alt="" style="width:48px;height:48px;object-fit:cover;border-radius:4px;">
+                            <?php elseif ($att['file_type'] === 'video'): ?>
+                                <i class="bi bi-camera-video-fill text-primary fs-4"></i>
+                            <?php else: ?>
+                                <i class="bi bi-file-earmark-text-fill text-secondary fs-4"></i>
+                            <?php endif; ?>
+                            <div class="flex-grow-1 overflow-hidden">
+                                <div class="small fw-semibold text-truncate"><?php echo htmlspecialchars($att['file_name'], ENT_QUOTES, 'UTF-8'); ?></div>
+                                <div class="text-muted" style="font-size:.75rem;"><?php echo round($att['file_size'] / 1024, 1); ?> KB</div>
+                            </div>
+                            <form method="POST" action="/admin/blog" class="d-inline"
+                                  onsubmit="return confirm('Remove this attachment?')">
+                                <input type="hidden" name="action" value="delete_attachment">
+                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                <input type="hidden" name="attachment_id" value="<?php echo (int)$att['id']; ?>">
+                                <input type="hidden" name="post_id" value="<?php echo (int)$editPost['id']; ?>">
+                                <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-x-lg"></i></button>
+                            </form>
+                        </div>
+                    <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; endif; ?>
                 <div class="col-12">
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-save me-1"></i><?php echo $editPost ? 'Update Post' : 'Create Post'; ?>
@@ -245,6 +341,7 @@ include __DIR__ . '/../../templates/header.php';
                     <form method="POST" action="/admin/blog" class="d-inline"
                           onsubmit="return confirm('Delete this post and all its comments?')">
                         <input type="hidden" name="action" value="delete_post">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                         <input type="hidden" name="post_id" value="<?php echo (int)$p['id']; ?>">
                         <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                     </form>
@@ -292,12 +389,14 @@ include __DIR__ . '/../../templates/header.php';
                     <?php if ($canWrite): ?>
                     <form method="POST" action="/admin/blog#comments" class="d-inline">
                         <input type="hidden" name="action" value="comment_status">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                         <input type="hidden" name="comment_id" value="<?php echo (int)$c['id']; ?>">
                         <input type="hidden" name="status" value="approved">
                         <button type="submit" class="btn btn-sm btn-success me-1"><i class="bi bi-check-lg"></i> Approve</button>
                     </form>
                     <form method="POST" action="/admin/blog#comments" class="d-inline">
                         <input type="hidden" name="action" value="delete_comment">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                         <input type="hidden" name="comment_id" value="<?php echo (int)$c['id']; ?>">
                         <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                     </form>

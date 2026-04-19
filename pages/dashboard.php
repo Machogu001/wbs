@@ -331,7 +331,7 @@ if ($db) {
     }
 
     if ($isAdmin) {
-        $stmtUsers = $db->query("SELECT COUNT(*) AS cnt FROM users");
+        $stmtUsers = $db->query("SELECT COUNT(*) AS cnt FROM users WHERE role = 'customer'");
         if ($stmtUsers) {
             $rowUsers = $stmtUsers->fetch(PDO::FETCH_ASSOC);
             if ($rowUsers && isset($rowUsers['cnt'])) {
@@ -547,7 +547,7 @@ if ($db) {
                     <?php if ($isAdmin): ?>
                         <h6 class="card-title text-uppercase small mb-2">Registered Customers</h6>
                         <p class="h4 mb-1"><?php echo $total_users !== null ? number_format($total_users) : 'N/A'; ?></p>
-                        <p class="mb-0 small dashboard-insight-note">Total user accounts in the system.</p>
+                        <p class="mb-0 small dashboard-insight-note">Customer accounts only (excludes staff).</p>
                     <?php else: ?>
                         <h6 class="card-title text-uppercase small mb-2">Last Payment</h6>
                         <?php if ($last_payment_amount !== null): ?>

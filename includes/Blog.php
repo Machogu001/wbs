@@ -42,6 +42,18 @@ class Blog {
             INDEX idx_post_status (post_id, status),
             INDEX idx_user (user_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $this->conn->exec("CREATE TABLE IF NOT EXISTS blog_attachments (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            post_id     INT NOT NULL,
+            file_name   VARCHAR(255) NOT NULL,
+            file_path   VARCHAR(512) NOT NULL,
+            file_type   ENUM('image','video','document') NOT NULL,
+            mime_type   VARCHAR(100) NOT NULL,
+            file_size   INT NOT NULL DEFAULT 0,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_post (post_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     }
 
     // -------------------------------------------------------------------------
@@ -101,6 +113,11 @@ class Blog {
     }
 
     public function deletePost(int $postId): bool {
+        $filePaths = $this->deletePostAttachments($postId);
+        foreach ($filePaths as $path) {
+            $abs = __DIR__ . '/../' . ltrim($path, '/');
+            if (is_file($abs)) @unlink($abs);
+        }
         $this->conn->prepare("DELETE FROM {$this->commentTable} WHERE post_id=:id")->execute([':id' => $postId]);
         $stmt = $this->conn->prepare("DELETE FROM {$this->postTable} WHERE id=:id");
         return $stmt->execute([':id' => $postId]);
@@ -221,6 +238,47 @@ class Blog {
         $stmt = $this->conn->prepare("SELECT COUNT(*) FROM {$this->commentTable} WHERE post_id=:id AND status='approved'");
         $stmt->execute([':id' => $postId]);
         return (int)$stmt->fetchColumn();
+    }
+
+    // -------------------------------------------------------------------------
+    // Attachments
+    // -------------------------------------------------------------------------
+    public function addAttachment(int $postId, string $fileName, string $filePath, string $fileType, string $mimeType, int $fileSize): int {
+        $stmt = $this->conn->prepare("INSERT INTO blog_attachments
+            (post_id, file_name, file_path, file_type, mime_type, file_size)
+            VALUES (:post_id, :file_name, :file_path, :file_type, :mime_type, :file_size)");
+        $stmt->execute([
+            ':post_id'   => $postId,
+            ':file_name' => $fileName,
+            ':file_path' => $filePath,
+            ':file_type' => $fileType,
+            ':mime_type' => $mimeType,
+            ':file_size' => $fileSize,
+        ]);
+        return (int)$this->conn->lastInsertId();
+    }
+
+    public function getAttachments(int $postId): array {
+        $stmt = $this->conn->prepare("SELECT * FROM blog_attachments WHERE post_id=:id ORDER BY created_at ASC");
+        $stmt->execute([':id' => $postId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function deleteAttachment(int $attachmentId): ?string {
+        $stmt = $this->conn->prepare("SELECT file_path FROM blog_attachments WHERE id=:id LIMIT 1");
+        $stmt->execute([':id' => $attachmentId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) return null;
+        $this->conn->prepare("DELETE FROM blog_attachments WHERE id=:id")->execute([':id' => $attachmentId]);
+        return $row['file_path'];
+    }
+
+    public function deletePostAttachments(int $postId): array {
+        $stmt = $this->conn->prepare("SELECT file_path FROM blog_attachments WHERE post_id=:id");
+        $stmt->execute([':id' => $postId]);
+        $paths = array_column($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [], 'file_path');
+        $this->conn->prepare("DELETE FROM blog_attachments WHERE post_id=:id")->execute([':id' => $postId]);
+        return $paths;
     }
 
     // -------------------------------------------------------------------------
