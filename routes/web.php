@@ -64,5 +64,6 @@ return [
     'admin/system-logs' => 'pages/admin/system_logs.php',
     // Blog / News
     'blog' => 'pages/blog.php',
-    'admin/blog' => 'pages/admin/blog.php',
+    'admin/news-updates' => 'pages/admin/blog.php',
+    'admin/blog' => 'pages/admin/blog.php', // legacy alias kept for old links
 ];

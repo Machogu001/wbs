@@ -110,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite) {
             }
         }
 
-        header('Location: /admin/blog');
+        header('Location: /admin/news-updates');
         exit;
 
     } elseif ($action === 'delete_attachment') {
@@ -124,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite) {
             }
             blogFlash('Attachment removed.');
         }
-        header('Location: /admin/blog' . ($postId > 0 ? '?edit=' . $postId : ''));
+        header('Location: /admin/news-updates' . ($postId > 0 ? '?edit=' . $postId : ''));
         exit;
 
     } elseif ($action === 'delete_post') {
@@ -134,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite) {
             (new ActivityLog($db))->log($_SESSION['user_id'], 'delete_blog_post', 'blog_post', $postId, 'Deleted post #' . $postId);
             blogFlash('Post deleted.');
         }
-        header('Location: /admin/blog');
+        header('Location: /admin/news-updates');
         exit;
 
     } elseif ($action === 'comment_status') {
@@ -144,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite) {
             $blog->updateCommentStatus($commentId, $newStatus);
             blogFlash('Comment ' . $newStatus . '.');
         }
-        header('Location: /admin/blog#comments');
+        header('Location: /admin/news-updates#comments');
         exit;
 
     } elseif ($action === 'delete_comment') {
@@ -153,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canWrite) {
             $blog->deleteComment($commentId);
             blogFlash('Comment deleted.');
         }
-        header('Location: /admin/blog#comments');
+        header('Location: /admin/news-updates#comments');
         exit;
     }
 }
@@ -208,11 +208,11 @@ include __DIR__ . '/../../templates/header.php';
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><?php echo $editPost ? '<i class="bi bi-pencil me-2"></i>Edit Post' : '<i class="bi bi-plus-circle me-2"></i>New Post'; ?></h5>
         <?php if ($editPost): ?>
-        <a href="/admin/blog" class="btn btn-sm btn-outline-secondary">Cancel Edit</a>
+        <a href="/admin/news-updates" class="btn btn-sm btn-outline-secondary">Cancel Edit</a>
         <?php endif; ?>
     </div>
     <div class="card-body">
-        <form method="POST" action="/admin/blog" enctype="multipart/form-data">
+        <form method="POST" action="/admin/news-updates" enctype="multipart/form-data">
             <input type="hidden" name="action" value="save_post">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
             <?php if ($editPost): ?>
@@ -272,7 +272,7 @@ include __DIR__ . '/../../templates/header.php';
                                 <div class="small fw-semibold text-truncate"><?php echo htmlspecialchars($att['file_name'], ENT_QUOTES, 'UTF-8'); ?></div>
                                 <div class="text-muted" style="font-size:.75rem;"><?php echo round($att['file_size'] / 1024, 1); ?> KB</div>
                             </div>
-                            <form method="POST" action="/admin/blog" class="d-inline"
+                            <form method="POST" action="/admin/news-updates" class="d-inline"
                                   onsubmit="return confirm('Remove this attachment?')">
                                 <input type="hidden" name="action" value="delete_attachment">
                                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
@@ -335,10 +335,10 @@ include __DIR__ . '/../../templates/header.php';
                 <td class="text-muted small"><?php echo $p['published_at'] ? date('M j, Y', strtotime($p['published_at'])) : '—'; ?></td>
                 <td class="text-end">
                     <?php if ($canWrite): ?>
-                    <a href="/admin/blog?edit=<?php echo (int)$p['id']; ?>" class="btn btn-sm btn-outline-primary me-1">
+                    <a href="/admin/news-updates?edit=<?php echo (int)$p['id']; ?>" class="btn btn-sm btn-outline-primary me-1">
                         <i class="bi bi-pencil"></i>
                     </a>
-                    <form method="POST" action="/admin/blog" class="d-inline"
+                    <form method="POST" action="/admin/news-updates" class="d-inline"
                           onsubmit="return confirm('Delete this post and all its comments?')">
                         <input type="hidden" name="action" value="delete_post">
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
@@ -387,14 +387,14 @@ include __DIR__ . '/../../templates/header.php';
                 <td class="small text-muted"><?php echo date('M j, Y', strtotime($c['created_at'])); ?></td>
                 <td class="text-end">
                     <?php if ($canWrite): ?>
-                    <form method="POST" action="/admin/blog#comments" class="d-inline">
+                    <form method="POST" action="/admin/news-updates#comments" class="d-inline">
                         <input type="hidden" name="action" value="comment_status">
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                         <input type="hidden" name="comment_id" value="<?php echo (int)$c['id']; ?>">
                         <input type="hidden" name="status" value="approved">
                         <button type="submit" class="btn btn-sm btn-success me-1"><i class="bi bi-check-lg"></i> Approve</button>
                     </form>
-                    <form method="POST" action="/admin/blog#comments" class="d-inline">
+                    <form method="POST" action="/admin/news-updates#comments" class="d-inline">
                         <input type="hidden" name="action" value="delete_comment">
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                         <input type="hidden" name="comment_id" value="<?php echo (int)$c['id']; ?>">

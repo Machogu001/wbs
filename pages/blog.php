@@ -109,7 +109,7 @@ require_once __DIR__ . '/../templates/header.php';
         <?php if ($isStaff): ?>
         <div class="pb-right">
             <div class="pb-btn-row">
-                <a href="/admin/blog?edit=<?php echo (int)$singlePost['id']; ?>" class="pb-btn"><i class="bi bi-pencil me-1"></i>Edit Post</a>
+                <a href="/admin/news-updates?edit=<?php echo (int)$singlePost['id']; ?>" class="pb-btn"><i class="bi bi-pencil me-1"></i>Edit Post</a>
             </div>
         </div>
         <?php endif; ?>
@@ -289,7 +289,7 @@ require_once __DIR__ . '/../templates/header.php';
         <?php if ($isStaff): ?>
         <div class="pb-right">
             <div class="pb-btn-row">
-                <a href="/admin/blog" class="pb-btn"><i class="bi bi-pencil-square me-1"></i>Manage Posts</a>
+                <a href="/admin/news-updates" class="pb-btn"><i class="bi bi-pencil-square me-1"></i>Manage Posts</a>
             </div>
         </div>
         <?php endif; ?>

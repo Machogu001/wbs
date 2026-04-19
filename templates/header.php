@@ -165,7 +165,7 @@ if (!isset($appName) || $appName === '') {
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/demand-notices' ? ' active' : ''; ?>" href="/admin/demand-notices"><i class="bi bi-file-earmark-exclamation"></i> Demand Notices</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/approvals' ? ' active' : ''; ?>" href="/admin/approvals"><i class="bi bi-check2-square"></i> Approvals</a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item<?php echo str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/blog') ? ' active' : ''; ?>" href="/admin/blog"><i class="bi bi-newspaper"></i> News &amp; Updates</a></li>
+                                <li><a class="dropdown-item<?php echo str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/news-updates') ? ' active' : ''; ?>" href="/admin/news-updates"><i class="bi bi-newspaper"></i> News &amp; Updates</a></li>
                             </ul>
                         </li>
                         <?php endif; ?>
@@ -173,7 +173,7 @@ if (!isset($appName) || $appName === '') {
                         <!-- Admin/Staff: Monitoring dropdown -->
                         <?php if ($navIsStaff): ?>
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/integration-health','/admin/messaging','/admin/support-inquiries','/activity_log','/system-logs','/chat','/internal-chat','/admin/users','/invoicing','/accounting','/reports','/admin/payments','/admin/demand-notices','/admin/approvals']) || (!$navIsAdmin && (str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/blog'))) ? ' active' : ''; ?>"
+                            <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/integration-health','/admin/messaging','/admin/support-inquiries','/activity_log','/system-logs','/chat','/internal-chat','/admin/users','/invoicing','/accounting','/reports','/admin/payments','/admin/demand-notices','/admin/approvals']) || (!$navIsAdmin && (str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/news-updates'))) ? ' active' : ''; ?>"
                                href="#" id="navbarMonitoring" role="button"
                                <?php if (!empty($is_admin_page)): ?>
                                    onclick="(function(el){var m=el.nextElementSibling;if(!m)return;var shown=m.classList.contains('show');var open=document.querySelectorAll('.dropdown-menu.show');open.forEach(function(mm){mm.classList.remove('show');});if(!shown){m.classList.add('show');}})(this); return false;"
@@ -231,7 +231,7 @@ if (!isset($appName) || $appName === '') {
                                 <?php endif; ?>
                                 <?php if (!$navIsAdmin): ?>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item<?php echo str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/blog') ? ' active' : ''; ?>" href="/admin/blog"><i class="bi bi-newspaper"></i> News &amp; Updates</a></li>
+                                <li><a class="dropdown-item<?php echo str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/news-updates') ? ' active' : ''; ?>" href="/admin/news-updates"><i class="bi bi-newspaper"></i> News &amp; Updates</a></li>
                                 <?php endif; ?>
                             </ul>
                         </li>
