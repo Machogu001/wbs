@@ -6,13 +6,17 @@ require_once __DIR__ . '/CustomerCredit.php';
 class Bill {
 	private $conn;
 	private $table = "bills";
+	private static bool $schemaEnsured = false;
 
 	public function __construct($db) {
 		$this->conn = $db;
-		$this->ensureServiceChargeColumn();
-		$this->ensureEnhancedBillingColumns();
-		$this->ensureTariffTables();
-		$this->ensureBillLineItemsTable();
+		if (!self::$schemaEnsured) {
+			$this->ensureServiceChargeColumn();
+			$this->ensureEnhancedBillingColumns();
+			$this->ensureTariffTables();
+			$this->ensureBillLineItemsTable();
+			self::$schemaEnsured = true;
+		}
 	}
 
 	public function getLastBillByUser($user_id) {

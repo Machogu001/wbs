@@ -266,9 +266,9 @@ class Accounting {
 			$debit = (float)($row['total_debit'] ?? 0);
 			$credit = (float)($row['total_credit'] ?? 0);
 			if (($row['normal_balance'] ?? 'debit') === 'credit') {
-				$row['balance'] = max(0, $credit - $debit);
+				$row['balance'] = $credit - $debit;
 			} else {
-				$row['balance'] = max(0, $debit - $credit);
+				$row['balance'] = $debit - $credit;
 			}
 		}
 		unset($row);

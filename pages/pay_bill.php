@@ -6,6 +6,7 @@ if(!isset($_SESSION['user_id'])) {
 }
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/Auth.php';
 require_once __DIR__ . '/../includes/Bill.php';
 
 $page_title = "Pay Bill";
@@ -13,6 +14,11 @@ require_once __DIR__ . '/../templates/header.php';
 
 $database = new Database();
 $db = $database->getConnection();
+$auth = new Auth($db);
+if (!$auth->isLoggedIn()) {
+    header("Location: /login");
+    exit;
+}
 $bills = [];
 $singleBill = null;
 if ($db) {

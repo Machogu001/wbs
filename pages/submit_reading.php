@@ -7,6 +7,7 @@ if(!isset($_SESSION['user_id'])) {
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/mpesa_config.php';
+require_once __DIR__ . '/../includes/Auth.php';
 require_once __DIR__ . '/../includes/User.php';
 require_once __DIR__ . '/../includes/MeterReading.php';
 require_once __DIR__ . '/../includes/Bill.php';
@@ -16,6 +17,11 @@ require_once __DIR__ . '/../includes/PaymentLink.php';
 
 $database = new Database();
 $db = $database->getConnection();
+$auth = new Auth($db);
+if (!$auth->isLoggedIn()) {
+    header("Location: /login");
+    exit;
+}
 
 $page_title = "Submit Meter Reading";
 require_once __DIR__ . '/../templates/header.php';

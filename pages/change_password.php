@@ -6,6 +6,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/Auth.php';
 require_once __DIR__ . '/../includes/User.php';
 
 $message = null;
@@ -13,10 +14,20 @@ $message_type = 'success';
 
 $database = new Database();
 $db = $database->getConnection();
+$auth = new Auth($db);
+if (!$auth->isLoggedIn()) {
+    header('Location: /login');
+    exit;
+}
 // Ensure user-related schema (including must_change_password) is present
 $userModel = $db ? new User($db) : null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // CSRF check
+    if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        die('Security validation failed. Please refresh and try again.');
+    }
     if (!$db) {
         $message = 'Database connection error.';
         $message_type = 'danger';
@@ -100,6 +111,7 @@ require_once __DIR__ . '/../templates/header.php';
                     <?php endif; ?>
 
                     <form method="POST">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? ''); ?>">
                         <div class="mb-3">
                             <label for="old_password" class="form-label">Current Password</label>
                             <div class="input-group">

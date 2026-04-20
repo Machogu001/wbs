@@ -18,7 +18,16 @@ $currentUserId = $isLoggedIn ? (int)$_SESSION['user_id'] : null;
 $commentError   = null;
 $commentSuccess = null;
 
+// Ensure a CSRF token exists for the comment form (even for guests, tied to the session)
+if (empty($_SESSION['blog_comment_csrf'])) {
+    $_SESSION['blog_comment_csrf'] = bin2hex(random_bytes(32));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'comment') {
+    // CSRF validation
+    if (!hash_equals($_SESSION['blog_comment_csrf'], (string)($_POST['csrf_token'] ?? ''))) {
+        $commentError = 'Security validation failed. Please refresh and try again.';
+    } else {
     $postId   = (int)($_POST['post_id'] ?? 0);
     $body     = trim($_POST['body'] ?? '');
     $guestName = trim($_POST['guest_name'] ?? '');
@@ -40,6 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             header('Location: /blog?post=' . urlencode($post['slug']) . '#comments');
             exit;
         }
+    }
     }
 }
 
@@ -239,6 +249,7 @@ require_once __DIR__ . '/../templates/header.php';
                         <?php endif; ?>
                         <form method="POST" action="/blog#comments">
                             <input type="hidden" name="action" value="comment">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['blog_comment_csrf']); ?>">
                             <input type="hidden" name="post_id" value="<?php echo (int)$singlePost['id']; ?>">
                             <?php if (!$isLoggedIn): ?>
                             <div class="mb-3">

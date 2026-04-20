@@ -6,12 +6,18 @@ if(!isset($_SESSION['user_id'])) {
 }
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/Auth.php';
 require_once __DIR__ . '/../includes/Bill.php';
 require_once __DIR__ . '/../includes/BillingSettings.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
 $database = new Database();
 $db = $database->getConnection();
+$auth = new Auth($db);
+if (!$auth->isLoggedIn()) {
+    header("Location: /login");
+    exit;
+}
 if (!$db) {
     header("Location: /bills");
     exit;

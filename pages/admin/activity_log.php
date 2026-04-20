@@ -15,8 +15,18 @@ if(!$auth->isLoggedIn() || !$auth->isAdmin()) {
 	exit;
 }
 
+// Ensure a CSRF token exists for this page's forms
+if (empty($_SESSION['activity_log_csrf'])) {
+	$_SESSION['activity_log_csrf'] = bin2hex(random_bytes(32));
+}
+
 // Handle bulk delete of selected log entries
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_selected']) && !empty($_POST['log_ids']) && is_array($_POST['log_ids'])) {
+	$csrfToken = (string)($_POST['csrf_token'] ?? '');
+	if (!hash_equals($_SESSION['activity_log_csrf'], $csrfToken)) {
+		http_response_code(403);
+		die('Security validation failed. Please refresh and try again.');
+	}
 	$ids = array_filter(array_map('intval', $_POST['log_ids']), function($v) { return $v > 0; });
 	if (!empty($ids) && $db) {
 		$placeholders = implode(',', array_fill(0, count($ids), '?'));
@@ -432,6 +442,7 @@ function deriveNetworkOwnerLabel(array $metadata)
 		</div>
 		<div class="card-body p-0">
 			<form method="post" action="" id="activityLogForm">
+				<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['activity_log_csrf']); ?>">
 				<div class="table-responsive">
 					<table class="table table-striped table-sm mb-0 align-middle activity-log-table table-density-target">
 						<thead class="table-light">

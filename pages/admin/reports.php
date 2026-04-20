@@ -116,7 +116,16 @@ if (is_file($auditStatusFile) && is_readable($auditStatusFile)) {
 	}
 }
 
+if (empty($_SESSION['reports_csrf'])) {
+	$_SESSION['reports_csrf'] = bin2hex(random_bytes(32));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+	$csrfToken = (string)($_POST['csrf_token'] ?? '');
+	if (!hash_equals($_SESSION['reports_csrf'], $csrfToken)) {
+		http_response_code(403);
+		die('Security validation failed. Please refresh and try again.');
+	}
 	$maintenanceAction = isset($_POST['maintenance_action']) ? trim((string)$_POST['maintenance_action']) : '';
 	$scriptBase = realpath(__DIR__ . '/../../scripts');
 	if ($scriptBase !== false) {
@@ -1492,14 +1501,17 @@ require_once __DIR__ . '/../../templates/header.php';
 					<p class="text-muted small mb-3">Run the billing audit, preview repair actions, or apply the repair workflow without leaving the admin dashboard.</p>
 					<div class="d-grid gap-2">
 						<form method="post" action="/reports#billingIntegrityTools">
+							<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['reports_csrf']); ?>">
 							<input type="hidden" name="maintenance_action" value="run_audit">
 							<button type="submit" class="btn btn-outline-primary btn-sm w-100"><i class="bi bi-activity me-1"></i> Run Audit</button>
 						</form>
 						<form method="post" action="/reports#billingIntegrityTools">
+							<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['reports_csrf']); ?>">
 							<input type="hidden" name="maintenance_action" value="preview_repair">
 							<button type="submit" class="btn btn-outline-secondary btn-sm w-100"><i class="bi bi-search me-1"></i> Preview Repair</button>
 						</form>
 						<form method="post" action="/reports#billingIntegrityTools" onsubmit="return confirm('Apply billing repair actions now? This updates live finance records.');">
+							<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['reports_csrf']); ?>">
 							<input type="hidden" name="maintenance_action" value="apply_repair">
 							<button type="submit" class="btn btn-danger btn-sm w-100"><i class="bi bi-wrench-adjustable-circle me-1"></i> Apply Repair</button>
 						</form>
