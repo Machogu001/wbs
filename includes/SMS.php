@@ -25,6 +25,7 @@ class SMS {
 		// Load credentials from environment-aware config helpers
 		$this->apiToken = SmsConfig::getApiToken();
 		$this->senderId = SmsConfig::getSenderId();
+		SMSQueue::ensureTable($this->db);
 		$this->queue = new SMSQueue($this->db);
 	}
 
@@ -144,6 +145,9 @@ class SMS {
 
 		$result['queued'] = $queued;
 		$result['delivery_mode'] = $queued ? 'queued' : 'failed';
+		if (!$queued) {
+			$this->recordFailedMessage($phone, $message, $type, $result);
+		}
 		return $result;
 	}
 
@@ -216,6 +220,25 @@ class SMS {
 			]);
 		} catch (Exception $e) {
 			// Do not fail successful sends if audit logging fails.
+		}
+	}
+
+	private function recordFailedMessage($phone, $message, $type, array $result) {
+		if (!$this->db) {
+			return;
+		}
+
+		try {
+			ErrorLog::ensureTable($this->db);
+			$errorLog = new ErrorLog($this->db);
+			$errorLog->logSystemError('SMS', 'SMS could not be sent or queued.', __FILE__, __LINE__, [
+				'phone' => $phone,
+				'message' => $message,
+				'type' => $type,
+				'result' => $result,
+			]);
+		} catch (Exception $e) {
+			// Do not fail the caller if audit logging fails.
 		}
 	}
 

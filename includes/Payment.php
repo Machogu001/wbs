@@ -2,6 +2,10 @@
 require_once __DIR__ . '/Accounting.php';
 require_once __DIR__ . '/Bill.php';
 require_once __DIR__ . '/InstallmentPlan.php';
+require_once __DIR__ . '/User.php';
+require_once __DIR__ . '/SMS.php';
+require_once __DIR__ . '/BillingSettings.php';
+require_once __DIR__ . '/ErrorLog.php';
 
 class Payment {
 	private $conn;
@@ -22,6 +26,7 @@ class Payment {
 	public function __construct($db) {
 		$this->conn = $db;
 		$this->ensureRegistrationColumn();
+		$this->ensureManualReceiptColumns();
 		$this->ensureAdjustmentTable();
 	}
 
@@ -89,6 +94,20 @@ class Payment {
 	private function ensureRegistrationColumn() {
 		try {
 			$this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN registration_id INT NULL AFTER status");
+		} catch (\PDOException $e) {
+			// ignore if already exists
+		}
+	}
+
+	private function ensureManualReceiptColumns(): void {
+		try {
+			$this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN payment_method VARCHAR(32) NULL AFTER phone_number");
+		} catch (\PDOException $e) {
+			// ignore if already exists
+		}
+
+		try {
+			$this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN received_by_user_id INT NULL AFTER registration_id");
 		} catch (\PDOException $e) {
 			// ignore if already exists
 		}
@@ -472,5 +491,179 @@ class Payment {
 		if (!empty($paymentRow['bill_id'])) {
 			$this->syncBillStatusFromPayments((int)$paymentRow['bill_id']);
 		}
+	}
+
+	public function sendCompletedPaymentNotification(int $paymentId): array {
+		$status = [
+			'sms' => ['status' => 'skipped'],
+			'email' => ['status' => 'skipped'],
+			'warnings' => [],
+		];
+
+		$paymentRow = $this->getById($paymentId);
+		if (!$paymentRow || (string)($paymentRow['status'] ?? '') !== 'completed') {
+			return $status;
+		}
+
+		try {
+			ErrorLog::ensureTable($this->conn);
+		} catch (Throwable $e) {
+			// Continue even if the diagnostics table cannot be prepared.
+		}
+		$errorLogger = null;
+		try {
+			$errorLogger = new ErrorLog($this->conn);
+		} catch (Throwable $e) {
+			$errorLogger = null;
+		}
+
+		$userId = (int)($paymentRow['user_id'] ?? 0);
+		if ($userId <= 0) {
+			return $status;
+		}
+
+		$userService = new User($this->conn);
+		$user = $userService->getById($userId);
+		if (!$user) {
+			return $status;
+		}
+
+		$billHelper = new Bill($this->conn);
+		$billRow = !empty($paymentRow['bill_id']) ? ($billHelper->getById((int)$paymentRow['bill_id']) ?: null) : null;
+		$accountNumber = $billRow && !empty($billRow['account_number'])
+			? (string)$billRow['account_number']
+			: (string)($user['account_number'] ?? '');
+		$amount = (float)($paymentRow['amount'] ?? 0);
+		$receipt = trim((string)($paymentRow['mpesa_receipt'] ?? ''));
+		$paymentMethod = strtolower(trim((string)($paymentRow['payment_method'] ?? 'mpesa')));
+
+		$settingsService = new BillingSettings($this->conn);
+		$settings = $settingsService->getSettings();
+		$companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
+
+		$isRegistrationPayment = !empty($paymentRow['registration_id']);
+		$registrationOutstanding = ($isRegistrationPayment && !empty($paymentRow['bill_id']))
+			? $this->getBillOutstandingAmount((int)$paymentRow['bill_id'])
+			: 0.0;
+		$registrationFullyPaid = $isRegistrationPayment
+			&& $registrationOutstanding <= 0.01
+			&& $billRow
+			&& (($billRow['status'] ?? '') === 'paid');
+
+		$methodLabelMap = [
+			'mpesa' => 'M-Pesa',
+			'cash' => 'Cash',
+			'bank' => 'Bank transfer',
+			'card' => 'Card',
+			'cheque' => 'Cheque',
+			'wallet' => 'Wallet',
+			'other' => 'Manual payment',
+		];
+		$methodLabel = $methodLabelMap[$paymentMethod] ?? ucfirst($paymentMethod ?: 'Payment');
+		$customerName = (string)($user['full_name'] ?? 'Customer');
+
+		if ($registrationFullyPaid) {
+			$messageText = "Dear {$customerName},\n"
+				. "Your registration payment of KES " . number_format($amount, 2)
+				. ($receipt !== '' ? " (Ref: {$receipt})" : '') . " has been received successfully.\n"
+				. "Your water account is now active.\n"
+				. "Account No: {$accountNumber}\n"
+				. (!empty($user['meter_number']) ? "Meter No: " . $user['meter_number'] . "\n" : '')
+				. "You can now log in to view your bills and make payments.\n"
+				. $companyName;
+		} elseif ($isRegistrationPayment) {
+			$messageText = "Dear {$customerName},\n"
+				. "We have received KES " . number_format($amount, 2)
+				. " toward your registration fee via {$methodLabel}.\n"
+				. "Remaining registration balance: KES " . number_format($registrationOutstanding, 2) . "\n"
+				. "Your account will be activated after the full registration fee is paid.\n"
+				. "Please log in and complete payment at https://wbs.bremac.co.ke/registration-payment\n"
+				. $companyName;
+		} else {
+			$messageText = "Dear Customer,\n"
+				. "Your {$methodLabel} payment of KES " . number_format($amount, 2)
+				. ($receipt !== '' ? " (Ref: {$receipt})" : '')
+				. " for Account No. {$accountNumber} has been received successfully.\n"
+				. "Thank you.\n"
+				. $companyName;
+		}
+
+		$recipientPhone = (string)($user['phone_number'] ?? '');
+		if ($recipientPhone !== '') {
+			try {
+				$sms = new SMS($this->conn);
+				$smsResult = $sms->sendWithFallback($recipientPhone, $messageText, 'payment_confirmation');
+				$smsStatus = (string)($smsResult['delivery_mode'] ?? (!empty($smsResult['success']) ? 'immediate' : 'failed'));
+				$status['sms'] = [
+					'status' => $smsStatus,
+					'queued' => !empty($smsResult['queued']),
+					'http_code' => isset($smsResult['http_code']) ? (int)$smsResult['http_code'] : null,
+				];
+
+				if ($smsStatus === 'queued') {
+					$status['warnings'][] = 'SMS confirmation was queued for delivery.';
+					if ($errorLogger) {
+						$errorLogger->logSystemError('PaymentNotification', 'SMS confirmation queued for delivery.', __FILE__, __LINE__, [
+							'payment_id' => $paymentId,
+							'user_id' => $userId,
+							'phone_number' => $recipientPhone,
+							'payment_method' => $paymentMethod,
+							'message' => $messageText,
+							'result' => $smsResult,
+						]);
+					}
+				} elseif ($smsStatus === 'failed') {
+					$status['warnings'][] = 'SMS confirmation could not be sent.';
+					if ($errorLogger) {
+						$errorLogger->logSystemError('PaymentNotification', 'SMS confirmation failed to send.', __FILE__, __LINE__, [
+							'payment_id' => $paymentId,
+							'user_id' => $userId,
+							'phone_number' => $recipientPhone,
+							'payment_method' => $paymentMethod,
+							'message' => $messageText,
+							'result' => $smsResult,
+						]);
+					}
+				}
+			} catch (Throwable $e) {
+			error_log('Payment SMS notification failed for payment #' . $paymentId . ': ' . $e->getMessage());
+				$status['sms'] = ['status' => 'failed'];
+				$status['warnings'][] = 'SMS confirmation could not be sent.';
+			if ($errorLogger) {
+				$errorLogger->logSystemError('PaymentNotification', 'SMS notification failed: ' . $e->getMessage(), __FILE__, __LINE__, [
+					'payment_id' => $paymentId,
+					'user_id' => $userId,
+					'phone_number' => $recipientPhone,
+					'payment_method' => $paymentMethod,
+					'message' => $messageText,
+				]);
+			}
+			}
+		} else {
+			$status['warnings'][] = 'Customer phone number is missing, so no SMS confirmation was sent.';
+		}
+
+		if (!empty($user['email'])) {
+			try {
+				require_once __DIR__ . '/Email.php';
+				$email = new Email();
+				$email->send((string)$user['email'], 'Payment received', $messageText);
+				$status['email'] = ['status' => 'sent'];
+			} catch (Throwable $e) {
+				error_log('Payment email notification failed for payment #' . $paymentId . ': ' . $e->getMessage());
+				$status['email'] = ['status' => 'failed'];
+				$status['warnings'][] = 'Email confirmation could not be sent.';
+				if ($errorLogger) {
+					$errorLogger->logSystemError('PaymentNotification', 'Email notification failed: ' . $e->getMessage(), __FILE__, __LINE__, [
+						'payment_id' => $paymentId,
+						'user_id' => $userId,
+						'email' => (string)$user['email'],
+						'payment_method' => $paymentMethod,
+					]);
+				}
+			}
+		}
+
+		return $status;
 	}
 }

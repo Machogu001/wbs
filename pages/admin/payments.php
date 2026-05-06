@@ -12,6 +12,7 @@ require_once __DIR__ . '/../../includes/Accounting.php';
 require_once __DIR__ . '/../../includes/InstallmentPlan.php';
 require_once __DIR__ . '/../../includes/Payment.php';
 require_once __DIR__ . '/../../includes/FinanceApproval.php';
+require_once __DIR__ . '/../../includes/ErrorLog.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -28,6 +29,10 @@ $paymentService = new Payment($db);
 $financeApproval = new FinanceApproval($db);
 $settingsService = new BillingSettings($db);
 $settings = $settingsService->getSettings();
+ErrorLog::ensureTable($db);
+$errorLogger = new ErrorLog($db);
+
+$canReceivePayments = $auth->isAdmin() || $auth->hasPermission('view_payments');
 
 $message = null;
 $message_type = 'success';
@@ -63,6 +68,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Handle manual payment
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'manual_payment') {
+	if (!$canReceivePayments) {
+		http_response_code(403);
+		die('You are not allowed to record payments.');
+	}
 	// CSRF validation
 	if (!hash_equals($_SESSION['app_csrf_token'] ?? '', (string)($_POST['csrf_token'] ?? ''))) {
 		http_response_code(403);
@@ -70,63 +79,170 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 	}
 	$account = trim($_POST['account_number'] ?? '');
 	$billId = (int)($_POST['bill_id'] ?? 0);
-	$txnCode = trim($_POST['transaction_code'] ?? '');
+	$paymentTarget = trim((string)($_POST['payment_target'] ?? 'invoice'));
+	if (!in_array($paymentTarget, ['invoice', 'balance'], true)) {
+		$paymentTarget = 'invoice';
+	}
+	$paymentMethod = strtolower(trim((string)($_POST['payment_method'] ?? 'mpesa')));
+	$allowedPaymentMethods = ['mpesa', 'cash', 'bank', 'card', 'cheque', 'wallet', 'other'];
+	if (!in_array($paymentMethod, $allowedPaymentMethods, true)) {
+		$paymentMethod = 'other';
+	}
+	$referenceNo = trim((string)($_POST['payment_reference'] ?? ''));
 	$amount = (float)($_POST['amount'] ?? 0);
 	$paidDate = trim($_POST['paid_date'] ?? '');
 	$paidTime = trim($_POST['paid_time'] ?? '');
 	$phone = trim($_POST['phone_number'] ?? '');
+	$paymentNote = trim((string)($_POST['payment_note'] ?? ''));
 
 	$currentUser = $account !== '' ? $userService->getByAccountNumber($account) : null;
 	if (!$currentUser) {
 		$message = 'Account not found.';
 		$message_type = 'danger';
-	} elseif ($billId <= 0 || $txnCode === '' || $amount <= 0 || $paidDate === '') {
-		$message = 'Please fill in all required fields (bill, transaction code, amount, date).';
+	} elseif ($amount <= 0 || $paidDate === '') {
+		$message = 'Please fill in all required fields (amount and paid date).';
+		$message_type = 'danger';
+	} elseif ($paymentMethod === 'mpesa' && $referenceNo === '') {
+		$message = 'M-Pesa reference number is required for M-Pesa payments.';
 		$message_type = 'danger';
 	} else {
-		$billRow = $billService->getById($billId, $currentUser['id']);
-		if (!$billRow) {
-			$message = 'Selected bill not found for this account.';
-			$message_type = 'danger';
-		} elseif (!in_array($billRow['status'], ['pending','overdue'], true)) {
-			$message = 'Only pending or overdue bills can be receipted manually.';
-			$message_type = 'danger';
-		} else {
-			$billAmount = (float)$billRow['amount'];
-			if ($amount > $billAmount + 0.01) {
-				$message = 'Amount paid cannot exceed the bill amount (' . number_format($billAmount, 2) . ').';
+		$paidDateTime = $paidDate;
+		if ($paidTime !== '') {
+			$paidDateTime .= ' ' . $paidTime;
+		}
+		$paidDateTime = date('Y-m-d H:i:s', strtotime($paidDateTime));
+
+		if ($referenceNo === '') {
+			$referenceNo = 'MANUAL-' . strtoupper(substr($paymentMethod, 0, 4)) . '-' . date('YmdHis');
+		}
+
+		$openBillsRaw = $billService->getBillsByUser((int)$currentUser['id']);
+		$openBills = array_values(array_filter($openBillsRaw, static function (array $b): bool {
+			return isset($b['status']) && in_array((string)$b['status'], ['pending', 'overdue'], true);
+		}));
+
+		usort($openBills, static function (array $a, array $b): int {
+			$ad = strtotime((string)($a['due_date'] ?? $a['billing_month'] ?? '1970-01-01')) ?: 0;
+			$bd = strtotime((string)($b['due_date'] ?? $b['billing_month'] ?? '1970-01-01')) ?: 0;
+			if ($ad === $bd) {
+				return ((int)($a['id'] ?? 0) <=> (int)($b['id'] ?? 0));
+			}
+			return $ad <=> $bd;
+		});
+
+		$getOutstanding = static function (PDO $dbConn, int $forBillId, float $billAmount): float {
+			$stmt = $dbConn->prepare("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE bill_id = :bill_id AND status = 'completed'");
+			$stmt->bindParam(':bill_id', $forBillId, PDO::PARAM_INT);
+			$stmt->execute();
+			$totalPaid = (float)$stmt->fetchColumn();
+			return max(0.0, round($billAmount - $totalPaid, 2));
+		};
+
+		$allocationPlan = [];
+		if ($paymentTarget === 'invoice') {
+			if ($billId <= 0) {
+				$message = 'Please select an invoice when target is Invoice.';
 				$message_type = 'danger';
 			} else {
-				// Build transaction datetime
-				$paidDateTime = $paidDate;
-				if ($paidTime !== '') {
-					$paidDateTime .= ' ' . $paidTime;
+				$billRow = $billService->getById($billId, $currentUser['id']);
+				if (!$billRow) {
+					$message = 'Selected bill not found for this account.';
+					$message_type = 'danger';
+				} elseif (!in_array((string)$billRow['status'], ['pending', 'overdue'], true)) {
+					$message = 'Only pending or overdue bills can be receipted manually.';
+					$message_type = 'danger';
+				} else {
+					$outstanding = $getOutstanding($db, (int)$billRow['id'], (float)$billRow['amount']);
+					if ($outstanding <= 0.0) {
+						$message = 'This invoice is already fully settled.';
+						$message_type = 'danger';
+					} elseif ($amount > $outstanding + 0.01) {
+						$message = 'Amount paid cannot exceed invoice outstanding amount (' . number_format($outstanding, 2) . ').';
+						$message_type = 'danger';
+					} else {
+						$allocationPlan[] = ['bill' => $billRow, 'amount' => round($amount, 2)];
+					}
 				}
-				$paidDateTime = date('Y-m-d H:i:s', strtotime($paidDateTime));
+			}
+		} else {
+			$remaining = round($amount, 2);
+			$totalOutstanding = 0.0;
+			foreach ($openBills as $openBill) {
+				$totalOutstanding += $getOutstanding($db, (int)$openBill['id'], (float)$openBill['amount']);
+			}
+			if ($totalOutstanding <= 0.0) {
+				$message = 'This account has no outstanding balance to receipt.';
+				$message_type = 'danger';
+			} elseif ($amount > $totalOutstanding + 0.01) {
+				$message = 'Amount paid cannot exceed total outstanding balance (' . number_format($totalOutstanding, 2) . ').';
+				$message_type = 'danger';
+			} else {
+				foreach ($openBills as $openBill) {
+					if ($remaining <= 0.0) {
+						break;
+					}
+					$billOutstanding = $getOutstanding($db, (int)$openBill['id'], (float)$openBill['amount']);
+					if ($billOutstanding <= 0.0) {
+						continue;
+					}
+					$applyAmount = min($remaining, $billOutstanding);
+					if ($applyAmount > 0.0) {
+						$allocationPlan[] = ['bill' => $openBill, 'amount' => round($applyAmount, 2)];
+						$remaining = round($remaining - $applyAmount, 2);
+					}
+				}
+				if ($remaining > 0.01) {
+					$message = 'Could not allocate full amount to outstanding invoices. Remaining ' . number_format($remaining, 2) . '.';
+					$message_type = 'danger';
+				}
+			}
+		}
 
-				// Insert payment directly
-				try {
-					$stmt = $db->prepare("INSERT INTO payments (bill_id, user_id, phone_number, amount, mpesa_receipt, status, transaction_date, created_at) VALUES (:bill_id, :user_id, :phone, :amount, :receipt, 'completed', :tx_date, :created_at)");
-					$stmt->bindParam(':bill_id', $billId, PDO::PARAM_INT);
+		if (!empty($allocationPlan) && $message_type !== 'danger') {
+			$recordedPaymentIds = [];
+			$notificationWarnings = [];
+			try {
+				$db->beginTransaction();
+				$totalParts = count($allocationPlan);
+				$receivedByUserId = (int)($_SESSION['user_id'] ?? 0);
+				foreach ($allocationPlan as $idx => $alloc) {
+					$allocBill = $alloc['bill'];
+					$allocAmount = (float)$alloc['amount'];
+					$allocBillId = (int)$allocBill['id'];
+					$allocReference = $referenceNo;
+					if ($totalParts > 1) {
+						$allocReference .= '-P' . ($idx + 1);
+					}
+
+					$stmt = $db->prepare("INSERT INTO payments (bill_id, user_id, phone_number, payment_method, amount, mpesa_receipt, status, transaction_date, received_by_user_id, created_at) VALUES (:bill_id, :user_id, :phone, :payment_method, :amount, :receipt, 'completed', :tx_date, :received_by_user_id, :created_at)");
+					$stmt->bindParam(':bill_id', $allocBillId, PDO::PARAM_INT);
 					$stmt->bindParam(':user_id', $currentUser['id'], PDO::PARAM_INT);
 					$stmt->bindParam(':phone', $phone);
-					$stmt->bindParam(':amount', $amount);
-					$stmt->bindParam(':receipt', $txnCode);
+					$stmt->bindParam(':payment_method', $paymentMethod);
+					$stmt->bindParam(':amount', $allocAmount);
+					$stmt->bindParam(':receipt', $allocReference);
 					$stmt->bindParam(':tx_date', $paidDateTime);
+					$stmt->bindValue(':received_by_user_id', $receivedByUserId > 0 ? $receivedByUserId : null, $receivedByUserId > 0 ? PDO::PARAM_INT : PDO::PARAM_NULL);
 					$now = date('Y-m-d H:i:s');
 					$stmt->bindParam(':created_at', $now);
 					$stmt->execute();
 					$paymentId = (int)$db->lastInsertId();
+					$recordedPaymentIds[] = $paymentId;
 
 					try {
 						$accounting = new Accounting($db);
 						$paymentRow = [
 							'id' => $paymentId,
-							'amount' => $amount,
+							'amount' => $allocAmount,
 							'transaction_date' => $paidDateTime,
-							'bill_id' => $billId,
+							'bill_id' => $allocBillId,
+							'payment_method' => $paymentMethod,
 						];
-						$accounting->postPaymentReceived($paymentId, $paymentRow, $billRow, 'Manual payment received', (int)($_SESSION['user_id'] ?? 0));
+						$memo = 'Manual payment received via ' . strtoupper($paymentMethod);
+						if ($paymentNote !== '') {
+							$memo .= ' - ' . $paymentNote;
+						}
+						$accounting->postPaymentReceived($paymentId, $paymentRow, $allocBill, $memo, (int)($_SESSION['user_id'] ?? 0));
 					} catch (Throwable $e) {
 						error_log('Manual payment accounting posting failed for payment #' . $paymentId . ': ' . $e->getMessage());
 					}
@@ -138,16 +254,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 						error_log('Manual payment installment allocation failed for payment #' . $paymentId . ': ' . $e->getMessage());
 					}
 
-					// Set bill paid when cumulative completed payments settle the bill.
-					$stmtPaid = $db->prepare("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE bill_id = :bill_id AND status = 'completed'");
-					$stmtPaid->bindParam(':bill_id', $billId, PDO::PARAM_INT);
-					$stmtPaid->execute();
-					$totalPaid = (float)$stmtPaid->fetchColumn();
-					if ($totalPaid + 0.01 >= $billAmount) {
-						$billService->updateStatus($billId, 'paid');
+					$updatedOutstanding = $getOutstanding($db, $allocBillId, (float)$allocBill['amount']);
+					if ($updatedOutstanding <= 0.01) {
+						$billService->updateStatus($allocBillId, 'paid');
 					}
 
-					// Log manual payment entry
 					try {
 						$logger = new ActivityLog($db);
 						$logger->log(
@@ -155,44 +266,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 							'record_manual_payment',
 							'payment',
 							$paymentId,
-							'Recorded manual payment for bill #' . $billId,
-							array(
-								'bill_id' => $billId,
-								'amount' => $amount,
-								'tx_code' => $txnCode,
-								'paid_date' => $paidDateTime
-							)
+							'Recorded manual payment for bill #' . $allocBillId,
+							[
+								'bill_id' => $allocBillId,
+								'amount' => $allocAmount,
+								'payment_method' => $paymentMethod,
+								'reference' => $allocReference,
+								'paid_date' => $paidDateTime,
+								'note' => $paymentNote,
+							]
 						);
 					} catch (Exception $e) {
 						// Ignore logging errors
 					}
+				}
 
-					// Submit to ETIMS if configured
+				$db->commit();
+
+				foreach ($recordedPaymentIds as $recordedPaymentId) {
+					try {
+						$notificationStatus = $paymentService->sendCompletedPaymentNotification((int)$recordedPaymentId);
+						foreach (($notificationStatus['warnings'] ?? []) as $warning) {
+							$warning = trim((string)$warning);
+							if ($warning !== '') {
+								$notificationWarnings[] = $warning;
+							}
+						}
+					} catch (Throwable $e) {
+						error_log('Manual payment notification failed for payment #' . (int)$recordedPaymentId . ': ' . $e->getMessage());
+						$notificationWarnings[] = 'A payment confirmation step failed after the receipt was saved.';
+					}
+				}
+
+				// Submit first created record to ETIMS if configured (existing flow compatibility).
+				if (!empty($recordedPaymentIds)) {
 					try {
 						$etims = new Etims($db);
 						if ($etims->isConfigured()) {
-							// Reload payment row for ETIMS payload
 							$stmtP = $db->prepare('SELECT * FROM payments WHERE id = :id LIMIT 1');
-							$stmtP->bindParam(':id', $paymentId, PDO::PARAM_INT);
+							$firstPaymentId = (int)$recordedPaymentIds[0];
+							$stmtP->bindParam(':id', $firstPaymentId, PDO::PARAM_INT);
 							$stmtP->execute();
-							$paymentRow = $stmtP->fetch(PDO::FETCH_ASSOC) ?: null;
-							if ($paymentRow) {
-								$etims->submitSale($paymentRow, $billRow, $currentUser);
+							$firstPaymentRow = $stmtP->fetch(PDO::FETCH_ASSOC) ?: null;
+							if ($firstPaymentRow) {
+								$firstBillRow = $allocationPlan[0]['bill'];
+								$etims->submitSale($firstPaymentRow, $firstBillRow, $currentUser);
 							}
 						}
 					} catch (Exception $e) {
-						// Log but do not block manual receipt
 						error_log('Manual ETIMS error: ' . $e->getMessage());
 					}
-
-					$message = 'Manual payment recorded successfully.';
-					$message_type = 'success';
-					// Refresh bills
-					$userBills = $billService->getBillsByUser($currentUser['id']);
-				} catch (Exception $e) {
-					$message = 'Failed to record manual payment.';
-					$message_type = 'danger';
 				}
+
+				$message = $paymentTarget === 'balance'
+					? ('Manual payment recorded and allocated to ' . count($allocationPlan) . ' invoice(s).')
+					: 'Manual payment recorded successfully.';
+				if (!empty($notificationWarnings)) {
+					$message .= ' Notification note: ' . implode(' ', array_values(array_unique($notificationWarnings)));
+				}
+				$message_type = 'success';
+				$userBills = $billService->getBillsByUser($currentUser['id']);
+			} catch (Exception $e) {
+				if ($db->inTransaction()) {
+					$db->rollBack();
+				}
+				$errorLogger->logSystemError('ManualPayment', 'Failed to record manual payment: ' . $e->getMessage(), __FILE__, __LINE__, [
+					'account_number' => $account,
+					'bill_id' => $billId,
+					'payment_target' => $paymentTarget,
+					'payment_method' => $paymentMethod,
+					'reference_no' => $referenceNo,
+					'amount' => $amount,
+					'paid_date' => $paidDate,
+					'paid_time' => $paidTime,
+					'recorded_by_user_id' => (int)($_SESSION['user_id'] ?? 0),
+				]);
+				$message = 'Failed to record manual payment. ' . $e->getMessage();
+				$message_type = 'danger';
 			}
 		}
 	}
@@ -408,6 +558,7 @@ include __DIR__ . '/../../templates/header.php';
 				<div class="card-header admin-section-title">Account Lookup</div>
 				<div class="card-body">
 					<form method="POST">
+						<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? ''); ?>">
 						<input type="hidden" name="action" value="search_account">
 						<div class="mb-3">
 							<label class="form-label">Account / Meter / Name</label>
@@ -443,11 +594,35 @@ include __DIR__ . '/../../templates/header.php';
 						<p class="text-muted mb-0">Search for an account first to record a manual payment.</p>
 					<?php else: ?>
 						<form method="POST" class="row g-3">
+							<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? ''); ?>">
 							<input type="hidden" name="action" value="manual_payment">
 							<input type="hidden" name="account_number" value="<?php echo htmlspecialchars($currentUser['account_number']); ?>">
+							<div class="col-md-4">
+								<label class="form-label">Payment Target</label>
+								<select name="payment_target" id="manualPaymentTarget" class="form-select" required>
+									<option value="invoice" selected>Specific Invoice</option>
+									<option value="balance">Outstanding Balance (auto-allocate)</option>
+								</select>
+							</div>
+							<div class="col-md-4">
+								<label class="form-label">Payment Method</label>
+								<select name="payment_method" id="manualPaymentMethod" class="form-select" required>
+									<option value="mpesa" selected>M-Pesa</option>
+									<option value="cash">Cash</option>
+									<option value="bank">Bank Transfer</option>
+									<option value="card">Card</option>
+									<option value="cheque">Cheque</option>
+									<option value="wallet">Wallet</option>
+									<option value="other">Other</option>
+								</select>
+							</div>
+							<div class="col-md-4">
+								<label class="form-label" id="manualReferenceLabel">M-Pesa Reference No</label>
+								<input type="text" name="payment_reference" id="manualPaymentReference" class="form-control" required>
+							</div>
 							<div class="col-md-6">
 								<label class="form-label">Bill / Invoice</label>
-								<select name="bill_id" class="form-select" required>
+								<select name="bill_id" id="manualBillSelect" class="form-select" required>
 									<option value="">Select bill</option>
 									<?php foreach ($userBills as $b): ?>
 										<option value="<?php echo (int)$b['id']; ?>">
@@ -455,10 +630,6 @@ include __DIR__ . '/../../templates/header.php';
 										</option>
 									<?php endforeach; ?>
 								</select>
-							</div>
-							<div class="col-md-6">
-								<label class="form-label">Transaction Code</label>
-								<input type="text" name="transaction_code" class="form-control" required>
 							</div>
 							<div class="col-md-4">
 								<label class="form-label">Amount Paid (<?php echo htmlspecialchars($currency); ?>)</label>
@@ -476,11 +647,15 @@ include __DIR__ . '/../../templates/header.php';
 								<label class="form-label">Payer Phone (optional)</label>
 								<input type="text" name="phone_number" class="form-control" value="<?php echo htmlspecialchars($currentUser['phone_number'] ?? ''); ?>">
 							</div>
+							<div class="col-md-6">
+								<label class="form-label">Internal Note (optional)</label>
+								<input type="text" name="payment_note" class="form-control" placeholder="Optional receipt note">
+							</div>
 							<div class="col-md-6 d-flex align-items-end">
 								<button type="submit" class="btn btn-success w-100"><i class="bi bi-receipt-cutoff me-1"></i> Record Manual Payment</button>
 							</div>
 						</form>
-						<p class="text-muted small mt-2 mb-0">Note: Only full payments are supported here. For adjustments, use a credit note.</p>
+						<p class="text-muted small mt-2 mb-0">For M-Pesa choose method M-Pesa and enter the M-Pesa reference. For balance payments, select Outstanding Balance to auto-allocate to oldest open invoices.</p>
 					<?php endif; ?>
 				</div>
 			</div>
@@ -492,6 +667,7 @@ include __DIR__ . '/../../templates/header.php';
 						<p class="text-muted mb-0">Search for an account first to apply a credit note.</p>
 					<?php else: ?>
 						<form method="POST" class="row g-3">
+							<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? ''); ?>">
 							<input type="hidden" name="action" value="credit_note">
 							<input type="hidden" name="account_number" value="<?php echo htmlspecialchars($currentUser['account_number']); ?>">
 							<div class="col-md-6">
@@ -538,6 +714,7 @@ include __DIR__ . '/../../templates/header.php';
 						<p class="text-muted mb-0">This account has no completed payments available for adjustment.</p>
 					<?php else: ?>
 						<form method="POST" class="row g-3">
+							<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? ''); ?>">
 							<input type="hidden" name="action" value="payment_adjustment_request">
 							<input type="hidden" name="account_number" value="<?php echo htmlspecialchars($currentUser['account_number']); ?>">
 							<div class="col-md-6">
@@ -623,6 +800,7 @@ include __DIR__ . '/../../templates/header.php';
 								<thead>
 									<tr>
 										<th>Payment</th>
+										<th>Method</th>
 										<th>Date</th>
 										<th class="text-end">Amount</th>
 										<th class="text-end">Available</th>
@@ -634,6 +812,7 @@ include __DIR__ . '/../../templates/header.php';
 								<?php foreach ($userPayments as $paymentRow): ?>
 									<tr>
 										<td>#<?php echo (int)$paymentRow['id']; ?> <?php echo htmlspecialchars($paymentRow['mpesa_receipt'] ?: 'Manual'); ?></td>
+										<td><?php echo htmlspecialchars(ucfirst((string)($paymentRow['payment_method'] ?? 'mpesa'))); ?></td>
 										<td><?php echo htmlspecialchars(date('d M Y', strtotime((string)($paymentRow['transaction_date'] ?? $paymentRow['created_at'] ?? 'now')))); ?></td>
 										<td class="text-end"><?php echo number_format((float)$paymentRow['amount'], 2); ?></td>
 										<td class="text-end"><?php echo number_format((float)($paymentRow['available_adjustment_amount'] ?? 0), 2); ?></td>
@@ -690,4 +869,39 @@ include __DIR__ . '/../../templates/header.php';
 		</div>
 	</div>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+	var methodEl = document.getElementById('manualPaymentMethod');
+	var targetEl = document.getElementById('manualPaymentTarget');
+	var refEl = document.getElementById('manualPaymentReference');
+	var refLabelEl = document.getElementById('manualReferenceLabel');
+	var billEl = document.getElementById('manualBillSelect');
+
+	function syncManualPaymentFields() {
+		if (methodEl && refEl && refLabelEl) {
+			var isMpesa = methodEl.value === 'mpesa';
+			refLabelEl.textContent = isMpesa ? 'M-Pesa Reference No' : 'Payment Reference No (optional)';
+			refEl.required = isMpesa;
+			if (!isMpesa) {
+				refEl.placeholder = 'Optional ref, slip, or cheque number';
+			} else {
+				refEl.placeholder = '';
+			}
+		}
+		if (targetEl && billEl) {
+			var isInvoice = targetEl.value === 'invoice';
+			billEl.required = isInvoice;
+			billEl.disabled = !isInvoice;
+		}
+	}
+
+	if (methodEl) {
+		methodEl.addEventListener('change', syncManualPaymentFields);
+	}
+	if (targetEl) {
+		targetEl.addEventListener('change', syncManualPaymentFields);
+	}
+	syncManualPaymentFields();
+});
+</script>
 <?php include __DIR__ . '/../../templates/footer.php'; ?>
