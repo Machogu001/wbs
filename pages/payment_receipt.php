@@ -56,6 +56,26 @@ if (!$db) {
         }
     }
 }
+
+$paymentMethodMap = [
+    'mpesa' => 'M-Pesa',
+    'cash' => 'Cash',
+    'bank' => 'Bank Transfer',
+    'card' => 'Card',
+    'cheque' => 'Cheque',
+    'wallet' => 'Wallet',
+    'other' => 'Other',
+];
+$paymentMethodKey = strtolower(trim((string)($paymentRow['payment_method'] ?? 'mpesa')));
+$paymentMethodLabel = $paymentMethodMap[$paymentMethodKey] ?? ucfirst($paymentMethodKey ?: 'M-Pesa');
+$referenceLabel = $paymentMethodKey === 'mpesa' ? 'M-Pesa Reference' : 'Reference Number';
+$receiverLabel = 'System / Automatic';
+if (!empty($paymentRow['received_by_user_id'])) {
+    $receiverRow = $user->getById((int)$paymentRow['received_by_user_id']);
+    if ($receiverRow && !empty($receiverRow['full_name'])) {
+        $receiverLabel = $receiverRow['full_name'];
+    }
+}
 ?>
 
 <div class="container mt-4 payment-receipt-page">
@@ -113,6 +133,12 @@ if (!$db) {
                             <dt class="col-sm-4">Receipt Number</dt>
                             <dd class="col-sm-8 fw-semibold text-break"><?php echo htmlspecialchars($paymentRow['mpesa_receipt'] ?? 'N/A'); ?></dd>
 
+                            <dt class="col-sm-4">Payment Method</dt>
+                            <dd class="col-sm-8"><?php echo htmlspecialchars($paymentMethodLabel); ?></dd>
+
+                            <dt class="col-sm-4"><?php echo htmlspecialchars($referenceLabel); ?></dt>
+                            <dd class="col-sm-8 text-break"><?php echo htmlspecialchars($paymentRow['mpesa_receipt'] ?? 'N/A'); ?></dd>
+
                             <dt class="col-sm-4">Account Number</dt>
                             <dd class="col-sm-8 text-break"><?php echo htmlspecialchars($billRow['account_number']); ?></dd>
 
@@ -130,6 +156,9 @@ if (!$db) {
 
                             <dt class="col-sm-4">Paid On</dt>
                             <dd class="col-sm-8"><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime($paymentRow['transaction_date'] ?? $paymentRow['created_at']))); ?></dd>
+
+                            <dt class="col-sm-4">Received By</dt>
+                            <dd class="col-sm-8"><?php echo htmlspecialchars($receiverLabel); ?></dd>
                         </dl>
                     <?php endif; ?>
                 </div>

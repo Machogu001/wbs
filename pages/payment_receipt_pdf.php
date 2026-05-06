@@ -60,6 +60,25 @@ $customerName = $userRow['full_name'];
 $billingMonth = date('F Y', strtotime($billRow['billing_month']));
 $amountPaid = number_format((float)$paymentRow['amount'], 2);
 $paidOn = date('d-m-Y H:i', strtotime($paymentRow['transaction_date'] ?? $paymentRow['created_at']));
+$paymentMethodMap = [
+    'mpesa' => 'M-Pesa',
+    'cash' => 'Cash',
+    'bank' => 'Bank Transfer',
+    'card' => 'Card',
+    'cheque' => 'Cheque',
+    'wallet' => 'Wallet',
+    'other' => 'Other',
+];
+$paymentMethodKey = strtolower(trim((string)($paymentRow['payment_method'] ?? 'mpesa')));
+$paymentMethodLabel = $paymentMethodMap[$paymentMethodKey] ?? ucfirst($paymentMethodKey ?: 'M-Pesa');
+$referenceLabel = $paymentMethodKey === 'mpesa' ? 'M-Pesa Reference' : 'Reference Number';
+$receiverLabel = 'System / Automatic';
+if (!empty($paymentRow['received_by_user_id'])) {
+    $receiverRow = $user->getById((int)$paymentRow['received_by_user_id']);
+    if ($receiverRow && !empty($receiverRow['full_name'])) {
+        $receiverLabel = $receiverRow['full_name'];
+    }
+}
 $settingsService = new BillingSettings($db);
 $settings = $settingsService->getSettings();
 $companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
@@ -106,6 +125,9 @@ body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 10px; color: #0f1
         <tr><td class='label'>Amount Paid</td><td class='value'>KES " . htmlspecialchars($amountPaid) . "</td></tr>
         <tr><td class='label'>Payment Status</td><td class='value'>Completed</td></tr>
         <tr><td class='label'>Paid On</td><td class='value'>" . htmlspecialchars($paidOn) . "</td></tr>
+            <tr><td class='label'>Payment Method</td><td class='value'>" . htmlspecialchars($paymentMethodLabel) . "</td></tr>
+              <tr><td class='label'>" . htmlspecialchars($referenceLabel) . "</td><td class='value'>" . htmlspecialchars($receiptNumber) . "</td></tr>
+            <tr><td class='label'>Received By</td><td class='value'>" . htmlspecialchars($receiverLabel) . "</td></tr>
     </table>
     " . (!empty($paymentRow['etims_qr_svg_url']) || !empty($paymentRow['etims_invoice_id']) ? "
     <div class='etims-block'>

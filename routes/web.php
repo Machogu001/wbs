@@ -44,6 +44,14 @@ return [
     // Accounting management
     'accounting' => 'pages/admin/accounting.php',
     'admin/accounting' => 'pages/admin/accounting.php',
+        'accounting/reports'         => 'pages/admin/accounting_reports.php',
+        'accounting/budget'          => 'pages/admin/accounting_budget.php',
+        'accounting/transfers'       => 'pages/admin/accounting_transfers.php',
+        'accounting/ledger'          => 'pages/admin/accounting_ledger.php',
+        'admin/accounting/reports'   => 'pages/admin/accounting_reports.php',
+        'admin/accounting/budget'    => 'pages/admin/accounting_budget.php',
+        'admin/accounting/transfers' => 'pages/admin/accounting_transfers.php',
+        'admin/accounting/ledger'    => 'pages/admin/accounting_ledger.php',
     // Complaints admin alias
     'admin/complaints' => 'pages/admin/complaints.php',
     // Activity log & support chat

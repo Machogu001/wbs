@@ -91,7 +91,7 @@ if (!isset($appName) || $appName === '') {
         $navUserRole    = strtolower((string)($_SESSION['user_data']['role'] ?? 'customer'));
         $navIsStaff     = in_array($navUserRole, ['admin', 'reader', 'finance', 'support'], true);
         $navCanManageSettings = in_array($navUserRole, ['admin', 'finance'], true);
-                                $navAdminPaths  = ['/admin/users','/admin/staff-users','/reports','/accounting','/admin/accounting','/admin/payment-transactions',
+                                $navAdminPaths  = ['/admin/users','/admin/staff-users','/reports','/accounting','/admin/accounting','/admin/payments','/admin/payment-transactions',
                            '/admin/demand-notices','/admin/approvals','/admin/integration-health',
                            '/admin/messaging','/activity_log','/system-logs','/chat','/internal-chat',
                            '/invoicing','/settings'];
@@ -142,7 +142,7 @@ if (!isset($appName) || $appName === '') {
                         <!-- Admin: Operations dropdown -->
                         <?php if ($navIsAdmin): ?>
                         <li class="nav-item dropdown">
-                                     <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/users','/admin/staff-users','/invoicing','/reports','/accounting','/admin/accounting','/admin/payment-transactions','/admin/demand-notices','/admin/approvals']) ? ' active' : ''; ?>"
+                                     <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/users','/admin/staff-users','/invoicing','/reports','/accounting','/admin/accounting','/admin/payments','/admin/payment-transactions','/admin/demand-notices','/admin/approvals']) ? ' active' : ''; ?>"
                                href="#" id="navbarOperations" role="button"
                                <?php if (!empty($is_admin_page)): ?>
                                    onclick="(function(el){var m=el.nextElementSibling;if(!m)return;var shown=m.classList.contains('show');var open=document.querySelectorAll('.dropdown-menu.show');open.forEach(function(mm){mm.classList.remove('show');});if(!shown){m.classList.add('show');}})(this); return false;"
@@ -160,6 +160,7 @@ if (!isset($appName) || $appName === '') {
                                 <li><a class="dropdown-item<?php echo $currentPath === '/reports' ? ' active' : ''; ?>" href="/reports"><i class="bi bi-graph-up-arrow"></i> Reports</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/reports' ? ' active' : ''; ?>" href="/reports#billingIntegrityTools"><i class="bi bi-shield-check"></i> Integrity Tools</a></li>
                                 <li><a class="dropdown-item<?php echo in_array($currentPath, ['/accounting','/admin/accounting']) ? ' active' : ''; ?>" href="/accounting"><i class="bi bi-journal-text"></i> Accounting</a></li>
+                                <li><a class="dropdown-item<?php echo $currentPath === '/admin/payments' ? ' active' : ''; ?>" href="/admin/payments"><i class="bi bi-cash-stack"></i> Payments</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/payment-transactions' ? ' active' : ''; ?>" href="/admin/payment-transactions"><i class="bi bi-wallet2"></i> Transactions</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/demand-notices' ? ' active' : ''; ?>" href="/admin/demand-notices"><i class="bi bi-file-earmark-exclamation"></i> Demand Notices</a></li>

@@ -7,6 +7,8 @@ class Accounting {
 	private $entryTable = 'journal_entries';
 	private $lineTable = 'journal_entry_lines';
 	private $periodLockTable = 'accounting_period_locks';
+	private $budgetTable = 'accounting_budgets';
+	private $transferTable = 'accounting_transfers';
 
 	public function __construct($db = null) {
 		if ($db === null) {
@@ -97,6 +99,48 @@ class Accounting {
 			locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
 			INDEX idx_is_locked (is_locked)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+		$db->exec("CREATE TABLE IF NOT EXISTS accounting_budgets (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			chart_of_account_id INT NOT NULL,
+			financial_year CHAR(4) NOT NULL,
+			month_1  DECIMAL(14,2) NOT NULL DEFAULT 0,
+			month_2  DECIMAL(14,2) NOT NULL DEFAULT 0,
+			month_3  DECIMAL(14,2) NOT NULL DEFAULT 0,
+			month_4  DECIMAL(14,2) NOT NULL DEFAULT 0,
+			month_5  DECIMAL(14,2) NOT NULL DEFAULT 0,
+			month_6  DECIMAL(14,2) NOT NULL DEFAULT 0,
+			month_7  DECIMAL(14,2) NOT NULL DEFAULT 0,
+			month_8  DECIMAL(14,2) NOT NULL DEFAULT 0,
+			month_9  DECIMAL(14,2) NOT NULL DEFAULT 0,
+			month_10 DECIMAL(14,2) NOT NULL DEFAULT 0,
+			month_11 DECIMAL(14,2) NOT NULL DEFAULT 0,
+			month_12 DECIMAL(14,2) NOT NULL DEFAULT 0,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+			UNIQUE KEY uq_budget_account_year (chart_of_account_id, financial_year),
+			INDEX idx_budget_year (financial_year),
+			CONSTRAINT fk_accounting_budgets_account FOREIGN KEY (chart_of_account_id) REFERENCES chart_of_accounts(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+		$db->exec("CREATE TABLE IF NOT EXISTS accounting_transfers (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			transfer_no VARCHAR(40) NOT NULL UNIQUE,
+			transfer_date DATE NOT NULL,
+			from_account_id INT NOT NULL,
+			to_account_id INT NOT NULL,
+			amount DECIMAL(14,2) NOT NULL,
+			memo VARCHAR(255) NULL,
+			journal_entry_id INT NULL,
+			transferred_by INT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_transfer_date (transfer_date),
+			INDEX idx_transfer_from (from_account_id),
+			INDEX idx_transfer_to (to_account_id),
+			CONSTRAINT fk_accounting_transfers_from FOREIGN KEY (from_account_id) REFERENCES chart_of_accounts(id),
+			CONSTRAINT fk_accounting_transfers_to FOREIGN KEY (to_account_id) REFERENCES chart_of_accounts(id),
+			CONSTRAINT fk_accounting_transfers_entry FOREIGN KEY (journal_entry_id) REFERENCES journal_entries(id) ON DELETE SET NULL
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
 		$seedAccounts = [
@@ -595,6 +639,280 @@ class Accounting {
 		return $totals;
 	}
 
+	public function getBalanceSheet(?string $asOfDate = null): array {
+		$rows = $this->getTrialBalance(null, $asOfDate !== null && $asOfDate !== '' ? $asOfDate : null);
+		$sections = [
+			'asset' => [],
+			'liability' => [],
+			'equity' => [],
+		];
+		$totals = [
+			'asset' => 0.0,
+			'liability' => 0.0,
+			'equity' => 0.0,
+		];
+
+		foreach ($rows as $row) {
+			$type = (string)($row['account_type'] ?? '');
+			if (!isset($sections[$type])) {
+				continue;
+			}
+
+			$balance = round((float)($row['balance'] ?? 0), 2);
+			if ($balance == 0.0) {
+				continue;
+			}
+
+			$sections[$type][] = $row;
+			$totals[$type] += $balance;
+		}
+
+		return [
+			'as_of_date' => $asOfDate !== null && $asOfDate !== '' ? $asOfDate : date('Y-m-d'),
+			'sections' => $sections,
+			'totals' => [
+				'assets' => round($totals['asset'], 2),
+				'liabilities' => round($totals['liability'], 2),
+				'equity' => round($totals['equity'], 2),
+				'liabilities_and_equity' => round($totals['liability'] + $totals['equity'], 2),
+				'balance_delta' => round($totals['asset'] - ($totals['liability'] + $totals['equity']), 2),
+			],
+		];
+	}
+
+	public function getProfitAndLoss(?string $fromDate = null, ?string $toDate = null): array {
+		$rows = $this->getTrialBalance($fromDate, $toDate);
+		$revenue = [];
+		$expenses = [];
+		$costOfSales = [];
+		$totals = [
+			'revenue' => 0.0,
+			'expenses' => 0.0,
+			'cost_of_sales' => 0.0,
+		];
+
+		foreach ($rows as $row) {
+			$type = (string)($row['account_type'] ?? '');
+			$balance = round((float)($row['balance'] ?? 0), 2);
+			if ($balance == 0.0) {
+				continue;
+			}
+
+			if ($type === 'revenue') {
+				$revenue[] = $row;
+				$totals['revenue'] += $balance;
+			} elseif ($type === 'expense') {
+				$expenses[] = $row;
+				$totals['expenses'] += $balance;
+			} elseif ($type === 'cost_of_sales') {
+				$costOfSales[] = $row;
+				$totals['cost_of_sales'] += $balance;
+			}
+		}
+
+		$grossProfit = $totals['revenue'] - $totals['cost_of_sales'];
+		$netProfit = $grossProfit - $totals['expenses'];
+
+		return [
+			'from_date' => $fromDate,
+			'to_date' => $toDate,
+			'sections' => [
+				'revenue' => $revenue,
+				'cost_of_sales' => $costOfSales,
+				'expenses' => $expenses,
+			],
+			'totals' => [
+				'revenue' => round($totals['revenue'], 2),
+				'cost_of_sales' => round($totals['cost_of_sales'], 2),
+				'gross_profit' => round($grossProfit, 2),
+				'operating_expenses' => round($totals['expenses'], 2),
+				'net_profit' => round($netProfit, 2),
+			],
+		];
+	}
+
+	public function getCashFlow(?string $fromDate = null, ?string $toDate = null): array {
+		$cashAccount = $this->getAccountByCode('1000');
+		$summary = [
+			'from_date' => $fromDate,
+			'to_date' => $toDate,
+			'cash_account' => $cashAccount,
+			'opening_balance' => 0.0,
+			'cash_in' => 0.0,
+			'cash_out' => 0.0,
+			'net_cash_flow' => 0.0,
+			'closing_balance' => 0.0,
+			'activities' => [
+				'operating_inflows' => 0.0,
+				'operating_outflows' => 0.0,
+				'financing_inflows' => 0.0,
+				'financing_outflows' => 0.0,
+			],
+			'lines' => [],
+		];
+
+		if (!$cashAccount) {
+			return $summary;
+		}
+
+		$accountId = (int)$cashAccount['id'];
+
+		$openingSql = "SELECT COALESCE(SUM(jel.debit - jel.credit), 0)
+			FROM {$this->lineTable} jel
+			INNER JOIN {$this->entryTable} je ON je.id = jel.journal_entry_id
+			WHERE je.status = 'posted'
+				AND jel.account_id = :account_id";
+		$openingParams = [':account_id' => $accountId];
+		if ($fromDate !== null && $fromDate !== '') {
+			$openingSql .= " AND je.entry_date < :from_date";
+			$openingParams[':from_date'] = $fromDate;
+		}
+		$stmtOpening = $this->db->prepare($openingSql);
+		$stmtOpening->execute($openingParams);
+		$summary['opening_balance'] = round((float)$stmtOpening->fetchColumn(), 2);
+
+		$sql = "SELECT je.entry_date, je.entry_no, je.reference_type, je.reference_id, je.memo,
+			SUM(jel.debit) AS debit,
+			SUM(jel.credit) AS credit,
+			CASE
+				WHEN je.reference_type IN ('payment', 'bill') THEN 'operating'
+				WHEN je.reference_type = 'owner_equity' THEN 'financing'
+				ELSE 'other'
+			END AS cash_activity
+			FROM {$this->lineTable} jel
+			INNER JOIN {$this->entryTable} je ON je.id = jel.journal_entry_id
+			WHERE je.status = 'posted'
+				AND jel.account_id = :account_id";
+		$params = [':account_id' => $accountId];
+		if ($fromDate !== null && $fromDate !== '') {
+			$sql .= " AND je.entry_date >= :from_date";
+			$params[':from_date'] = $fromDate;
+		}
+		if ($toDate !== null && $toDate !== '') {
+			$sql .= " AND je.entry_date <= :to_date";
+			$params[':to_date'] = $toDate;
+		}
+		$sql .= " GROUP BY je.id, je.entry_date, je.entry_no, je.reference_type, je.reference_id, je.memo
+			ORDER BY je.entry_date ASC, je.id ASC";
+
+		$stmt = $this->db->prepare($sql);
+		$stmt->execute($params);
+		$lines = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+		foreach ($lines as $line) {
+			$debit = (float)($line['debit'] ?? 0);
+			$credit = (float)($line['credit'] ?? 0);
+			$net = round($debit - $credit, 2);
+			$line['net_cash_movement'] = $net;
+			$summary['lines'][] = $line;
+
+			if ($net >= 0) {
+				$summary['cash_in'] += $net;
+			} else {
+				$summary['cash_out'] += abs($net);
+			}
+
+			$activity = (string)($line['cash_activity'] ?? 'other');
+			if ($activity === 'operating') {
+				if ($net >= 0) {
+					$summary['activities']['operating_inflows'] += $net;
+				} else {
+					$summary['activities']['operating_outflows'] += abs($net);
+				}
+			} elseif ($activity === 'financing') {
+				if ($net >= 0) {
+					$summary['activities']['financing_inflows'] += $net;
+				} else {
+					$summary['activities']['financing_outflows'] += abs($net);
+				}
+			}
+		}
+
+		$summary['cash_in'] = round($summary['cash_in'], 2);
+		$summary['cash_out'] = round($summary['cash_out'], 2);
+		$summary['activities']['operating_inflows'] = round($summary['activities']['operating_inflows'], 2);
+		$summary['activities']['operating_outflows'] = round($summary['activities']['operating_outflows'], 2);
+		$summary['activities']['financing_inflows'] = round($summary['activities']['financing_inflows'], 2);
+		$summary['activities']['financing_outflows'] = round($summary['activities']['financing_outflows'], 2);
+		$summary['net_cash_flow'] = round($summary['cash_in'] - $summary['cash_out'], 2);
+		$summary['closing_balance'] = round($summary['opening_balance'] + $summary['net_cash_flow'], 2);
+
+		return $summary;
+	}
+
+	public function getAccountsReceivableAging(?string $asOfDate = null): array {
+		$asOfDate = $this->normalizeEntryDate($asOfDate);
+		$stmt = $this->db->prepare("SELECT
+			b.id,
+			b.user_id,
+			b.amount,
+			b.status,
+			DATE(COALESCE(b.due_date, b.billing_month)) AS due_date,
+			u.full_name AS customer_name,
+			COALESCE(payments.total_paid, 0) AS total_paid
+			FROM bills b
+			LEFT JOIN users u ON u.id = b.user_id
+			LEFT JOIN (
+				SELECT bill_id, SUM(amount) AS total_paid
+				FROM payments
+				WHERE status = 'completed'
+					AND DATE(COALESCE(transaction_date, created_at)) <= :as_of_date
+				GROUP BY bill_id
+			) payments ON payments.bill_id = b.id
+			WHERE DATE(COALESCE(b.due_date, b.billing_month)) <= :as_of_date
+			ORDER BY due_date ASC, b.id ASC");
+		$stmt->execute([':as_of_date' => $asOfDate]);
+		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+		$buckets = [
+			'current' => 0.0,
+			'days_1_30' => 0.0,
+			'days_31_60' => 0.0,
+			'days_61_90' => 0.0,
+			'days_91_plus' => 0.0,
+		];
+		$items = [];
+
+		$asOfTimestamp = strtotime($asOfDate) ?: time();
+		foreach ($rows as $row) {
+			$outstanding = round((float)($row['amount'] ?? 0) - (float)($row['total_paid'] ?? 0), 2);
+			if ($outstanding <= 0) {
+				continue;
+			}
+
+			$dueDate = (string)($row['due_date'] ?? $asOfDate);
+			$dueTimestamp = strtotime($dueDate) ?: $asOfTimestamp;
+			$daysPastDue = (int)floor(($asOfTimestamp - $dueTimestamp) / 86400);
+			if ($daysPastDue <= 0) {
+				$bucket = 'current';
+			} elseif ($daysPastDue <= 30) {
+				$bucket = 'days_1_30';
+			} elseif ($daysPastDue <= 60) {
+				$bucket = 'days_31_60';
+			} elseif ($daysPastDue <= 90) {
+				$bucket = 'days_61_90';
+			} else {
+				$bucket = 'days_91_plus';
+			}
+
+			$buckets[$bucket] += $outstanding;
+			$row['outstanding'] = $outstanding;
+			$row['days_past_due'] = max(0, $daysPastDue);
+			$row['bucket'] = $bucket;
+			$items[] = $row;
+		}
+
+		foreach ($buckets as $key => $amount) {
+			$buckets[$key] = round($amount, 2);
+		}
+
+		return [
+			'as_of_date' => $asOfDate,
+			'buckets' => $buckets,
+			'total_outstanding' => round(array_sum($buckets), 2),
+			'items' => $items,
+		];
+	}
+
 	private function resolveSystemAccount(string $code, string $name, string $type, string $normalBalance): int {
 		$account = $this->getAccountByCode($code);
 		if ($account) {
@@ -719,4 +1037,212 @@ class Accounting {
 			['account_id' => $cashId, 'debit' => 0, 'credit' => $amount, 'memo' => ucfirst($adjustmentType) . ' for payment #' . (int)($paymentRow['id'] ?? 0)],
 		], $referenceType, $adjustmentId, $postedBy);
 	}
+	// -------------------------------------------------------------------------
+	// Budget Planning
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Return all budget rows for a financial year, merged with COA info.
+	 */
+	public function getBudgets(string $financialYear): array {
+		$stmt = $this->db->prepare("SELECT coa.id, coa.code, coa.name, coa.account_type,
+			ab.id AS budget_id,
+			COALESCE(ab.month_1,0)  AS month_1,
+			COALESCE(ab.month_2,0)  AS month_2,
+			COALESCE(ab.month_3,0)  AS month_3,
+			COALESCE(ab.month_4,0)  AS month_4,
+			COALESCE(ab.month_5,0)  AS month_5,
+			COALESCE(ab.month_6,0)  AS month_6,
+			COALESCE(ab.month_7,0)  AS month_7,
+			COALESCE(ab.month_8,0)  AS month_8,
+			COALESCE(ab.month_9,0)  AS month_9,
+			COALESCE(ab.month_10,0) AS month_10,
+			COALESCE(ab.month_11,0) AS month_11,
+			COALESCE(ab.month_12,0) AS month_12
+			FROM {$this->chartTable} coa
+			LEFT JOIN {$this->budgetTable} ab
+				ON ab.chart_of_account_id = coa.id AND ab.financial_year = :year
+			WHERE coa.is_active = 1
+			ORDER BY coa.account_type, coa.code");
+		$stmt->execute([':year' => $financialYear]);
+		return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+	}
+
+	/**
+	 * Upsert a 12-month budget for one account + financial year.
+	 * $months = ['month_1' => val, ..., 'month_12' => val]
+	 */
+	public function saveBudget(int $accountId, string $financialYear, array $months): bool {
+		$allowed = ['month_1','month_2','month_3','month_4','month_5','month_6',
+					'month_7','month_8','month_9','month_10','month_11','month_12'];
+		$sets = [];
+		$params = [':account_id' => $accountId, ':year' => $financialYear];
+		foreach ($allowed as $col) {
+			$val = (float)($months[$col] ?? 0);
+			$sets[] = "{$col} = :{$col}";
+			$params[":{$col}"] = $val;
+		}
+		$setCols = implode(', ', $sets);
+		$colList = implode(', ', $allowed);
+		$valList = implode(', ', array_map(fn($c) => ":{$c}", $allowed));
+
+		$sql = "INSERT INTO {$this->budgetTable}
+			(chart_of_account_id, financial_year, {$colList})
+			VALUES (:account_id, :year, {$valList})
+			ON DUPLICATE KEY UPDATE {$setCols}, updated_at = NOW()";
+		$stmt = $this->db->prepare($sql);
+		return $stmt->execute($params);
+	}
+
+	/**
+	 * Budget vs Actual comparison for a given financial year.
+	 * $startMonth: 1-12, first month of the FY (default Jan = 1).
+	 */
+	public function getBudgetVsActual(string $financialYear, int $startMonth = 1): array {
+		$budgets = $this->getBudgets($financialYear);
+		if (empty($budgets)) {
+			return [];
+		}
+
+		$startMonth = max(1, min(12, $startMonth));
+		$months = [];
+		for ($i = 0; $i < 12; $i++) {
+			$mo = (($startMonth - 1 + $i) % 12) + 1;
+			$year = (int)$financialYear + ($mo < $startMonth ? 1 : 0);
+			$months[] = ['column' => 'month_' . ($i + 1), 'ym' => sprintf('%04d-%02d', $year, $mo)];
+		}
+
+		$accountIds = array_column($budgets, 'id');
+		$placeholders = implode(',', array_fill(0, count($accountIds), '?'));
+		$sql = "SELECT jel.account_id,
+			DATE_FORMAT(je.entry_date, '%Y-%m') AS ym,
+			SUM(jel.debit) AS total_debit,
+			SUM(jel.credit) AS total_credit
+			FROM {$this->lineTable} jel
+			INNER JOIN {$this->entryTable} je ON je.id = jel.journal_entry_id
+			WHERE je.status = 'posted'
+				AND jel.account_id IN ({$placeholders})
+			GROUP BY jel.account_id, ym";
+		$stmt = $this->db->prepare($sql);
+		$stmt->execute($accountIds);
+		$actuals = [];
+		foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+			$actuals[(int)$row['account_id']][$row['ym']] = $row;
+		}
+
+		$result = [];
+		foreach ($budgets as $account) {
+			$accountId = (int)$account['id'];
+			$normalBalance = $account['normal_balance'] ?? 'debit';
+			$row = [
+				'id' => $accountId,
+				'code' => $account['code'],
+				'name' => $account['name'],
+				'account_type' => $account['account_type'],
+				'budget_total' => 0.0,
+				'actual_total' => 0.0,
+				'months' => [],
+			];
+			foreach ($months as $m) {
+				$budgetAmt = (float)($account[$m['column']] ?? 0);
+				$ym = $m['ym'];
+				$ar = $actuals[$accountId][$ym] ?? null;
+				if ($normalBalance === 'credit') {
+					$actualAmt = (float)($ar['total_credit'] ?? 0) - (float)($ar['total_debit'] ?? 0);
+				} else {
+					$actualAmt = (float)($ar['total_debit'] ?? 0) - (float)($ar['total_credit'] ?? 0);
+				}
+				$row['months'][] = [
+					'label' => date('M Y', mktime(0, 0, 0, (int)substr($ym, 5, 2), 1, (int)substr($ym, 0, 4))),
+					'ym' => $ym,
+					'budget' => $budgetAmt,
+					'actual' => round($actualAmt, 2),
+					'variance' => round($actualAmt - $budgetAmt, 2),
+				];
+				$row['budget_total'] += $budgetAmt;
+				$row['actual_total'] += $actualAmt;
+			}
+			$row['budget_total'] = round($row['budget_total'], 2);
+			$row['actual_total'] = round($row['actual_total'], 2);
+			$row['variance_total'] = round($row['actual_total'] - $row['budget_total'], 2);
+			$result[] = $row;
+		}
+		return $result;
+	}
+
+	// -------------------------------------------------------------------------
+	// Fund Transfers between accounts
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Record a fund transfer between two GL accounts and post a journal entry.
+	 * Returns the new transfer ID.
+	 */
+	public function postTransfer(
+		string $date,
+		int $fromAccountId,
+		int $toAccountId,
+		float $amount,
+		string $memo = '',
+		?int $postedBy = null
+	): int {
+		if ($fromAccountId === $toAccountId) {
+			throw new InvalidArgumentException('Transfer from and to accounts must be different.');
+		}
+		if ($amount <= 0) {
+			throw new InvalidArgumentException('Transfer amount must be positive.');
+		}
+
+		$date = $this->normalizeEntryDate($date);
+
+		$this->db->beginTransaction();
+		try {
+			$entryId = $this->postJournalEntry($date, $memo ?: 'Fund transfer', [
+				['account_id' => $toAccountId,   'debit' => $amount, 'credit' => 0,       'memo' => $memo],
+				['account_id' => $fromAccountId, 'debit' => 0,       'credit' => $amount, 'memo' => $memo],
+			], 'transfer', null, $postedBy);
+
+			$transferNo = 'TRF-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+			$stmt = $this->db->prepare("INSERT INTO {$this->transferTable}
+				(transfer_no, transfer_date, from_account_id, to_account_id, amount, memo, journal_entry_id, transferred_by)
+				VALUES (:transfer_no, :transfer_date, :from_id, :to_id, :amount, :memo, :entry_id, :by)");
+			$stmt->execute([
+				':transfer_no'   => $transferNo,
+				':transfer_date' => $date,
+				':from_id'       => $fromAccountId,
+				':to_id'         => $toAccountId,
+				':amount'        => $amount,
+				':memo'          => $memo ?: null,
+				':entry_id'      => $entryId,
+				':by'            => $postedBy,
+			]);
+
+			$transferId = (int)$this->db->lastInsertId();
+			$this->db->commit();
+			return $transferId;
+		} catch (Throwable $e) {
+			if ($this->db->inTransaction()) {
+				$this->db->rollBack();
+			}
+			throw $e;
+		}
+	}
+
+	/**
+	 * Return recent fund transfers with from/to account names.
+	 */
+	public function getTransfers(int $limit = 30): array {
+		$limit = max(1, min(200, $limit));
+		$stmt = $this->db->prepare("SELECT t.*,
+			fa.code AS from_code, fa.name AS from_name,
+			ta.code AS to_code,   ta.name AS to_name
+			FROM {$this->transferTable} t
+			LEFT JOIN {$this->chartTable} fa ON fa.id = t.from_account_id
+			LEFT JOIN {$this->chartTable} ta ON ta.id = t.to_account_id
+			ORDER BY t.transfer_date DESC, t.id DESC
+			LIMIT {$limit}");
+		$stmt->execute();
+		return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+	}
+
 }

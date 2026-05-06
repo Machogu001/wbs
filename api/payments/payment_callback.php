@@ -75,78 +75,10 @@ try {
 
         $paymentData = $payment->getById((int)$paymentData['id']) ?: $paymentData;
 
-        // Send SMS notification (queued)
+        // Send SMS/email notification using the shared payment notifier.
         $userService = new User($db);
         $user = $userService->getById($paymentData['user_id']);
-        if ($user) {
-            // Registration-related payment is identified via registration_id
-            $isRegistrationPayment = !empty($paymentData['registration_id']);
-            $billRow = !empty($paymentData['bill_id']) ? ($bill->getById((int)$paymentData['bill_id']) ?: null) : null;
-            $registrationOutstanding = ($isRegistrationPayment && !empty($paymentData['bill_id']))
-                ? $payment->getBillOutstandingAmount((int)$paymentData['bill_id'])
-                : 0.0;
-            $wasInactive = $isRegistrationPayment && isset($user['status']) && $user['status'] !== 'active';
-            $registrationFullyPaid = $isRegistrationPayment && $registrationOutstanding <= 0.01 && $billRow && (($billRow['status'] ?? '') === 'paid');
-
-            if ($wasInactive && $registrationFullyPaid) {
-                $stmtActivate = $db->prepare('UPDATE users SET status = "active" WHERE id = :id');
-                $stmtActivate->bindParam(':id', $user['id'], PDO::PARAM_INT);
-                $stmtActivate->execute();
-                $user['status'] = 'active';
-            }
-
-            $sms = new SMS($db);
-
-            // Try to get account number from latest bill data
-            $accountNumber = $billRow && !empty($billRow['account_number'])
-                ? $billRow['account_number']
-                : ($user['account_number'] ?? '');
-
-            // Company name from billing settings, with fallback
-            $settingsService = new BillingSettings($db);
-            $settings = $settingsService->getSettings();
-            $companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
-
-            if ($registrationFullyPaid) {
-                // Registration fee success: send SMS/Email with account details
-                $messageText = "Dear " . ($user['full_name'] ?? 'Customer') . ",\n" .
-                    "Your registration payment of KES " . number_format($amount, 2) .
-                    " (Ref: " . $receipt . ") has been received successfully.\n" .
-                    "Your water account is now active.\n" .
-                    "Account No: " . $accountNumber . "\n" .
-                    (isset($user['meter_number']) && $user['meter_number'] !== '' ? "Meter No: " . $user['meter_number'] . "\n" : '') .
-                    "You can now log in to view your bills and make payments.\n" .
-                    $companyName;
-            } elseif ($isRegistrationPayment) {
-                $messageText = "Dear " . ($user['full_name'] ?? 'Customer') . ",\n" .
-                    "We have received KES " . number_format($amount, 2) . " toward your registration fee." . "\n" .
-                    "Remaining registration balance: KES " . number_format($registrationOutstanding, 2) . "\n" .
-                    "Your account will be activated after the full registration fee is paid.\n" .
-                    "Please log in and complete payment at https://wbs.bremac.co.ke/registration-payment\n" .
-                    $companyName;
-            } else {
-                // Normal bill payment SMS/Email
-                $messageText = "Dear Customer,\n" .
-                    "Your M-Pesa payment of KES " . number_format($amount, 2) .
-                    " (Ref: " . $receipt . ") for Account No. " . $accountNumber . " has been received successfully.\n" .
-                    "Thank you.\n" .
-                    $companyName;
-            }
-
-            // For payment events, attempt immediate delivery and only queue on failure.
-            $sms->sendWithFallback($user['phone_number'], $messageText, 'payment_confirmation');
-
-            // Also send an email if the user has an email address
-            if (!empty($user['email'])) {
-                require_once __DIR__ . '/../../includes/Email.php';
-                $email = new Email();
-                $email->send(
-                    $user['email'],
-                    'Payment received',
-                    $messageText
-                );
-            }
-        }
+        $payment->sendCompletedPaymentNotification((int)$paymentData['id']);
 
         // Submit sale to ETIMS gateway if configured
         try {

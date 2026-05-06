@@ -527,6 +527,7 @@ require_once __DIR__ . '/../../templates/header.php';
 <div class="tab-pane fade show active" id="ssp-panel-billing" role="tabpanel">
 <form method="POST">
 <input type="hidden" name="action" value="update_settings">
+<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
 
 <!-- Contact & Company -->
 <div class="ssp-section">
@@ -649,6 +650,7 @@ foreach ($months as $num => $label): ?>
 <div class="tab-pane fade" id="ssp-panel-etims" role="tabpanel">
 <form method="POST">
 <input type="hidden" name="action" value="update_settings">
+<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
 
 <div class="ssp-section">
 <div class="ssp-section-hd"><i class="bi bi-building-gear"></i> eTIMS Integration (Optional)</div>
@@ -727,6 +729,7 @@ foreach ($months as $num => $label): ?>
 <div class="ssp-section-body">
 <form method="POST" class="row g-3">
 <input type="hidden" name="action" value="save_tariff_plan">
+<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
 <input type="hidden" name="tariff_plan_id" value="<?php echo (int)($editing_tariff['id'] ?? 0); ?>">
 
 <div class="col-md-4">
@@ -868,6 +871,7 @@ $tariffBlocks = [['from_unit' => 0, 'to_unit' => '', 'rate_per_unit' => $setting
 <a href="/settings?edit_tariff_id=<?php echo (int)$plan['id']; ?>" class="btn btn-sm btn-outline-primary">Edit</a>
 <form method="POST" class="d-inline">
 <input type="hidden" name="action" value="toggle_tariff_plan">
+<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
 <input type="hidden" name="tariff_plan_id" value="<?php echo (int)$plan['id']; ?>">
 <input type="hidden" name="is_active" value="<?php echo !empty($plan['is_active']) ? 0 : 1; ?>">
 <button type="submit" class="btn btn-sm btn-outline-<?php echo !empty($plan['is_active']) ? 'danger' : 'success'; ?>"><?php echo !empty($plan['is_active']) ? 'Deactivate' : 'Activate'; ?></button>
@@ -1104,11 +1108,13 @@ $tariffBlocks = [['from_unit' => 0, 'to_unit' => '', 'rate_per_unit' => $setting
 												<div class="reading-action-stack">
 												<form method="POST" class="d-inline">
 													<input type="hidden" name="action" value="approve_reading">
+													<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
 													<input type="hidden" name="reading_id" value="<?php echo (int)$reading['id']; ?>">
 													<button type="submit" class="btn btn-sm btn-success">Approve</button>
 												</form>
 												<form method="POST" class="d-inline ms-1">
 													<input type="hidden" name="action" value="reject_reading">
+													<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
 													<input type="hidden" name="reading_id" value="<?php echo (int)$reading['id']; ?>">
 													<button type="submit" class="btn btn-sm btn-danger">Reject</button>
 												</form>
