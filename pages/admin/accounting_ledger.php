@@ -106,21 +106,39 @@ foreach ($rawJournalEntries as $je) {
 if ($selectedEntryId > 0) {
     try { $selectedEntry = $accounting->getJournalEntryById($selectedEntryId); } catch (Throwable $e) { $selectedEntry = null; }
 }
+// Auto-show most recent entry when none explicitly requested
+if ($selectedEntry === null && !empty($journalEntries)) {
+    try { $selectedEntry = $accounting->getJournalEntryById((int)$journalEntries[0]['id']); } catch (Throwable $e) { $selectedEntry = null; }
+}
 
 $is_admin_page = true;
 $page_title = 'Ledger & Journals — Accounting';
 include __DIR__ . '/../../templates/header.php';
 ?>
 <?php include __DIR__ . '/../../templates/accounting_styles.php'; ?>
-<div class="container-fluid px-4 py-4">
+<div class="container-fluid mt-4 admin-shell">
 
-	<!-- Banner -->
-	<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
-		<div>
-			<h2 class="fw-bold mb-1"><i class="bi bi-list-ul me-2 text-primary"></i>Ledger &amp; Journals</h2>
-			<p class="text-muted mb-0">Account ledger activity · Journal entry detail · Recent postings</p>
+	<div class="pb-banner pb-banner--teal mb-4">
+		<div class="pb-bg" aria-hidden="true">
+			<div class="pb-grid"></div>
+			<div class="pb-blob pb-blob--a"></div>
+			<div class="pb-blob pb-blob--b"></div>
+			<i class="bi bi-list-ul pb-watermark"></i>
 		</div>
-		<a href="/accounting" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Overview</a>
+		<div class="pb-inner">
+			<div class="pb-left">
+				<div class="pb-eyebrow-row">
+					<span class="pb-eyebrow-chip"><i class="bi bi-list-ul"></i> Finance &amp; Accounting</span>
+				</div>
+				<h2 class="pb-title">Ledger &amp; Journals</h2>
+				<p class="pb-subtitle">Account ledger activity · Journal entry detail · Recent postings</p>
+			</div>
+			<div class="pb-right">
+				<div class="pb-btn-row">
+					<a href="/accounting" class="pb-btn"><i class="bi bi-arrow-left me-1"></i> Back to Overview</a>
+				</div>
+			</div>
+		</div>
 	</div>
 
 	<?php include __DIR__ . '/../../templates/accounting_subnav.php'; ?>
@@ -147,61 +165,63 @@ include __DIR__ . '/../../templates/header.php';
 	<!-- Account Ledger -->
 	<div class="card admin-table-card mb-4" id="ledger">
 		<div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-			<h5 class="mb-0">Account Ledger</h5>
-			<?php if ($selectedAccount): ?>
-				<span class="badge bg-secondary"><?php echo htmlspecialchars($selectedAccount['code'] . ' - ' . $selectedAccount['name']); ?></span>
-			<?php else: ?>
-				<span class="badge bg-light text-dark">Select an account to view activity</span>
-			<?php endif; ?>
+			<h5 class="mb-0">Chart of Accounts</h5>
+			<div class="d-flex gap-1 flex-wrap">
+				<a href="/accounting/ledger<?php echo $selectedAccountId ? '?account_id=' . $selectedAccountId : ''; ?>#ledger" class="btn btn-sm <?php echo $selectedType === '' ? 'btn-secondary' : 'btn-outline-secondary'; ?>">All</a>
+				<?php foreach (['asset' => 'Asset', 'liability' => 'Liability', 'equity' => 'Equity', 'revenue' => 'Revenue', 'expense' => 'Expense', 'cost_of_sales' => 'Cost of Sales'] as $atype => $alabel): ?>
+					<a href="/accounting/ledger?type=<?php echo urlencode($atype); ?><?php echo $selectedAccountId ? '&account_id=' . $selectedAccountId : ''; ?>#ledger" class="btn btn-sm <?php echo $selectedType === $atype ? 'btn-primary' : 'btn-outline-primary'; ?>"><?php echo $alabel; ?></a>
+				<?php endforeach; ?>
+			</div>
 		</div>
-		<div class="card-body">
-			<?php if (!$selectedAccount): ?>
-				<div class="text-muted">Click any account code or name in the table below to view its journal activity, or use the filter pills above.</div>
-				<!-- Quick account picker -->
-				<?php if (!empty($accounts)): ?>
-					<div class="mt-3">
-						<p class="small fw-semibold mb-2">Accounts</p>
-						<div class="table-responsive">
-							<table class="table table-sm table-hover align-middle accounting-link-table">
-								<thead class="table-light"><tr><th>Code</th><th>Name</th><th>Type</th></tr></thead>
-								<tbody>
-								<?php foreach ($accounts as $acct): ?>
-									<tr class="accounting-row-<?php echo htmlspecialchars((string)$acct['account_type']); ?> <?php echo empty($acct['is_active']) ? 'accounting-row-inactive' : ''; ?>">
-										<td><a href="/accounting/ledger?account_id=<?php echo (int)$acct['id']; ?>" class="fw-semibold text-decoration-none"><?php echo htmlspecialchars($acct['code']); ?></a></td>
-										<td><a href="/accounting/ledger?account_id=<?php echo (int)$acct['id']; ?>" class="text-decoration-none"><?php echo htmlspecialchars($acct['name']); ?></a></td>
-										<td><span class="badge bg-secondary"><?php echo htmlspecialchars(ucfirst(str_replace('_', ' ', (string)$acct['account_type']))); ?></span></td>
-									</tr>
-								<?php endforeach; ?>
-								</tbody>
-							</table>
-						</div>
-					</div>
-				<?php endif; ?>
+		<div class="card-body p-0">
+			<?php if (empty($accounts)): ?>
+				<p class="text-muted p-3 mb-0">No accounts found.</p>
 			<?php else: ?>
-				<div class="row g-3 mb-3">
-					<div class="col-md-3"><div class="accounting-muted-box accounting-box-code p-3"><div class="small text-muted">Code</div><div class="fw-semibold"><?php echo htmlspecialchars($selectedAccount['code']); ?></div></div></div>
-					<div class="col-md-3"><div class="<?php echo htmlspecialchars($selectedAccountTypeClass); ?> p-3"><div class="small text-muted">Type</div><div class="fw-semibold"><?php echo htmlspecialchars(ucfirst(str_replace('_', ' ', (string)$selectedAccount['account_type']))); ?></div></div></div>
-					<div class="col-md-3"><div class="<?php echo htmlspecialchars($selectedBalanceClass); ?> p-3"><div class="small text-muted">Normal Balance</div><div class="fw-semibold"><?php echo htmlspecialchars(ucfirst((string)$selectedAccount['normal_balance'])); ?></div></div></div>
-					<div class="col-md-3"><div class="<?php echo htmlspecialchars($selectedStatusClass); ?> p-3"><div class="small text-muted">Status</div><div class="fw-semibold"><?php echo !empty($selectedAccount['is_active']) ? 'Active' : 'Inactive'; ?></div></div></div>
-				</div>
 				<div class="table-responsive">
-					<table class="table table-sm align-middle mb-0">
-						<thead><tr><th>Date</th><th>Entry No</th><th>Memo</th><th class="text-end">Movement</th></tr></thead>
+					<table class="table table-sm table-hover align-middle accounting-link-table mb-0">
+						<thead class="table-light"><tr><th class="px-3">Code</th><th>Name</th><th>Type</th></tr></thead>
 						<tbody>
-						<?php if (empty($accountLedger)): ?>
-							<tr><td colspan="4" class="text-center py-4 text-muted">No ledger entries found for this account.</td></tr>
-						<?php else: ?>
-							<?php foreach ($accountLedger as $ledgerRow): ?>
-								<tr>
-									<td><?php echo htmlspecialchars((string)$ledgerRow['entry_date']); ?></td>
-									<td><a href="/accounting/ledger?account_id=<?php echo $selectedAccountId; ?>&entry_id=<?php echo (int)($ledgerRow['journal_entry_id'] ?? 0); ?>#entry-detail" class="text-decoration-none fw-semibold js-entry-modal-trigger" data-entry-id="<?php echo (int)($ledgerRow['journal_entry_id'] ?? 0); ?>"><?php echo htmlspecialchars((string)$ledgerRow['entry_no']); ?></a></td>
-									<td><?php echo htmlspecialchars((string)($ledgerRow['line_memo'] ?? $ledgerRow['memo'] ?? '-')); ?></td>
-									<td class="text-end <?php echo ((float)$ledgerRow['movement'] < 0) ? 'accounting-amount-negative' : 'accounting-amount-positive'; ?>"><?php echo number_format((float)$ledgerRow['movement'], 2); ?></td>
-								</tr>
-							<?php endforeach; ?>
-						<?php endif; ?>
+						<?php foreach ($accounts as $acct): ?>
+							<?php $acctUrl = '/accounting/ledger?account_id=' . (int)$acct['id'] . ($selectedType ? '&type=' . urlencode($selectedType) : '') . '#ledger'; ?>
+							<tr class="accounting-row-<?php echo htmlspecialchars((string)$acct['account_type']); ?><?php echo empty($acct['is_active']) ? ' accounting-row-inactive' : ''; ?><?php echo $selectedAccountId === (int)$acct['id'] ? ' table-active fw-semibold' : ''; ?>">
+								<td class="px-3"><a href="<?php echo htmlspecialchars($acctUrl); ?>" class="fw-semibold text-decoration-none"><?php echo htmlspecialchars($acct['code']); ?></a></td>
+								<td><a href="<?php echo htmlspecialchars($acctUrl); ?>" class="text-decoration-none"><?php echo htmlspecialchars($acct['name']); ?></a></td>
+								<td><span class="badge bg-secondary"><?php echo htmlspecialchars(ucfirst(str_replace('_', ' ', (string)$acct['account_type']))); ?></span></td>
+							</tr>
+						<?php endforeach; ?>
 						</tbody>
 					</table>
+				</div>
+			<?php endif; ?>
+
+			<?php if ($selectedAccount): ?>
+				<div class="border-top p-3">
+					<h6 class="fw-semibold mb-3"><i class="bi bi-journal-text me-1 text-primary"></i>Ledger: <?php echo htmlspecialchars($selectedAccount['code'] . ' – ' . $selectedAccount['name']); ?> <a href="/accounting/ledger<?php echo $selectedType ? '?type=' . urlencode($selectedType) : ''; ?>#ledger" class="ms-2 small text-secondary fw-normal text-decoration-none">× Close</a></h6>
+					<div class="row g-3 mb-3">
+						<div class="col-md-3"><div class="accounting-muted-box accounting-box-code p-3"><div class="small text-muted">Code</div><div class="fw-semibold"><?php echo htmlspecialchars($selectedAccount['code']); ?></div></div></div>
+						<div class="col-md-3"><div class="<?php echo htmlspecialchars($selectedAccountTypeClass); ?> p-3"><div class="small text-muted">Type</div><div class="fw-semibold"><?php echo htmlspecialchars(ucfirst(str_replace('_', ' ', (string)$selectedAccount['account_type']))); ?></div></div></div>
+						<div class="col-md-3"><div class="<?php echo htmlspecialchars($selectedBalanceClass); ?> p-3"><div class="small text-muted">Normal Balance</div><div class="fw-semibold"><?php echo htmlspecialchars(ucfirst((string)$selectedAccount['normal_balance'])); ?></div></div></div>
+						<div class="col-md-3"><div class="<?php echo htmlspecialchars($selectedStatusClass); ?> p-3"><div class="small text-muted">Status</div><div class="fw-semibold"><?php echo !empty($selectedAccount['is_active']) ? 'Active' : 'Inactive'; ?></div></div></div>
+					</div>
+					<div class="table-responsive">
+						<table class="table table-sm align-middle mb-0">
+							<thead><tr><th>Date</th><th>Entry No</th><th>Memo</th><th class="text-end">Movement</th></tr></thead>
+							<tbody>
+							<?php if (empty($accountLedger)): ?>
+								<tr><td colspan="4" class="text-center py-4 text-muted">No ledger entries found for this account.</td></tr>
+							<?php else: ?>
+								<?php foreach ($accountLedger as $ledgerRow): ?>
+									<tr>
+										<td><?php echo htmlspecialchars((string)$ledgerRow['entry_date']); ?></td>
+										<td><a href="#entry-detail" class="text-decoration-none fw-semibold js-entry-modal-trigger" data-entry-id="<?php echo (int)($ledgerRow['journal_entry_id'] ?? 0); ?>"><?php echo htmlspecialchars((string)$ledgerRow['entry_no']); ?></a></td>
+										<td><?php echo htmlspecialchars((string)($ledgerRow['line_memo'] ?? $ledgerRow['memo'] ?? '-')); ?></td>
+										<td class="text-end <?php echo ((float)$ledgerRow['movement'] < 0) ? 'accounting-amount-negative' : 'accounting-amount-positive'; ?>"><?php echo number_format((float)$ledgerRow['movement'], 2); ?></td>
+									</tr>
+								<?php endforeach; ?>
+							<?php endif; ?>
+							</tbody>
+						</table>
+					</div>
 				</div>
 			<?php endif; ?>
 		</div>
@@ -213,13 +233,11 @@ include __DIR__ . '/../../templates/header.php';
 			<h5 class="mb-0">Journal Entry Detail</h5>
 			<?php if ($selectedEntry): ?>
 				<span class="badge bg-secondary"><?php echo htmlspecialchars($selectedEntry['entry_no']); ?></span>
-			<?php else: ?>
-				<span class="badge bg-light text-dark">Select an entry to view full lines</span>
 			<?php endif; ?>
 		</div>
 		<div class="card-body">
 			<?php if (!$selectedEntry): ?>
-				<div class="text-muted">Click any entry number in the Recent Journal Entries table below to inspect the double-entry lines.</div>
+				<p class="text-muted mb-0">No journal entries have been posted yet.</p>
 			<?php else: ?>
 				<div class="row g-3 mb-3">
 					<div class="col-md-3"><div class="accounting-muted-box p-3"><div class="small text-muted">Entry No</div><div class="fw-semibold"><?php echo htmlspecialchars($selectedEntry['entry_no']); ?></div></div></div>
@@ -227,6 +245,9 @@ include __DIR__ . '/../../templates/header.php';
 					<div class="col-md-3"><div class="accounting-muted-box p-3"><div class="small text-muted">Reference</div><div class="fw-semibold"><?php echo htmlspecialchars(($selectedEntry['reference_type'] ?? '-') . ($selectedEntry['reference_id'] ? ' #' . (int)$selectedEntry['reference_id'] : '')); ?></div></div></div>
 					<div class="col-md-3"><div class="accounting-muted-box p-3"><div class="small text-muted">Status</div><div class="fw-semibold"><?php echo htmlspecialchars(ucfirst((string)$selectedEntry['status'])); ?></div></div></div>
 				</div>
+				<?php if (!empty($selectedEntry['memo'])): ?>
+					<p class="text-muted small mb-3"><?php echo htmlspecialchars($selectedEntry['memo']); ?></p>
+				<?php endif; ?>
 				<div class="table-responsive">
 					<table class="table table-sm align-middle mb-0">
 						<thead><tr><th>Account</th><th>Line Memo</th><th class="text-end">Debit</th><th class="text-end">Credit</th></tr></thead>

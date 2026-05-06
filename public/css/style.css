@@ -431,6 +431,11 @@ main > .container {
   opacity: 0.9;
 }
 
+.navbar-nav .nav-link:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
 .navbar-nav .nav-link .bi {
   font-size: 1rem;
   margin-right: 0.35rem;
@@ -441,17 +446,6 @@ main > .container {
   color: #fff !important;
   opacity: 1;
   position: relative;
-}
-
-.navbar-nav .nav-link.active::after {
-  content: "";
-  position: absolute;
-  left: 0.9rem;
-  right: 0.9rem;
-  bottom: 0.2rem;
-  height: 2px;
-  border-radius: 999px;
-  background-color: rgba(255, 255, 255, 0.9);
 }
 
 /* Dropdown menus */

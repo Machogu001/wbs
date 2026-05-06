@@ -17,7 +17,7 @@ require_once __DIR__ . '/../../includes/ErrorLog.php';
 $database = new Database();
 $db = $database->getConnection();
 $auth = new Auth($db);
-if (!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_payments'))) {
+if (!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_payments') && !$auth->hasPermission('receive_payments'))) {
 	header('Location: /login');
 	exit;
 }
@@ -32,7 +32,7 @@ $settings = $settingsService->getSettings();
 ErrorLog::ensureTable($db);
 $errorLogger = new ErrorLog($db);
 
-$canReceivePayments = $auth->isAdmin() || $auth->hasPermission('view_payments');
+$canReceivePayments = $auth->isAdmin() || $auth->hasPermission('receive_payments');
 
 $message = null;
 $message_type = 'success';

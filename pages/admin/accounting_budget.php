@@ -90,15 +90,29 @@ $page_title = 'Budget Planning — Accounting';
 include __DIR__ . '/../../templates/header.php';
 ?>
 <?php include __DIR__ . '/../../templates/accounting_styles.php'; ?>
-<div class="container-fluid px-4 py-4">
+<div class="container-fluid mt-4 admin-shell">
 
-	<!-- Banner -->
-	<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
-		<div>
-			<h2 class="fw-bold mb-1"><i class="bi bi-bar-chart-line me-2 text-primary"></i>Budget Planning</h2>
-			<p class="text-muted mb-0">Set monthly, quarterly, or annual budgets per account and track variance</p>
+	<div class="pb-banner pb-banner--teal mb-4">
+		<div class="pb-bg" aria-hidden="true">
+			<div class="pb-grid"></div>
+			<div class="pb-blob pb-blob--a"></div>
+			<div class="pb-blob pb-blob--b"></div>
+			<i class="bi bi-bar-chart-line pb-watermark"></i>
 		</div>
-		<a href="/accounting" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Overview</a>
+		<div class="pb-inner">
+			<div class="pb-left">
+				<div class="pb-eyebrow-row">
+					<span class="pb-eyebrow-chip"><i class="bi bi-bar-chart-line"></i> Finance &amp; Accounting</span>
+				</div>
+				<h2 class="pb-title">Budget Planning</h2>
+				<p class="pb-subtitle">Set monthly, quarterly, or annual budgets per account and track variance</p>
+			</div>
+			<div class="pb-right">
+				<div class="pb-btn-row">
+					<a href="/accounting" class="pb-btn"><i class="bi bi-arrow-left me-1"></i> Back to Overview</a>
+				</div>
+			</div>
+		</div>
 	</div>
 
 	<?php include __DIR__ . '/../../templates/accounting_subnav.php'; ?>

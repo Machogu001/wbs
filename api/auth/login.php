@@ -100,7 +100,7 @@ function clearLoginAttempts(PDO $db, string $identifier, string $ip): void {
     $stmt->execute();
 }
 
-function sendTwoFactorCode(array $userRow, string $identifier, string $clientIp): array {
+function sendTwoFactorCode(PDO $db, array $userRow, string $identifier, string $clientIp): array {
     $method = isset($userRow['two_factor_method']) ? strtolower((string)$userRow['two_factor_method']) : 'sms';
     if ($method !== 'sms' && $method !== 'email') {
         $method = 'sms';
@@ -147,12 +147,17 @@ function sendTwoFactorCode(array $userRow, string $identifier, string $clientIp)
     $lastError = '';
     $attemptedMethods = [];
 
-    $sendByMethod = function(string $m) use (&$lastError, $phone, $emailAddr, $messageText): bool {
+    $sendByMethod = function(string $m) use (&$lastError, $phone, $emailAddr, $messageText, $db): bool {
         if ($m === 'sms') {
-            $sms = new SMS();
-            $result = $sms->send($phone, $messageText);
-            if (!empty($result['success'])) {
+            $sms = new SMS($db);
+            $result = $sms->sendWithFallback($phone, $messageText, 'login_otp');
+            $deliveryMode = (string)($result['delivery_mode'] ?? 'failed');
+            if ($deliveryMode === 'immediate') {
                 return true;
+            }
+            if ($deliveryMode === 'queued') {
+                $lastError = 'SMS delivery was queued and may be delayed';
+                return false;
             }
             $lastError = (string)($result['message'] ?? 'SMS send failed');
             return false;
@@ -256,7 +261,7 @@ try {
         $twoFactorEnabled = !empty($user_data['two_factor_enabled']);
 
         if ($twoFactorEnabled) {
-            $sendResult = sendTwoFactorCode($user_data, $identifier, $clientIp);
+            $sendResult = sendTwoFactorCode($db, $user_data, $identifier, $clientIp);
             if (!$sendResult['success']) {
                 throw new Exception($sendResult['message']);
             }

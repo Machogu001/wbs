@@ -81,12 +81,17 @@ try {
     $actualMethod = $requestedMethod;
     $attemptedMethods = [];
 
-    $sendByMethod = function(string $m) use (&$lastError, $phone, $emailAddr, $messageText): bool {
+    $sendByMethod = function(string $m) use (&$lastError, $phone, $emailAddr, $messageText, $db): bool {
         if ($m === 'sms') {
-            $sms = new SMS();
-            $result = $sms->send($phone, $messageText);
-            if (!empty($result['success'])) {
+            $sms = new SMS($db);
+            $result = $sms->sendWithFallback($phone, $messageText, 'login_otp');
+            $deliveryMode = (string)($result['delivery_mode'] ?? 'failed');
+            if ($deliveryMode === 'immediate') {
                 return true;
+            }
+            if ($deliveryMode === 'queued') {
+                $lastError = 'SMS delivery was queued and may be delayed';
+                return false;
             }
             $lastError = (string)($result['message'] ?? 'SMS send failed');
             return false;
