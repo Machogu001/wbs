@@ -255,7 +255,10 @@ class InstallmentPlan {
             return;
         }
 
-        $this->db->beginTransaction();
+        $ownTransaction = !$this->db->inTransaction();
+        if ($ownTransaction) {
+            $this->db->beginTransaction();
+        }
         try {
             $planItems = $this->getPlanItemsOutstanding((int)$plan['id']);
             $stmtInsert = $this->db->prepare("INSERT INTO installment_payment_allocations
@@ -287,9 +290,11 @@ class InstallmentPlan {
             }
 
             $this->syncPlanCompletionStatus((int)$plan['id']);
-            $this->db->commit();
+            if ($ownTransaction) {
+                $this->db->commit();
+            }
         } catch (Throwable $e) {
-            if ($this->db->inTransaction()) {
+            if ($ownTransaction && $this->db->inTransaction()) {
                 $this->db->rollBack();
             }
             throw $e;

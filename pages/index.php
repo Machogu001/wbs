@@ -111,7 +111,7 @@ if ($loggedOut): ?>
                     <i class="bi bi-droplet me-1"></i>
                     <span style="color:#ff4b5c; font-weight:600;">Smart utility billing portal</span>
                 </span>
-                <h1 class="display-5 fw-bold mb-3">
+                <h1 class="display-5 fw-bold mb-3 landing-hero-title">
                     <span style="color:#22c55e;">Water</span>
                     <span style="color:#ef4444;">Billing</span>
                     <span style="color:#ffffff;">Made</span>

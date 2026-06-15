@@ -28,16 +28,33 @@ $page_title = 'Admin - Customer Locations';
 require_once __DIR__ . '/../../templates/header.php';
 ?>
 
-<div class="container mt-4">
-    <div class="row mb-3">
-        <div class="col-12 d-flex justify-content-between align-items-center">
-            <div>
-                <h2 class="mb-1">Customer Locations</h2>
-                <p class="text-muted mb-0">View all customers with GPS pins on a single map.</p>
+<div class="container mt-4 admin-shell">
+    <div class="row">
+        <div class="col-12">
+            <div class="pb-banner pb-banner--cobalt mb-4">
+                <div class="pb-bg" aria-hidden="true">
+                    <div class="pb-grid"></div>
+                    <div class="pb-blob pb-blob--a"></div>
+                    <div class="pb-blob pb-blob--b"></div>
+                    <i class="bi bi-geo-alt-fill pb-watermark"></i>
+                </div>
+                <div class="pb-inner">
+                    <div class="pb-left">
+                        <div class="pb-eyebrow-row">
+                            <span class="pb-eyebrow-chip"><i class="bi bi-pin-map-fill"></i> Mapping</span>
+                        </div>
+                        <h2 class="pb-title">Customer Locations</h2>
+                        <p class="pb-subtitle">View all customers with GPS pins on a single map.</p>
+                    </div>
+                    <div class="pb-right">
+                        <div class="pb-btn-row">
+                            <a href="/admin/users" class="pb-btn pb-btn--accent">
+                                <i class="bi bi-people"></i> Back to Users
+                            </a>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <a href="/admin/users" class="btn btn-outline-secondary btn-sm">
-                <i class="bi bi-people"></i> Back to Users
-            </a>
         </div>
     </div>
 

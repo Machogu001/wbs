@@ -487,7 +487,10 @@ class Accounting {
 			throw new InvalidArgumentException('Journal entry must balance debits and credits.');
 		}
 
-		$this->db->beginTransaction();
+		$ownTransaction = !$this->db->inTransaction();
+		if ($ownTransaction) {
+			$this->db->beginTransaction();
+		}
 		try {
 			$entryNo = 'JE-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
 			$stmtEntry = $this->db->prepare("INSERT INTO {$this->entryTable}
@@ -516,10 +519,12 @@ class Accounting {
 				]);
 			}
 
-			$this->db->commit();
+			if ($ownTransaction) {
+				$this->db->commit();
+			}
 			return $entryId;
 		} catch (Throwable $e) {
-			if ($this->db->inTransaction()) {
+			if ($ownTransaction && $this->db->inTransaction()) {
 				$this->db->rollBack();
 			}
 			throw $e;

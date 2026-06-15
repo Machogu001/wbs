@@ -321,6 +321,52 @@ class BillingSettings {
         ]);
     }
 
+    public function deleteTariffPlan(int $planId): bool {
+        if ($planId <= 0) {
+            return false;
+        }
+
+        $countStmt = $this->conn->query("SELECT COUNT(*) FROM tariff_plans");
+        $totalPlans = (int)$countStmt->fetchColumn();
+        if ($totalPlans <= 1) {
+            throw new RuntimeException('At least one tariff plan must remain in the system.');
+        }
+
+        $planStmt = $this->conn->prepare("SELECT id, is_active FROM tariff_plans WHERE id = :id LIMIT 1");
+        $planStmt->execute([':id' => $planId]);
+        $plan = $planStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$plan) {
+            return false;
+        }
+
+        $this->conn->beginTransaction();
+        try {
+            $delStmt = $this->conn->prepare("DELETE FROM tariff_plans WHERE id = :id");
+            $deleted = $delStmt->execute([':id' => $planId]);
+
+            if ($deleted && !empty($plan['is_active'])) {
+                $activeCountStmt = $this->conn->query("SELECT COUNT(*) FROM tariff_plans WHERE is_active = 1");
+                $activeCount = (int)$activeCountStmt->fetchColumn();
+                if ($activeCount === 0) {
+                    $fallbackStmt = $this->conn->query("SELECT id FROM tariff_plans ORDER BY effective_from DESC, id DESC LIMIT 1");
+                    $fallbackId = (int)$fallbackStmt->fetchColumn();
+                    if ($fallbackId > 0) {
+                        $activateStmt = $this->conn->prepare("UPDATE tariff_plans SET is_active = 1, updated_at = NOW() WHERE id = :id");
+                        $activateStmt->execute([':id' => $fallbackId]);
+                    }
+                }
+            }
+
+            $this->conn->commit();
+            return $deleted;
+        } catch (Throwable $e) {
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     private function createDefault() {
           $default_rate = 50.00;
           $default_service = 0.00;

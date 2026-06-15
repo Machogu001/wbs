@@ -1,5 +1,8 @@
 <?php
 session_start();
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../config/mpesa_config.php';
 require_once __DIR__ . '/../../includes/Auth.php';
@@ -19,6 +22,7 @@ if(!$auth->isLoggedIn() || !$auth->hasPermission('manage_settings')) {
 	header("Location: /login");
 	exit;
 }
+$can_delete_tariff = $auth->hasRole('admin');
 
 $message = null;
 $message_type = "success";
@@ -158,6 +162,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 		}
 		$message = 'Failed to update tariff status.';
 		$message_type = 'danger';
+	}
+
+	if (isset($_POST['action']) && $_POST['action'] === 'delete_tariff_plan') {
+		if (!$can_delete_tariff) {
+			http_response_code(403);
+			$message = 'You are not allowed to delete tariff plans.';
+			$message_type = 'danger';
+		} else {
+		$planId = (int)($_POST['tariff_plan_id'] ?? 0);
+		try {
+			if ($settingsService->deleteTariffPlan($planId)) {
+				$_SESSION['flash_message'] = 'Tariff plan deleted successfully.';
+				$_SESSION['flash_type'] = 'success';
+				header('Location: /settings');
+				exit;
+			}
+			$message = 'Tariff plan not found or could not be deleted.';
+			$message_type = 'danger';
+		} catch (Throwable $e) {
+			$message = 'Failed to delete tariff plan: ' . $e->getMessage();
+			$message_type = 'danger';
+		}
+		}
 	}
 
 	if (isset($_POST['action']) && $_POST['action'] === 'add_reading') {
@@ -832,10 +859,29 @@ $tariffBlocks = [['from_unit' => 0, 'to_unit' => '', 'rate_per_unit' => $setting
 </div>
 
 <div class="col-12 d-flex gap-2 mt-2">
-<button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-1"></i><?php echo !empty($editing_tariff) ? 'Update Tariff Plan' : 'Create Tariff Plan'; ?></button>
+<button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-1"></i>Save Changes</button>
+<?php if (!empty($editing_tariff['id']) && !empty($can_delete_tariff)): ?>
+<button
+type="submit"
+form="tariffDeleteForm"
+class="btn btn-outline-danger"
+data-confirm-delete="1"
+data-confirm-message="Delete this tariff plan? This cannot be undone."
+formnovalidate
+>
+<i class="bi bi-trash me-1"></i>Delete Tariff Plan
+</button>
+<?php endif; ?>
 <a href="/settings" class="btn btn-outline-secondary">Reset</a>
 </div>
 </form>
+<?php if (!empty($editing_tariff['id']) && !empty($can_delete_tariff)): ?>
+<form method="POST" id="tariffDeleteForm" class="d-none" onsubmit="return confirm('Delete this tariff plan? This cannot be undone.');">
+<input type="hidden" name="action" value="delete_tariff_plan">
+<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+<input type="hidden" name="tariff_plan_id" value="<?php echo (int)$editing_tariff['id']; ?>">
+</form>
+<?php endif; ?>
 </div>
 </div>
 
@@ -876,6 +922,14 @@ $tariffBlocks = [['from_unit' => 0, 'to_unit' => '', 'rate_per_unit' => $setting
 <input type="hidden" name="is_active" value="<?php echo !empty($plan['is_active']) ? 0 : 1; ?>">
 <button type="submit" class="btn btn-sm btn-outline-<?php echo !empty($plan['is_active']) ? 'danger' : 'success'; ?>"><?php echo !empty($plan['is_active']) ? 'Deactivate' : 'Activate'; ?></button>
 </form>
+<?php if (!empty($can_delete_tariff)): ?>
+<form method="POST" class="d-inline js-confirm-delete-form" data-confirm-message="Delete tariff plan <?php echo htmlspecialchars((string)$plan['name'], ENT_QUOTES, 'UTF-8'); ?>?" onsubmit="return confirm('Delete tariff plan <?php echo htmlspecialchars((string)$plan['name'], ENT_QUOTES, 'UTF-8'); ?>?');">
+<input type="hidden" name="action" value="delete_tariff_plan">
+<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+<input type="hidden" name="tariff_plan_id" value="<?php echo (int)$plan['id']; ?>">
+<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+</form>
+<?php endif; ?>
 </div>
 </td>
 </tr>
@@ -1509,6 +1563,24 @@ $tariffBlocks = [['from_unit' => 0, 'to_unit' => '', 'rate_per_unit' => $setting
 		});
 		bindTariffBlockRemoveHandlers();
 	}
+
+	document.querySelectorAll('[data-confirm-delete="1"]').forEach(function(btn) {
+		btn.addEventListener('click', function(e) {
+			const msg = this.getAttribute('data-confirm-message') || 'Are you sure you want to delete this item?';
+			if (!window.confirm(msg)) {
+				e.preventDefault();
+			}
+		});
+	});
+
+	document.querySelectorAll('.js-confirm-delete-form').forEach(function(form) {
+		form.addEventListener('submit', function(e) {
+			const msg = this.getAttribute('data-confirm-message') || 'Are you sure you want to delete this item?';
+			if (!window.confirm(msg)) {
+				e.preventDefault();
+			}
+		});
+	});
 })();
 </script>
 

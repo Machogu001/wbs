@@ -24,6 +24,19 @@ if (!isset($appName) || $appName === '') {
     $envAppName = getenv('APP_NAME');
     $appName = ($envAppName !== false && $envAppName !== '') ? $envAppName : 'Water Billing System';
 }
+
+$requestPath = strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
+$isHomePath = ($requestPath === '/' || $requestPath === '/index.php');
+
+$bodyClasses = [];
+if (!empty($hide_nav)) {
+    $bodyClasses[] = 'auth-layout';
+}
+if (!$isHomePath) {
+    $bodyClasses[] = 'internal-page';
+}
+
+$showGlobalPageHero = false;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -53,7 +66,7 @@ if (!isset($appName) || $appName === '') {
     <?php $styleVersion = @filemtime(__DIR__ . '/../public/css/style.css') ?: time(); ?>
     <link rel="stylesheet" href="/public/css/style.css?v=<?php echo (int)$styleVersion; ?>">
 </head>
-<body class="<?php echo !empty($hide_nav) ? 'auth-layout' : ''; ?>">
+<body class="<?php echo htmlspecialchars(implode(' ', $bodyClasses), ENT_QUOTES, 'UTF-8'); ?>">
     <div aria-live="polite" aria-atomic="true" class="position-fixed top-0 end-0 p-3" style="z-index: 1080; min-width: 300px; pointer-events: none;">
         <div id="globalToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true">
             <div class="d-flex">
@@ -87,6 +100,10 @@ if (!isset($appName) || $appName === '') {
     <?php if(!isset($hide_nav) || !$hide_nav): ?>
     <?php
         $currentPath    = strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
+        $normalizedPath = rtrim((string)$currentPath, '/');
+        if ($normalizedPath === '') {
+            $normalizedPath = '/';
+        }
         $navIsAdmin     = isset($_SESSION['user_data']['role']) && $_SESSION['user_data']['role'] === 'admin';
         $navUserRole    = strtolower((string)($_SESSION['user_data']['role'] ?? 'customer'));
         $navIsStaff     = in_array($navUserRole, ['admin', 'reader', 'finance', 'support'], true);
@@ -98,6 +115,49 @@ if (!isset($appName) || $appName === '') {
         $navCustomerPaths = ['/bills','/pay','/complaints'];
         $navServicesActive = in_array($currentPath, array_merge($navAdminPaths, $navCustomerPaths));
             $navProfileActive  = in_array($currentPath, ['/profile', '/receipts', '/settings']);
+        $navOperationsPaths = [
+            '/admin/users',
+            '/admin/staff-users',
+            '/admin/role-permissions',
+            '/invoicing',
+            '/admin/invoicing',
+            '/reports',
+            '/admin/reports',
+            '/accounting',
+            '/admin/accounting',
+            '/accounting/reports',
+            '/accounting/budget',
+            '/accounting/transfers',
+            '/accounting/ledger',
+            '/admin/accounting/reports',
+            '/admin/accounting/budget',
+            '/admin/accounting/transfers',
+            '/admin/accounting/ledger',
+            '/admin/payments',
+            '/admin/payment-transactions',
+            '/admin/demand-notices',
+            '/admin/approvals',
+            '/admin/news-updates',
+            '/admin/blog',
+        ];
+        $navMonitoringPaths = [
+            '/admin/integration-health',
+            '/admin/messaging',
+            '/admin/support-inquiries',
+            '/messaging',
+            '/activity_log',
+            '/admin/activity_log',
+            '/system-logs',
+            '/admin/system-logs',
+            '/chat',
+            '/admin/chat',
+            '/internal-chat',
+        ];
+        $navOperationsActive = in_array($normalizedPath, $navOperationsPaths, true) || str_starts_with($normalizedPath, '/blog');
+        $navMonitoringActive = !$navOperationsActive && (
+            in_array($normalizedPath, $navMonitoringPaths, true)
+            || (!$navIsAdmin && (str_starts_with($normalizedPath, '/blog') || str_starts_with($normalizedPath, '/admin/news-updates')))
+        );
         // Show News & Updates link only when at least one post is published
         $navHasPublishedNews = false;
         try {
@@ -142,7 +202,7 @@ if (!isset($appName) || $appName === '') {
                         <!-- Admin: Operations dropdown -->
                         <?php if ($navIsAdmin): ?>
                         <li class="nav-item dropdown">
-                                     <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/users','/admin/staff-users','/invoicing','/reports','/accounting','/admin/accounting','/admin/payments','/admin/payment-transactions','/admin/demand-notices','/admin/approvals']) ? ' active' : ''; ?>"
+                                     <a class="nav-link dropdown-toggle<?php echo $navOperationsActive ? ' active' : ''; ?>"
                                href="#" id="navbarOperations" role="button"
                                <?php if (!empty($is_admin_page)): ?>
                                    onclick="(function(el){var m=el.nextElementSibling;if(!m)return;var shown=m.classList.contains('show');var open=document.querySelectorAll('.dropdown-menu.show');open.forEach(function(mm){mm.classList.remove('show');});if(!shown){m.classList.add('show');}})(this); return false;"
@@ -174,7 +234,7 @@ if (!isset($appName) || $appName === '') {
                         <!-- Admin/Staff: Monitoring dropdown -->
                         <?php if ($navIsStaff): ?>
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle<?php echo in_array($currentPath, ['/admin/integration-health','/admin/messaging','/admin/support-inquiries','/activity_log','/system-logs','/chat','/internal-chat','/admin/users','/invoicing','/accounting','/reports','/admin/payments','/admin/demand-notices','/admin/approvals']) || (!$navIsAdmin && (str_starts_with($currentPath, '/blog') || str_starts_with($currentPath, '/admin/news-updates'))) ? ' active' : ''; ?>"
+                            <a class="nav-link dropdown-toggle<?php echo $navMonitoringActive ? ' active' : ''; ?>"
                                href="#" id="navbarMonitoring" role="button"
                                <?php if (!empty($is_admin_page)): ?>
                                    onclick="(function(el){var m=el.nextElementSibling;if(!m)return;var shown=m.classList.contains('show');var open=document.querySelectorAll('.dropdown-menu.show');open.forEach(function(mm){mm.classList.remove('show');});if(!shown){m.classList.add('show');}})(this); return false;"
@@ -328,5 +388,5 @@ if (!isset($appName) || $appName === '') {
         </div>
     </nav>
     <?php endif; ?>
-    
+
     <main class="container-fluid p-0">

@@ -9,7 +9,7 @@
  * intercept requests for all pages of the application.
  */
 
-const CACHE_NAME   = 'wbs-static-v1';
+const CACHE_NAME   = 'wbs-static-v25';
 const OFFLINE_URL  = '/pages/offline.php';
 
 const PRECACHE_URLS = [
@@ -49,6 +49,16 @@ self.addEventListener('fetch', event => {
     if (req.method !== 'GET') return;
     const url = new URL(req.url);
     if (url.origin !== self.location.origin) return;
+
+    // Never cache dynamic admin/settings/API routes.
+    if (
+        url.pathname === '/settings' ||
+        url.pathname.startsWith('/admin') ||
+        url.pathname.startsWith('/api/')
+    ) {
+        event.respondWith(fetch(req).catch(() => caches.match(req)));
+        return;
+    }
 
     // Static assets — cache first
     if (url.pathname.startsWith('/public/')) {

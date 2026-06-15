@@ -580,7 +580,7 @@ class Payment {
 				. "Please log in and complete payment at https://wbs.bremac.co.ke/registration-payment\n"
 				. $companyName;
 		} else {
-			$messageText = "Dear Customer,\n"
+			$messageText = "Dear {$customerName},\n"
 				. "Your {$methodLabel} payment of KES " . number_format($amount, 2)
 				. ($receipt !== '' ? " (Ref: {$receipt})" : '')
 				. " for Account No. {$accountNumber} has been received successfully.\n"

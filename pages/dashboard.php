@@ -450,10 +450,10 @@ if ($db) {
         <div class="col-md-6 col-xl-2">
             <a href="/reports?report_scope=billing" class="text-decoration-none">
                 <div class="card text-white dashboard-stat-card dashboard-stat-card-registration" data-bs-toggle="tooltip" data-bs-placement="top" title="<?php echo htmlspecialchars($registrationCardTooltip); ?>" style="background:#0f766e !important; background-image:none !important; color:#ffffff !important; border-color:transparent !important;">
-                    <div class="card-body">
+                    <div class="card-body" style="background:transparent !important;">
                         <h5 class="card-title mb-1" style="color:#d1fae5 !important; -webkit-text-fill-color:#d1fae5 !important;"><?php echo htmlspecialchars($registrationCardTitle); ?></h5>
                         <p class="card-text display-6 mb-0" style="color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; text-shadow:none !important;">Ksh <?php echo number_format($registration_collected_total, 2); ?></p>
-                        <p class="mb-0 small dashboard-registration-card-note" style="color:#ecfeff !important; -webkit-text-fill-color:#ecfeff !important; opacity:1 !important;">Billed: Ksh <?php echo number_format($registration_billed_total, 2); ?> across <?php echo number_format($registration_bills_count); ?> bill(s).</p>
+                        <p class="mb-0 small dashboard-registration-card-note" style="color:#d1fae5 !important; -webkit-text-fill-color:#d1fae5 !important; text-shadow:none !important;">Billed: Ksh <?php echo number_format($registration_billed_total, 2); ?> across <?php echo number_format($registration_bills_count); ?> bill(s).</p>
                     </div>
                 </div>
             </a>
