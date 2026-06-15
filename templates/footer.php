@@ -2163,7 +2163,24 @@
         /* ── Register service worker ── */
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function () {
-                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                <?php
+                $swVersion = 0;
+                $swVersionFiles = [
+                    __DIR__ . '/../sw.js',
+                    __DIR__ . '/../public/css/style.css',
+                    __DIR__ . '/../public/js/script.js',
+                ];
+                foreach ($swVersionFiles as $swFile) {
+                    if (is_file($swFile)) {
+                        $swVersion = max($swVersion, (int) filemtime($swFile));
+                    }
+                }
+                if ($swVersion <= 0) {
+                    $swVersion = time();
+                }
+                $swScriptUrl = '/sw.js?v=' . $swVersion;
+                ?>
+                navigator.serviceWorker.register('<?php echo htmlspecialchars($swScriptUrl, ENT_QUOTES, 'UTF-8'); ?>', { scope: '/' })
                     .then(function (reg) {
                         // Service worker registered — PWA install criteria met
                         console.debug('[WBS] Service worker registered:', reg.scope);

@@ -9,7 +9,8 @@
  * intercept requests for all pages of the application.
  */
 
-const CACHE_NAME   = 'wbs-static-v25';
+const SW_VERSION = new URL(self.location.href).searchParams.get('v') || 'dev';
+const CACHE_NAME = `wbs-static-${SW_VERSION}`;
 const OFFLINE_URL  = '/pages/offline.php';
 
 const PRECACHE_URLS = [
