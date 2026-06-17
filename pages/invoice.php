@@ -29,10 +29,16 @@ if (!$db) {
     exit;
 }
 
+$canAdminDownloadInvoice = $auth->isAdmin()
+    || $auth->hasPermission('view_invoicing')
+    || $auth->hasPermission('view_bill_detail');
+
 $billService = new Bill($db);
-$bill = $billService->getById($bill_id, $_SESSION['user_id']);
+$bill = $canAdminDownloadInvoice
+    ? $billService->getById($bill_id, null)
+    : $billService->getById($bill_id, (int)$_SESSION['user_id']);
 if (!$bill) {
-    header("Location: /bills");
+    header("Location: " . ($canAdminDownloadInvoice ? "/admin/payments" : "/bills"));
     exit;
 }
 $billLineItems = $billService->getBillLineItems((int)$bill_id);

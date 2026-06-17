@@ -596,6 +596,9 @@ if (isset($_SESSION['flash_message'])) {
 												<?php if (!empty($client['last_bill_id']) && (int)$client['last_bill_id'] > 0): ?>
 													<?php $clientPayUrl = PaymentLink::generateLink((int)$client['last_bill_id']); ?>
 													<div class="d-flex gap-2 flex-wrap">
+														<a href="/invoice?bill_id=<?php echo (int)$client['last_bill_id']; ?>" class="btn btn-sm btn-outline-dark" target="_blank" rel="noopener">
+															<i class="bi bi-file-earmark-pdf me-1"></i>Invoice
+														</a>
 														<button type="button"
 															class="btn btn-sm btn-outline-primary js-copy-pay-link"
 															data-pay-url="<?php echo htmlspecialchars($clientPayUrl, ENT_QUOTES, 'UTF-8'); ?>">

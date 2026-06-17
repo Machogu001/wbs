@@ -779,7 +779,12 @@ include __DIR__ . '/../../templates/header.php';
 										<td><?php echo htmlspecialchars(date('M Y', strtotime((string)$b['billing_month']))); ?></td>
 										<td class="text-end"><?php echo number_format((float)$b['amount'], 2); ?></td>
 										<td><?php echo htmlspecialchars(ucfirst((string)$b['status'])); ?></td>
-										<td><a href="/admin/bill-detail?bill_id=<?php echo (int)$b['id']; ?>" class="btn btn-sm btn-outline-dark">View Detail</a></td>
+										<td>
+											<div class="d-flex gap-2 flex-wrap">
+												<a href="/admin/bill-detail?bill_id=<?php echo (int)$b['id']; ?>" class="btn btn-sm btn-outline-dark">View Detail</a>
+												<a href="/invoice?bill_id=<?php echo (int)$b['id']; ?>" class="btn btn-sm btn-outline-dark" target="_blank" rel="noopener">Invoice</a>
+											</div>
+										</td>
 									</tr>
 								<?php endforeach; ?>
 								</tbody>

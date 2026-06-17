@@ -175,6 +175,7 @@ require_once __DIR__ . '/../../templates/header.php';
             <div class="pb-right">
                 <div class="pb-btn-row">
                     <a href="/admin/payments" class="pb-btn"><i class="bi bi-arrow-left"></i> Back to Payments</a>
+                    <a href="/invoice?bill_id=<?php echo (int)$billId; ?>" class="pb-btn" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i> Download Invoice</a>
                     <a href="/admin/accounting?entry_id=<?php echo (int)$billId; ?>" class="pb-btn pb-btn--accent"><i class="bi bi-journal-text"></i> Accounting</a>
                 </div>
             </div>
