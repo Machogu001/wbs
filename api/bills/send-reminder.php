@@ -72,7 +72,7 @@ try {
 	// Prepare reminder message
 	$billingMonth = date('M Y', strtotime($bill['billing_month']));
 	$amount = number_format((float)$bill['amount'], 2);
-	$dueDate = date('d-m-Y', strtotime($bill['due_date']));
+	$dueDate = date('d/m/Y', strtotime($bill['due_date']));
 
 	// Generate payment link
 	$paymentLink = '';
@@ -87,26 +87,27 @@ try {
 		error_log('Payment link generation failed: ' . $e->getMessage());
 	}
 
-	$smsText = "Payment reminder: Your {$billingMonth} water bill (AC: {$user['account_number']}) of {$currency} {$amount} is due on {$dueDate}.";
+	$smsText = "Dear Customer, this is a reminder that your {$billingMonth} water bill for Account {$user['account_number']} amounting to {$currency} {$amount} is due on {$dueDate}. Kindly settle the bill on or before the due date to avoid service interruption.";
 	if (!empty($paymentLink)) {
 		$smsText .= " Pay here: {$paymentLink}";
 	}
 
 	$emailSubject = "Payment Reminder - {$billingMonth} Water Bill";
 	$emailText = "Dear {$user['full_name']},\n\n" .
-		"This is a friendly reminder that your {$billingMonth} water bill is due.\n\n" .
+		"This is a reminder that your {$billingMonth} water bill is due for payment.\n\n" .
 		"Billing Details:\n" .
-		"Account: {$user['account_number']}\n" .
+		"Account Number: {$user['account_number']}\n" .
 		"Amount Due: {$currency} {$amount}\n" .
-		"Due Date: {$dueDate}\n\n";
+		"Due Date: {$dueDate}\n\n" .
+		"Kindly settle the bill on or before the due date to avoid service interruption.\n\n";
 
 	if (!empty($shortPaymentLink)) {
 		$emailText .= "Click the link below to pay now:\n" .
 			"{$shortPaymentLink}\n\n";
 	}
 
-	$emailText .= "Please complete your payment to avoid service interruption.\n\n" .
-		"Thank you,\nWater Billing System";
+	$emailText .= "Thank you for your prompt attention to this matter.\n\n" .
+		"Regards,\nWater Billing System";
 
 	$smsSuccess = false;
 	$emailSuccess = false;
