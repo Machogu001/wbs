@@ -751,6 +751,18 @@ main > .container {
   color: var(--danger-700);
 }
 
+.badge-registration {
+  background-color: #e7f5ff;
+  color: #0b5394;
+  font-weight: var(--font-weight-medium);
+}
+
+.badge-monthly {
+  background-color: #f0f5ff;
+  color: #1e40af;
+  font-weight: var(--font-weight-medium);
+}
+
 /* ===== ALERTS ===== */
 .alert {
   border: none;
