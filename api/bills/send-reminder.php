@@ -5,6 +5,7 @@ require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/Bill.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/Email.php';
+require_once __DIR__ . '/../../includes/PaymentLink.php';
 require_once __DIR__ . '/../../includes/ActivityLog.php';
 
 header('Content-Type: application/json');
@@ -71,7 +72,10 @@ $billingMonth = date('M Y', strtotime($bill['billing_month']));
 $amount = number_format((float)$bill['amount'], 2);
 $dueDate = date('d-m-Y', strtotime($bill['due_date']));
 
-$smsText = "Payment reminder: Your {$billingMonth} water bill (AC: {$user['account_number']}) of {$currency} {$amount} is due on {$dueDate}. Please pay promptly to avoid disconnection.";
+// Generate payment link
+$paymentLink = PaymentLink::generateLink((int)$bill_id);
+
+$smsText = "Payment reminder: Your {$billingMonth} water bill (AC: {$user['account_number']}) of {$currency} {$amount} is due on {$dueDate}. Pay here: {$paymentLink}";
 $emailSubject = "Payment Reminder - {$billingMonth} Water Bill";
 $emailText = "Dear {$user['full_name']},\n\n" .
 	"This is a friendly reminder that your {$billingMonth} water bill is due.\n\n" .
@@ -79,6 +83,8 @@ $emailText = "Dear {$user['full_name']},\n\n" .
 	"Account: {$user['account_number']}\n" .
 	"Amount Due: {$currency} {$amount}\n" .
 	"Due Date: {$dueDate}\n\n" .
+	"Click the link below to pay now:\n" .
+	"{$paymentLink}\n\n" .
 	"Please complete your payment to avoid service interruption.\n\n" .
 	"Thank you,\nWater Billing System";
 
