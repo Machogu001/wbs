@@ -16,8 +16,8 @@ try {
         exit(json_encode(['error' => 'Short code is required']));
     }
 
-    // Validate short code format (alphanumeric only)
-    if (!preg_match('/^[A-Za-z0-9]+$/', $shortCode)) {
+    // Validate short code format (alphanumeric with hyphens and underscores)
+    if (!preg_match('/^[\w\-]+$/', $shortCode)) {
         header('HTTP/1.1 400 Bad Request');
         exit(json_encode(['error' => 'Invalid short code format']));
     }

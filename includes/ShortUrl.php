@@ -41,31 +41,46 @@ class ShortUrl
      * Generate a short URL for a given full URL
      * @param string $fullUrl The full URL to shorten
      * @param int $billId Optional bill ID for tracking
-     * @return string Short URL like https://wbs.bremac.co.ke/s/abc123
+     * @param string $customCode Optional custom short code (e.g., 'INV-53'). If not provided, uses 'INV-{billId}'
+     * @return string Short URL like https://wbs.bremac.co.ke/s/INV-53
      */
-    public function shortenUrl(string $fullUrl, int $billId = null): string
+    public function shortenUrl(string $fullUrl, int $billId = null, string $customCode = null): string
     {
         try {
-            // Check if this URL already exists for this bill
+            // Use custom code or generate from bill ID
+            $shortCode = $customCode ?? ($billId > 0 ? 'INV-' . $billId : $this->generateUniqueShortCode());
+
+            // Check if this code already exists for this bill
             if ($billId !== null && $billId > 0) {
-                $stmt = $this->db->prepare('SELECT short_code FROM short_urls WHERE bill_id = ? AND full_url = ? LIMIT 1');
-                $stmt->execute([$billId, $fullUrl]);
+                $stmt = $this->db->prepare('SELECT short_code FROM short_urls WHERE bill_id = ? LIMIT 1');
+                $stmt->execute([$billId]);
                 $result = $stmt->fetch(PDO::FETCH_ASSOC);
                 if ($result) {
                     return rtrim(self::BASE_URL, '/') . '/s/' . $result['short_code'];
                 }
             }
 
-            // Generate unique short code
-            $shortCode = $this->generateUniqueShortCode();
-
-            // Insert into database
-            $stmt = $this->db->prepare(
-                'INSERT INTO short_urls (short_code, full_url, bill_id) VALUES (?, ?, ?)'
-            );
-            $stmt->execute([$shortCode, $fullUrl, $billId]);
+            // Try to insert the short code
+            try {
+                $stmt = $this->db->prepare(
+                    'INSERT INTO short_urls (short_code, full_url, bill_id) VALUES (?, ?, ?)'
+                );
+                $stmt->execute([$shortCode, $fullUrl, $billId]);
+            } catch (Exception $e) {
+                // If this code already exists, generate a unique one
+                if (strpos($e->getMessage(), 'Duplicate') !== false || strpos($e->getMessage(), 'UNIQUE') !== false) {
+                    $shortCode = $this->generateUniqueShortCode();
+                    $stmt = $this->db->prepare(
+                        'INSERT INTO short_urls (short_code, full_url, bill_id) VALUES (?, ?, ?)'
+                    );
+                    $stmt->execute([$shortCode, $fullUrl, $billId]);
+                } else {
+                    throw $e;
+                }
+            }
 
             return rtrim(self::BASE_URL, '/') . '/s/' . $shortCode;
+
         } catch (Exception $e) {
             error_log('Short URL generation error: ' . $e->getMessage());
             // Fallback to original URL if shortening fails

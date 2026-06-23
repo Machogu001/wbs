@@ -16,7 +16,7 @@ try {
         $shortCode = trim(str_replace('/s/', '', $requestUri), '/');
     }
 
-    if (empty($shortCode) || !preg_match('/^[A-Za-z0-9]+$/', $shortCode)) {
+    if (empty($shortCode) || !preg_match('/^[A-Za-z0-9\-_]+$/', $shortCode)) {
         http_response_code(400);
         die('Invalid short code');
     }
