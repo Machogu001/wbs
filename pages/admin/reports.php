@@ -1703,12 +1703,13 @@ require_once __DIR__ . '/../../templates/header.php';
 									<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
 									<th>Due Date</th>
 									<th>Status</th>
+									<th>Actions</th>
 								</tr>
 							</thead>
 							<tbody>
 							<?php if (empty($bills)): ?>
 								<tr>
-									<td colspan="7" class="text-center text-muted py-3">No bills found for this period.</td>
+									<td colspan="8" class="text-center text-muted py-3">No bills found for this period.</td>
 								</tr>
 							<?php else: ?>
 								<?php foreach ($bills as $bill): ?>
@@ -1729,6 +1730,13 @@ require_once __DIR__ . '/../../templates/header.php';
 											<span class="badge bg-<?php echo $bill['status'] === 'paid' ? 'success' : (in_array($bill['status'], ['pending','overdue'], true) ? 'warning' : 'secondary'); ?>">
 												<?php echo htmlspecialchars(ucfirst($bill['status'])); ?>
 											</span>
+										</td>
+										<td data-label="Actions">
+											<?php if (in_array($bill['status'], ['pending', 'overdue'], true)): ?>
+												<button type="button" class="btn btn-sm btn-outline-info send-reminder-btn" data-bill-id="<?php echo (int)$bill['id']; ?>" title="Send payment reminder">
+													<i class="bi bi-bell me-1"></i>Remind
+												</button>
+											<?php endif; ?>
 										</td>
 									</tr>
 								<?php endforeach; ?>
@@ -2145,6 +2153,7 @@ require_once __DIR__ . '/../../templates/header.php';
 				container.innerHTML = newContainer.innerHTML;
 				// Reattach handlers for new pagination links
 				attachPaginationHandlers();
+				attachReminderButtonHandlers();
 			})
 			.catch(function(err) {
 				if (window.showToast) {
@@ -2161,10 +2170,65 @@ require_once __DIR__ . '/../../templates/header.php';
 			});
 	}
 
+	function attachReminderButtonHandlers() {
+		var reminderButtons = document.querySelectorAll('.send-reminder-btn');
+		reminderButtons.forEach(function(btn) {
+			btn.addEventListener('click', function() {
+				var billId = this.getAttribute('data-bill-id');
+				if (!billId) return;
+
+				var btn = this;
+				var originalText = btn.innerHTML;
+				btn.disabled = true;
+				btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Sending...';
+
+				var formData = new FormData();
+				formData.append('bill_id', billId);
+
+				fetch('/api/bills/send-reminder.php', {
+					method: 'POST',
+					body: formData,
+					headers: {
+						'X-Requested-With': 'XMLHttpRequest'
+					}
+				})
+					.then(function(res) { return res.json(); })
+					.then(function(data) {
+						if (data.success) {
+							if (window.showToast) {
+								showToast(data.message || 'Reminder sent successfully', 'success');
+							}
+							// Change button appearance after success
+							btn.classList.remove('btn-outline-info');
+							btn.classList.add('btn-outline-success');
+							btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Sent';
+						} else {
+							if (window.showToast) {
+								showToast(data.message || 'Failed to send reminder', 'danger');
+							}
+							btn.disabled = false;
+							btn.innerHTML = originalText;
+						}
+					})
+					.catch(function(err) {
+						if (window.showToast) {
+							showToast('Error sending reminder: ' + (err && err.message ? err.message : 'Unknown error'), 'danger');
+						}
+						btn.disabled = false;
+						btn.innerHTML = originalText;
+					});
+			});
+		});
+	}
+
 	if (document.readyState === 'loading') {
-		document.addEventListener('DOMContentLoaded', attachPaginationHandlers);
+		document.addEventListener('DOMContentLoaded', function() {
+			attachPaginationHandlers();
+			attachReminderButtonHandlers();
+		});
 	} else {
 		attachPaginationHandlers();
+		attachReminderButtonHandlers();
 	}
 })();
 </script>
