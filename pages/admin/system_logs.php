@@ -472,7 +472,7 @@ include __DIR__ . '/../../templates/header.php';
                                             <td><?php echo (int)($item['id'] ?? 0); ?></td>
                                             <td><?php echo htmlspecialchars($item['phone'] ?? ''); ?></td>
                                             <td><span class="badge bg-secondary"><?php echo htmlspecialchars($item['type'] ?? 'general'); ?></span></td>
-                                            <td><small><?php echo htmlspecialchars(substr((string)($item['message'] ?? ''), 0, 120)); ?></small></td>
+                                            <td><small class="view-sms-message" style="cursor: pointer; text-decoration: underline;" title="Click to view full message" data-full-message="<?php echo htmlspecialchars($item['message'] ?? ''); ?>"><?php echo htmlspecialchars(substr((string)($item['message'] ?? ''), 0, 120)); ?></small></td>
                                             <td><small><?php echo !empty($item['sent_at']) ? htmlspecialchars(date('d-m-Y H:i', strtotime((string)$item['sent_at']))) : '-'; ?></small></td>
                                             <td><?php echo isset($item['http_code']) ? (int)$item['http_code'] : '-'; ?></td>
                                             <td><small><?php echo !empty($item['created_at']) ? htmlspecialchars(date('d-m-Y H:i', strtotime((string)$item['created_at']))) : '-'; ?></small></td>
@@ -645,6 +645,27 @@ include __DIR__ . '/../../templates/header.php';
         </div>
     </div>
 
+    <!-- SMS Message Modal -->
+    <div class="modal fade" id="smsChatModal" tabindex="-1" aria-labelledby="smsChatModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="smsChatModalLabel">Full SMS Message</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="smsMessageContent" style="word-wrap: break-word; white-space: pre-wrap;"></p>
+                    <button type="button" class="btn btn-sm btn-secondary" id="copySmsMessageBtn" title="Copy to clipboard">
+                        <i class="bi bi-clipboard"></i> Copy Message
+                    </button>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         if (window.WbsAdminUi) {
@@ -689,6 +710,26 @@ include __DIR__ . '/../../templates/header.php';
         initBulkSelect('selectAllPendingSms', '.pending-sms-checkbox', 'deleteSelectedPendingBtn');
         initBulkSelect('selectAllSentSms', '.sent-sms-checkbox', 'deleteSelectedSentBtn');
         initBulkSelect('selectAllFailedSms', '.failed-sms-checkbox', 'deleteSelectedFailedBtn');
+
+        // Handle SMS message preview
+        document.querySelectorAll('.view-sms-message').forEach(function(element) {
+            element.addEventListener('click', function() {
+                var fullMessage = this.getAttribute('data-full-message');
+                document.getElementById('smsMessageContent').textContent = fullMessage;
+                var modal = new bootstrap.Modal(document.getElementById('smsChatModal'));
+                modal.show();
+            });
+        });
+
+        // Copy to clipboard functionality
+        document.getElementById('copySmsMessageBtn').addEventListener('click', function() {
+            var messageContent = document.getElementById('smsMessageContent').textContent;
+            navigator.clipboard.writeText(messageContent).then(function() {
+                alert('Message copied to clipboard!');
+            }).catch(function() {
+                alert('Failed to copy message');
+            });
+        });
     });
     </script>
 

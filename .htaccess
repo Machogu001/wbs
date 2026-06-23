@@ -19,6 +19,9 @@ RewriteRule ^pages/([a-zA-Z0-9_/-]+)\.php$ /$1 [R=301,L]
 # Route API requests through front controller
 RewriteRule ^api/(.*)$ index.php?url=api/$1 [QSA,L]
 
+# Handle short URL redirects
+RewriteRule ^s/([A-Za-z0-9]+)/?$ pages/short_url.php?code=$1 [QSA,L]
+
 # Front controller pattern
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

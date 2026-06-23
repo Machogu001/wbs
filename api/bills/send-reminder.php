@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../includes/Bill.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/Email.php';
 require_once __DIR__ . '/../../includes/PaymentLink.php';
+require_once __DIR__ . '/../../includes/ShortUrl.php';
 require_once __DIR__ . '/../../includes/ActivityLog.php';
 
 header('Content-Type: application/json');
@@ -75,8 +76,12 @@ try {
 
 	// Generate payment link
 	$paymentLink = '';
+	$shortPaymentLink = '';
 	try {
-		$paymentLink = PaymentLink::generateLink((int)$bill_id);
+		$fullPaymentLink = PaymentLink::generateLink((int)$bill_id);
+		$shortUrl = new ShortUrl($db);
+		$shortPaymentLink = $shortUrl->shortenUrl($fullPaymentLink, (int)$bill_id);
+		$paymentLink = $shortPaymentLink; // Use short link for SMS
 	} catch (\Throwable $e) {
 		// If payment link generation fails, continue without it
 		error_log('Payment link generation failed: ' . $e->getMessage());
@@ -95,9 +100,9 @@ try {
 		"Amount Due: {$currency} {$amount}\n" .
 		"Due Date: {$dueDate}\n\n";
 
-	if (!empty($paymentLink)) {
+	if (!empty($shortPaymentLink)) {
 		$emailText .= "Click the link below to pay now:\n" .
-			"{$paymentLink}\n\n";
+			"{$shortPaymentLink}\n\n";
 	}
 
 	$emailText .= "Please complete your payment to avoid service interruption.\n\n" .
