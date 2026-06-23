@@ -2185,7 +2185,7 @@ require_once __DIR__ . '/../../templates/header.php';
 				var formData = new FormData();
 				formData.append('bill_id', billId);
 
-				fetch('/api/bills/send-reminder.php', {
+				fetch('/api/bills/send-reminder', {
 					method: 'POST',
 					body: formData,
 					headers: {
