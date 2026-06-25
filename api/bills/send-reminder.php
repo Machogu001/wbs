@@ -87,7 +87,8 @@ try {
 		error_log('Payment link generation failed: ' . $e->getMessage());
 	}
 
-	$smsText = "Dear Customer, this is a reminder that your {$billingMonth} water bill for Account {$user['account_number']} amounting to {$currency} {$amount} is due on {$dueDate}. Kindly settle the bill on or before the due date to avoid service interruption.";
+	$clientName = !empty($user['full_name']) ? (string)$user['full_name'] : 'Customer';
+	$smsText = "Dear {$clientName}, this is a reminder that your {$billingMonth} water bill for Account {$user['account_number']} amounting to {$currency} {$amount} is due on {$dueDate}. Kindly settle the bill on or before the due date to avoid service interruption.";
 	if (!empty($paymentLink)) {
 		$smsText .= " Pay here: {$paymentLink}";
 	}
