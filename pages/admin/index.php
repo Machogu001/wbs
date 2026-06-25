@@ -13,6 +13,7 @@ require_once __DIR__ . '/../../includes/ActivityLog.php';
 require_once __DIR__ . '/../../includes/MeterReading.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/PaymentLink.php';
+require_once __DIR__ . '/../../includes/ShortUrl.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -302,6 +303,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 						$account = $user['account_number'];
 						$paybill = MpesaConfig::getShortCode();
 						$payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
+						try {
+							$shortUrl = new ShortUrl($db);
+							$payUrl = $shortUrl->shortenUrl($payUrl, (int)$billResult['bill_id']);
+						} catch (\Throwable $e) {
+							// Keep the full payment link if shortening fails.
+							error_log('Invoice payment link shortening failed: ' . $e->getMessage());
+						}
 
 						$messageText = "AC: {$account}\n" .
 							"BillDate: {$billDate}\n" .
