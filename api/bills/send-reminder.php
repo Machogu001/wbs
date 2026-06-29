@@ -73,6 +73,7 @@ try {
 	$billingMonth = date('M Y', strtotime($bill['billing_month']));
 	$amount = number_format((float)$bill['amount'], 2);
 	$dueDate = date('d/m/Y', strtotime($bill['due_date']));
+	$isOverdue = strtotime((string)$bill['due_date']) < strtotime(date('Y-m-d'));
 
 	// Generate payment link
 	$paymentLink = '';
@@ -88,19 +89,27 @@ try {
 	}
 
 	$clientName = !empty($user['full_name']) ? (string)$user['full_name'] : 'Customer';
-	$smsText = "Dear {$clientName}, this is a reminder that your {$billingMonth} water bill for Account {$user['account_number']} amounting to {$currency} {$amount} is due on {$dueDate}. Kindly settle the bill on or before the due date to avoid service interruption.";
+	$smsText = $isOverdue
+		? "Dear {$clientName}, this is a reminder that your {$billingMonth} water bill for Account {$user['account_number']} amounting to {$currency} {$amount} was due on {$dueDate} and is now overdue. Kindly settle the bill as soon as possible to avoid service interruption."
+		: "Dear {$clientName}, this is a reminder that your {$billingMonth} water bill for Account {$user['account_number']} amounting to {$currency} {$amount} is due on {$dueDate}. Kindly settle the bill on or before the due date to avoid service interruption.";
 	if (!empty($paymentLink)) {
 		$smsText .= " Pay here: {$paymentLink}";
 	}
 
 	$emailSubject = "Payment Reminder - {$billingMonth} Water Bill";
+	$emailIntro = $isOverdue
+		? "This is a reminder that your {$billingMonth} water bill is overdue for payment.\n\n"
+		: "This is a reminder that your {$billingMonth} water bill is due for payment.\n\n";
+	$emailActionText = $isOverdue
+		? "Kindly settle the bill as soon as possible to avoid service interruption.\n\n"
+		: "Kindly settle the bill on or before the due date to avoid service interruption.\n\n";
 	$emailText = "Dear {$user['full_name']},\n\n" .
-		"This is a reminder that your {$billingMonth} water bill is due for payment.\n\n" .
+		$emailIntro .
 		"Billing Details:\n" .
 		"Account Number: {$user['account_number']}\n" .
 		"Amount Due: {$currency} {$amount}\n" .
 		"Due Date: {$dueDate}\n\n" .
-		"Kindly settle the bill on or before the due date to avoid service interruption.\n\n";
+		$emailActionText;
 
 	if (!empty($shortPaymentLink)) {
 		$emailText .= "Click the link below to pay now:\n" .
