@@ -201,6 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 		if (!empty($allocationPlan) && $message_type !== 'danger') {
 			$recordedPaymentIds = [];
 			$notificationWarnings = [];
+			$receiptSaved = false;
 			try {
 				$db->beginTransaction();
 				$totalParts = count($allocationPlan);
@@ -282,6 +283,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 				}
 
 				$db->commit();
+				$receiptSaved = true;
 
 				foreach ($recordedPaymentIds as $recordedPaymentId) {
 					try {
@@ -330,19 +332,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 				if ($db->inTransaction()) {
 					$db->rollBack();
 				}
-				$errorLogger->logSystemError('ManualPayment', 'Failed to record manual payment: ' . $e->getMessage(), __FILE__, __LINE__, [
-					'account_number' => $account,
-					'bill_id' => $billId,
-					'payment_target' => $paymentTarget,
-					'payment_method' => $paymentMethod,
-					'reference_no' => $referenceNo,
-					'amount' => $amount,
-					'paid_date' => $paidDate,
-					'paid_time' => $paidTime,
-					'recorded_by_user_id' => (int)($_SESSION['user_id'] ?? 0),
-				]);
-				$message = 'Failed to record manual payment. ' . $e->getMessage();
-				$message_type = 'danger';
+				if ($receiptSaved) {
+					$message = $paymentTarget === 'balance'
+						? ('Manual payment recorded and allocated to ' . count($allocationPlan) . ' invoice(s).')
+						: 'Manual payment recorded successfully.';
+					$message .= ' Some follow-up steps could not complete: ' . $e->getMessage();
+					$message_type = 'warning';
+				} else {
+					$errorLogger->logSystemError('ManualPayment', 'Failed to record manual payment: ' . $e->getMessage(), __FILE__, __LINE__, [
+						'account_number' => $account,
+						'bill_id' => $billId,
+						'payment_target' => $paymentTarget,
+						'payment_method' => $paymentMethod,
+						'reference_no' => $referenceNo,
+						'amount' => $amount,
+						'paid_date' => $paidDate,
+						'paid_time' => $paidTime,
+						'recorded_by_user_id' => (int)($_SESSION['user_id'] ?? 0),
+					]);
+					$message = 'Failed to record manual payment. ' . $e->getMessage();
+					$message_type = 'danger';
+				}
 			}
 		}
 	}
