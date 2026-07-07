@@ -27,6 +27,7 @@ $billService = new Bill($db);
 $creditService = new CreditNote($db);
 $paymentService = new Payment($db);
 $financeApproval = new FinanceApproval($db);
+$installmentPlanner = new InstallmentPlan($db);
 $settingsService = new BillingSettings($db);
 $settings = $settingsService->getSettings();
 ErrorLog::ensureTable($db);
@@ -249,8 +250,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 					}
 
 					try {
-						$planner = new InstallmentPlan($db);
-						$planner->allocatePayment($paymentId);
+						$installmentPlanner->allocatePayment($paymentId);
 					} catch (Throwable $e) {
 						error_log('Manual payment installment allocation failed for payment #' . $paymentId . ': ' . $e->getMessage());
 					}

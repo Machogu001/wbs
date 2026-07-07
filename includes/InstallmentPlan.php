@@ -2,10 +2,14 @@
 
 class InstallmentPlan {
     private $db;
+    private static bool $schemaEnsured = false;
 
     public function __construct($db) {
         $this->db = $db;
-        $this->ensureTables();
+        if (!self::$schemaEnsured && !$this->db->inTransaction()) {
+            $this->ensureTables();
+            self::$schemaEnsured = true;
+        }
     }
 
     public function ensureTables(): void {
