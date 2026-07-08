@@ -42,6 +42,14 @@ $userBills = [];
 $userPayments = [];
 $paymentAdjustments = [];
 $client_list = $userService->listAll();
+$loadUserBills = static function (int $userId) use ($billService, $paymentService): array {
+	$bills = $billService->getBillsByUser($userId);
+	foreach ($bills as &$billRow) {
+		$billRow['outstanding_amount'] = $paymentService->getBillOutstandingAmount((int)($billRow['id'] ?? 0));
+	}
+	unset($billRow);
+	return $bills;
+};
 
 // Handle account lookup
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'search_account') {
@@ -60,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 			$message = 'Account not found.';
 			$message_type = 'danger';
 		} else {
-			$userBills = $billService->getBillsByUser($currentUser['id']);
+			$userBills = $loadUserBills((int)$currentUser['id']);
 			$userPayments = $paymentService->getCompletedPaymentsByUserId((int)$currentUser['id']);
 			$paymentAdjustments = $paymentService->getAdjustmentsByUserId((int)$currentUser['id']);
 		}
@@ -327,7 +335,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 					$message .= ' Notification note: ' . implode(' ', array_values(array_unique($notificationWarnings)));
 				}
 				$message_type = 'success';
-				$userBills = $billService->getBillsByUser($currentUser['id']);
+				$userBills = $loadUserBills((int)$currentUser['id']);
 			} catch (Exception $e) {
 				if ($db->inTransaction()) {
 					$db->rollBack();
@@ -435,7 +443,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 				$message = 'Credit note applied successfully.';
 				$message_type = 'success';
 				// Refresh bills
-				$userBills = $billService->getBillsByUser($currentUser['id']);
+				$userBills = $loadUserBills((int)$currentUser['id']);
 			} catch (Exception $e) {
 				$message = 'Failed to apply credit note.';
 				$message_type = 'danger';
@@ -508,7 +516,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // If we already have a current user from search or actions, reload bills when not set
 if ($currentUser && empty($userBills)) {
-	$userBills = $billService->getBillsByUser($currentUser['id']);
+	$userBills = $loadUserBills((int)$currentUser['id']);
 }
 
 if ($currentUser && empty($userPayments)) {
@@ -636,7 +644,7 @@ include __DIR__ . '/../../templates/header.php';
 									<option value="">Select bill</option>
 									<?php foreach ($userBills as $b): ?>
 										<option value="<?php echo (int)$b['id']; ?>">
-											#<?php echo (int)$b['id']; ?> - <?php echo htmlspecialchars(date('M Y', strtotime($b['billing_month']))); ?> - <?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)$b['amount'], 2); ?> (<?php echo htmlspecialchars(ucfirst($b['status'])); ?>)
+											#<?php echo (int)$b['id']; ?> - <?php echo htmlspecialchars(date('M Y', strtotime($b['billing_month']))); ?> - Outstanding <?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)($b['outstanding_amount'] ?? $b['amount']), 2); ?> (<?php echo htmlspecialchars(ucfirst($b['status'])); ?>)
 										</option>
 									<?php endforeach; ?>
 								</select>
