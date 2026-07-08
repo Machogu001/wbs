@@ -151,10 +151,25 @@ if (isset($_GET['export'])) {
 		if ($search_term !== '') {
 			$sqlWhere .= " AND (u.account_number LIKE :search OR u.full_name LIKE :search OR p.mpesa_receipt LIKE :search)";
 		}
-		$sql = "SELECT COALESCE(p.transaction_date, p.created_at) AS tx_date, u.account_number, u.full_name, p.amount, p.mpesa_receipt, p.status, {$paymentTypeCaseSql} AS payment_type
+		$sql = "SELECT COALESCE(p.transaction_date, p.created_at) AS tx_date, u.account_number, u.full_name, p.amount, p.mpesa_receipt, p.status, {$paymentTypeCaseSql} AS payment_type,
+			b.amount AS bill_amount,
+			GREATEST(0, COALESCE(b.amount, 0) - COALESCE(p_paid.completed_paid, 0) + COALESCE(pa_adj.approved_adjustments, 0)) AS bill_balance
 			FROM payments p
 			LEFT JOIN bills b ON p.bill_id = b.id
 			LEFT JOIN users u ON b.user_id = u.id
+			LEFT JOIN (
+				SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+				FROM payments
+				WHERE status = 'completed' AND bill_id IS NOT NULL
+				GROUP BY bill_id
+			) p_paid ON p_paid.bill_id = b.id
+			LEFT JOIN (
+				SELECT p2.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+				FROM payment_adjustments pa
+				INNER JOIN payments p2 ON p2.id = pa.payment_id
+				WHERE pa.status = 'approved' AND p2.bill_id IS NOT NULL
+				GROUP BY p2.bill_id
+			) pa_adj ON pa_adj.bill_id = b.id
 			" . $sqlWhere . "
 			ORDER BY COALESCE(p.transaction_date, p.created_at) DESC";
 		$stmt = $db->prepare($sql);
@@ -170,7 +185,7 @@ if (isset($_GET['export'])) {
 			$filename = 'payments_report_' . $from_str . '_to_' . $to_str . '.csv';
 			header('Content-Disposition: attachment; filename="' . $filename . '"');
 			$out = fopen('php://output', 'w');
-			fputcsv($out, ['Date', 'Type', 'Account', 'Customer', 'Amount (' . $currency . ')', 'MPESA Ref', 'Status']);
+			fputcsv($out, ['Date', 'Type', 'Account', 'Customer', 'Amount (' . $currency . ')', 'Bill Balance (' . $currency . ')', 'MPESA Ref', 'Status']);
 			while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
 				fputcsv($out, [
 					$row['tx_date'],
@@ -178,6 +193,7 @@ if (isset($_GET['export'])) {
 					$row['account_number'],
 					$row['full_name'],
 					$row['amount'],
+					isset($row['bill_balance']) ? $row['bill_balance'] : '',
 					$row['mpesa_receipt'],
 					$row['status'],
 				]);
@@ -197,6 +213,7 @@ if (isset($_GET['export'])) {
 					. '<td>' . htmlspecialchars($row['account_number']) . '</td>'
 					. '<td>' . htmlspecialchars($row['full_name']) . '</td>'
 					. '<td style="text-align:right;">' . number_format((float)$row['amount'], 2) . '</td>'
+					. '<td style="text-align:right;">' . (isset($row['bill_balance']) ? number_format((float)$row['bill_balance'], 2) : '-') . '</td>'
 					. '<td>' . htmlspecialchars($row['mpesa_receipt']) . '</td>'
 					. '<td>' . htmlspecialchars(ucfirst($row['status'])) . '</td>'
 				. '</tr>';
@@ -208,7 +225,7 @@ if (isset($_GET['export'])) {
 				'<p>Period: ' . htmlspecialchars($from_str) . ' to ' . htmlspecialchars($to_str) . '</p>' .
 				'<p>Grand Total (' . htmlspecialchars($currency) . '): <strong>' . number_format($totalAmount, 2) . '</strong></p>' .
 				'<table><thead><tr>' .
-				'<th>Date</th><th>Type</th><th>Account</th><th>Customer</th><th>Amount (' . htmlspecialchars($currency) . ')</th><th>MPESA Ref</th><th>Status</th>' .
+				'<th>Date</th><th>Type</th><th>Account</th><th>Customer</th><th>Amount (' . htmlspecialchars($currency) . ')</th><th>Bill Balance (' . htmlspecialchars($currency) . ')</th><th>MPESA Ref</th><th>Status</th>' .
 				'</tr></thead><tbody>' . $rowsHtml . '</tbody></table></body></html>';
 			$dompdf->loadHtml($html);
 			$dompdf->setPaper('A4', 'portrait');
@@ -841,10 +858,25 @@ if ($report_scope === 'all' || $report_scope === 'payments') {
 	// Page data
 	$sqlPayments = "SELECT p.*, 
 		u.full_name, u.account_number,
-		{$paymentTypeCaseSql} AS payment_type
+		{$paymentTypeCaseSql} AS payment_type,
+		b.amount AS bill_amount,
+		GREATEST(0, COALESCE(b.amount, 0) - COALESCE(p_paid.completed_paid, 0) + COALESCE(pa_adj.approved_adjustments, 0)) AS bill_balance
 		FROM payments p
 		LEFT JOIN bills b ON p.bill_id = b.id
 		LEFT JOIN users u ON b.user_id = u.id
+		LEFT JOIN (
+			SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+			FROM payments
+			WHERE status = 'completed' AND bill_id IS NOT NULL
+			GROUP BY bill_id
+		) p_paid ON p_paid.bill_id = b.id
+		LEFT JOIN (
+			SELECT p2.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+			FROM payment_adjustments pa
+			INNER JOIN payments p2 ON p2.id = pa.payment_id
+			WHERE pa.status = 'approved' AND p2.bill_id IS NOT NULL
+			GROUP BY p2.bill_id
+		) pa_adj ON pa_adj.bill_id = b.id
 		" . $sqlPaymentsWhere . "
 		ORDER BY COALESCE(p.transaction_date, p.created_at) DESC
 		LIMIT :limit OFFSET :offset";
@@ -1614,13 +1646,14 @@ require_once __DIR__ . '/../../templates/header.php';
 									<th>Customer</th>
 									<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
 									<th>MPESA Ref</th>
+									<th class="text-end">Balance (<?php echo htmlspecialchars($currency); ?>)</th>
 									<th>Status</th>
 								</tr>
 							</thead>
 							<tbody>
 							<?php if (empty($payments)): ?>
 								<tr>
-									<td colspan="7" class="text-center text-muted py-3">No payments found for this period.</td>
+									<td colspan="8" class="text-center text-muted py-3">No payments found for this period.</td>
 								</tr>
 							<?php else: ?>
 								<?php foreach ($payments as $p): ?>
@@ -1631,6 +1664,7 @@ require_once __DIR__ . '/../../templates/header.php';
 										<td data-label="Customer"><?php echo htmlspecialchars($p['full_name'] ?? ''); ?></td>
 										<td data-label="Amount (<?php echo htmlspecialchars($currency); ?>)" class="text-end"><?php echo number_format((float)$p['amount'], 2); ?></td>
 										<td data-label="MPESA Ref"><?php echo htmlspecialchars($p['mpesa_receipt'] ?? '-'); ?></td>
+										<td data-label="Balance (<?php echo htmlspecialchars($currency); ?>)" class="text-end"><?php echo isset($p['bill_balance']) ? number_format((float)$p['bill_balance'], 2) : '-'; ?></td>
 										<td data-label="Status">
 											<span class="badge bg-<?php echo $p['status'] === 'completed' ? 'success' : ($p['status'] === 'failed' ? 'danger' : 'warning'); ?>">
 												<?php echo htmlspecialchars(ucfirst($p['status'])); ?>
