@@ -710,24 +710,42 @@ $stmtRegistrationCollected->bindParam(':to', $to_str);
 $stmtRegistrationCollected->execute();
 $registrationCollectedRow = $stmtRegistrationCollected->fetch(PDO::FETCH_ASSOC) ?: ['total_registration_collected' => 0, 'registration_payments_count' => 0];
 
+$monthlyOutstandingFromSql = "
+	FROM bills b
+	LEFT JOIN (
+		SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+		FROM payments
+		WHERE status = 'completed' AND bill_id IS NOT NULL
+		GROUP BY bill_id
+	) p_paid ON p_paid.bill_id = b.id
+	LEFT JOIN (
+		SELECT p.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+		FROM payment_adjustments pa
+		INNER JOIN payments p ON p.id = pa.payment_id
+		WHERE pa.status = 'approved' AND p.bill_id IS NOT NULL
+		GROUP BY p.bill_id
+	) pa_adj ON pa_adj.bill_id = b.id
+	WHERE {$monthlyBillPredicateSql}
+	AND b.amount > 0
+";
+
+$monthlyOutstandingExprSql = "GREATEST(0, COALESCE(b.amount, 0) - COALESCE(p_paid.completed_paid, 0) + COALESCE(pa_adj.approved_adjustments, 0))";
+
 // Total outstanding overall for monthly bills only (registration is tracked separately)
 $stmtOutstanding = $db->query("SELECT 
-	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') THEN b.amount ELSE 0 END),0) AS total_outstanding,
-	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') THEN 1 ELSE 0 END),0) AS outstanding_bills
-	FROM bills b
-	WHERE {$monthlyBillPredicateSql}
-	AND b.amount > 0");
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') THEN {$monthlyOutstandingExprSql} ELSE 0 END),0) AS total_outstanding,
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND {$monthlyOutstandingExprSql} > 0 THEN 1 ELSE 0 END),0) AS outstanding_bills
+	{$monthlyOutstandingFromSql}");
 $outstandingRow = $stmtOutstanding->fetch(PDO::FETCH_ASSOC) ?: ['total_outstanding' => 0, 'outstanding_bills' => 0];
 
 // Accounts receivable aging for monthly bills only
 $stmtAging = $db->query("SELECT
-	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) <= 0 THEN b.amount ELSE 0 END),0) AS current_bucket,
-	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) BETWEEN 1 AND 30 THEN b.amount ELSE 0 END),0) AS bucket_1_30,
-	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) BETWEEN 31 AND 60 THEN b.amount ELSE 0 END),0) AS bucket_31_60,
-	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) BETWEEN 61 AND 90 THEN b.amount ELSE 0 END),0) AS bucket_61_90,
-	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) > 90 THEN b.amount ELSE 0 END),0) AS bucket_over_90
-	FROM bills b
-	WHERE {$monthlyBillPredicateSql}");
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) <= 0 THEN {$monthlyOutstandingExprSql} ELSE 0 END),0) AS current_bucket,
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) BETWEEN 1 AND 30 THEN {$monthlyOutstandingExprSql} ELSE 0 END),0) AS bucket_1_30,
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) BETWEEN 31 AND 60 THEN {$monthlyOutstandingExprSql} ELSE 0 END),0) AS bucket_31_60,
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) BETWEEN 61 AND 90 THEN {$monthlyOutstandingExprSql} ELSE 0 END),0) AS bucket_61_90,
+	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) > 90 THEN {$monthlyOutstandingExprSql} ELSE 0 END),0) AS bucket_over_90
+	{$monthlyOutstandingFromSql}");
 $agingRow = $stmtAging->fetch(PDO::FETCH_ASSOC) ?: [
 	'current_bucket' => 0,
 	'bucket_1_30' => 0,
