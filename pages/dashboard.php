@@ -125,16 +125,30 @@ if ($db) {
     $monthlyBillPredicateSql = 'NOT ' . $registrationBillPredicateSql;
     $registrationPaymentPredicateSql = "(p.registration_id IS NOT NULL OR EXISTS (SELECT 1 FROM bill_line_items bli_reg WHERE bli_reg.bill_id = p.bill_id AND bli_reg.line_type = 'registration_fee') OR EXISTS (SELECT 1 FROM bills b_reg WHERE b_reg.id = p.bill_id AND b_reg.consumption = 0 AND b_reg.rate_per_unit = 0 AND b_reg.base_amount = 0 AND b_reg.service_charge > 0))";
     $monthlyPaymentPredicateSql = 'NOT ' . $registrationPaymentPredicateSql;
+    $monthlyOutstandingExprSql = "GREATEST(0, COALESCE(b.amount, 0) - COALESCE(p_paid.completed_paid, 0) + COALESCE(pa_adj.approved_adjustments, 0))";
 
     if ($isAdmin) {
         $stmtAdminBillSummary = $db->query("SELECT
-            COALESCE(SUM(CASE WHEN {$monthlyBillPredicateSql} AND b.status IN ('pending','overdue') AND b.amount > 0 THEN b.amount ELSE 0 END), 0) AS monthly_unpaid,
-            COALESCE(SUM(CASE WHEN {$monthlyBillPredicateSql} AND b.status = 'pending' AND b.amount > 0 THEN b.amount ELSE 0 END), 0) AS monthly_pending_amount,
-            COALESCE(SUM(CASE WHEN {$monthlyBillPredicateSql} AND b.status = 'overdue' AND b.amount > 0 THEN b.amount ELSE 0 END), 0) AS monthly_overdue_amount,
-            COALESCE(SUM(CASE WHEN {$monthlyBillPredicateSql} AND b.status IN ('pending','overdue') AND b.amount > 0 THEN 1 ELSE 0 END), 0) AS monthly_pending_count,
+            COALESCE(SUM(CASE WHEN {$monthlyBillPredicateSql} AND b.status IN ('pending','overdue') AND b.amount > 0 THEN {$monthlyOutstandingExprSql} ELSE 0 END), 0) AS monthly_unpaid,
+            COALESCE(SUM(CASE WHEN {$monthlyBillPredicateSql} AND b.status = 'pending' AND b.amount > 0 THEN {$monthlyOutstandingExprSql} ELSE 0 END), 0) AS monthly_pending_amount,
+            COALESCE(SUM(CASE WHEN {$monthlyBillPredicateSql} AND b.status = 'overdue' AND b.amount > 0 THEN {$monthlyOutstandingExprSql} ELSE 0 END), 0) AS monthly_overdue_amount,
+            COALESCE(SUM(CASE WHEN {$monthlyBillPredicateSql} AND b.status IN ('pending','overdue') AND b.amount > 0 AND {$monthlyOutstandingExprSql} > 0 THEN 1 ELSE 0 END), 0) AS monthly_pending_count,
             COALESCE(SUM(CASE WHEN {$registrationBillPredicateSql} AND b.amount > 0 THEN b.amount ELSE 0 END), 0) AS registration_billed_total,
             COALESCE(SUM(CASE WHEN {$registrationBillPredicateSql} AND b.amount > 0 THEN 1 ELSE 0 END), 0) AS registration_bills_count
-            FROM bills b");
+            FROM bills b
+            LEFT JOIN (
+                SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+                FROM payments
+                WHERE status = 'completed' AND bill_id IS NOT NULL
+                GROUP BY bill_id
+            ) p_paid ON p_paid.bill_id = b.id
+            LEFT JOIN (
+                SELECT p.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+                FROM payment_adjustments pa
+                INNER JOIN payments p ON p.id = pa.payment_id
+                WHERE pa.status = 'approved' AND p.bill_id IS NOT NULL
+                GROUP BY p.bill_id
+            ) pa_adj ON pa_adj.bill_id = b.id");
         $adminBillSummary = $stmtAdminBillSummary ? ($stmtAdminBillSummary->fetch(PDO::FETCH_ASSOC) ?: []) : [];
 
         $stmtAdminPaymentSummary = $db->query("SELECT
