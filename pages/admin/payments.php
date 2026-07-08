@@ -13,6 +13,7 @@ require_once __DIR__ . '/../../includes/InstallmentPlan.php';
 require_once __DIR__ . '/../../includes/Payment.php';
 require_once __DIR__ . '/../../includes/FinanceApproval.php';
 require_once __DIR__ . '/../../includes/ErrorLog.php';
+require_once __DIR__ . '/../../includes/ClientWallet.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -28,6 +29,7 @@ $creditService = new CreditNote($db);
 $paymentService = new Payment($db);
 $financeApproval = new FinanceApproval($db);
 $installmentPlanner = new InstallmentPlan($db);
+$wallet = new ClientWallet($db);
 $settingsService = new BillingSettings($db);
 $settings = $settingsService->getSettings();
 ErrorLog::ensureTable($db);
@@ -179,12 +181,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 			foreach ($openBills as $openBill) {
 				$totalOutstanding += $getOutstanding($db, (int)$openBill['id'], (float)$openBill['amount']);
 			}
-			if ($totalOutstanding <= 0.0) {
-				$message = 'This account has no outstanding balance to receipt.';
-				$message_type = 'danger';
-			} elseif ($amount > $totalOutstanding + 0.01) {
-				$message = 'Amount paid cannot exceed total outstanding balance (' . number_format($totalOutstanding, 2) . ').';
-				$message_type = 'danger';
+			if ($totalOutstanding <= 0.0 && $amount > 0) {
+				// No open bills — entire amount goes to wallet
+				$allocationPlan[] = ['bill' => null, 'amount' => 0.0, 'excess_to_wallet' => round($amount, 2)];
 			} else {
 				foreach ($openBills as $openBill) {
 					if ($remaining <= 0.0) {
@@ -196,13 +195,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 					}
 					$applyAmount = min($remaining, $billOutstanding);
 					if ($applyAmount > 0.0) {
-						$allocationPlan[] = ['bill' => $openBill, 'amount' => round($applyAmount, 2)];
+						$allocationPlan[] = ['bill' => $openBill, 'amount' => round($applyAmount, 2), 'excess_to_wallet' => 0.0];
 						$remaining = round($remaining - $applyAmount, 2);
 					}
 				}
+				// Any remaining after all bills = goes to wallet
 				if ($remaining > 0.01) {
-					$message = 'Could not allocate full amount to outstanding invoices. Remaining ' . number_format($remaining, 2) . '.';
-					$message_type = 'danger';
+					if (!empty($allocationPlan)) {
+						$allocationPlan[count($allocationPlan) - 1]['excess_to_wallet'] =
+							round(($allocationPlan[count($allocationPlan) - 1]['excess_to_wallet'] ?? 0) + $remaining, 2);
+					} else {
+						$allocationPlan[] = ['bill' => null, 'amount' => 0.0, 'excess_to_wallet' => round($remaining, 2)];
+					}
 				}
 			}
 		}
@@ -211,12 +215,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 			$recordedPaymentIds = [];
 			$notificationWarnings = [];
 			$receiptSaved = false;
+			$totalExcessToWallet = 0.0;
 			try {
 				$db->beginTransaction();
-				$totalParts = count($allocationPlan);
+				$totalParts = count(array_filter($allocationPlan, static fn($a) => ($a['bill'] ?? null) !== null && $a['amount'] > 0));
 				$receivedByUserId = (int)($_SESSION['user_id'] ?? 0);
+				$billAllocIdx = 0;
 				foreach ($allocationPlan as $idx => $alloc) {
 					$allocBill = $alloc['bill'];
+					$excessToWallet = round((float)($alloc['excess_to_wallet'] ?? 0), 2);
+					if ($allocBill === null || (float)$alloc['amount'] <= 0) {
+						// No bill to apply — just record wallet credit later
+						$totalExcessToWallet = round($totalExcessToWallet + $excessToWallet, 2);
+						continue;
+					}
 					$allocAmount = (float)$alloc['amount'];
 					$allocBillId = (int)$allocBill['id'];
 					$allocReference = $referenceNo;
@@ -290,6 +302,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 					}
 				}
 
+				// Store any excess in the client wallet
+				if ($totalExcessToWallet > 0.01) {
+					$walletNote = 'Excess from receipt ' . $referenceNo . ($paymentNote !== '' ? ' - ' . $paymentNote : '');
+					$firstPayId = !empty($recordedPaymentIds) ? (int)$recordedPaymentIds[0] : 0;
+					$wallet->addCredit(
+						(int)$currentUser['id'],
+						$totalExcessToWallet,
+						$referenceNo,
+						$firstPayId,
+						$walletNote,
+						(int)($_SESSION['user_id'] ?? 0)
+					);
+				}
+
 				$db->commit();
 				$receiptSaved = true;
 
@@ -328,9 +354,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 					}
 				}
 
+				$billCount = count(array_filter($allocationPlan, static fn($a) => ($a['bill'] ?? null) !== null && $a['amount'] > 0));
 				$message = $paymentTarget === 'balance'
-					? ('Manual payment recorded and allocated to ' . count($allocationPlan) . ' invoice(s).')
+					? ('Manual payment recorded and allocated to ' . $billCount . ' invoice(s).')
 					: 'Manual payment recorded successfully.';
+				if ($totalExcessToWallet > 0.01) {
+					$currency = (string)($settings['currency'] ?? 'KES');
+					$message .= ' Excess ' . $currency . ' ' . number_format($totalExcessToWallet, 2) . ' stored as client credit balance.';
+				}
 				if (!empty($notificationWarnings)) {
 					$message .= ' Notification note: ' . implode(' ', array_values(array_unique($notificationWarnings)));
 				}
@@ -599,6 +630,16 @@ include __DIR__ . '/../../templates/header.php';
 						<hr>
 						<p class="mb-1"><strong><?php echo htmlspecialchars($currentUser['full_name']); ?></strong></p>
 						<p class="mb-0 text-muted">Meter: <?php echo htmlspecialchars($currentUser['meter_number'] ?? ''); ?></p>
+						<?php
+							$walletBalance = $wallet->getBalance((int)$currentUser['id']);
+						?>
+						<?php if ($walletBalance > 0): ?>
+							<div class="alert alert-info mt-2 mb-0 py-2 px-3 small">
+								<i class="bi bi-piggy-bank me-1"></i>
+								<strong>Credit balance: <?php echo htmlspecialchars($currency ?? 'KES'); ?> <?php echo number_format($walletBalance, 2); ?></strong><br>
+								<span class="text-muted">This will be automatically applied to the next new bill.</span>
+							</div>
+						<?php endif; ?>
 					<?php endif; ?>
 				</div>
 			</div>

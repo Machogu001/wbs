@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../includes/MeterReading.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/PaymentLink.php';
 require_once __DIR__ . '/../../includes/ShortUrl.php';
+require_once __DIR__ . '/../../includes/ClientWallet.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -134,6 +135,45 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 
 	if (empty($billResult['success'])) {
 		return ['success' => false, 'message' => $billResult['message'] ?? 'Failed to create pending bill.'];
+	}
+
+	// Auto-apply any existing wallet credit towards the new bill
+	try {
+		$walletService = new ClientWallet($db);
+		$walletBalance = $walletService->getBalance((int)$user['id']);
+		if ($walletBalance > 0.01) {
+			$billOutstanding = $billResult['amount'];
+			$autoApply = round(min($walletBalance, $billOutstanding), 2);
+			if ($autoApply > 0) {
+				// Insert a completed payment from wallet credit
+				$walletRef = 'WALLET-' . date('YmdHis');
+				$stmtWP = $db->prepare("INSERT INTO payments
+					(bill_id, user_id, phone_number, payment_method, amount, mpesa_receipt, status, transaction_date, received_by_user_id, created_at)
+					VALUES (?, ?, ?, 'wallet', ?, ?, 'completed', NOW(), ?, NOW())");
+				$stmtWP->execute([
+					(int)$billResult['bill_id'],
+					(int)$user['id'],
+					$user['phone_number'] ?? null,
+					$autoApply,
+					$walletRef,
+					$actorId,
+				]);
+				$walletService->applyTowardsBill(
+					(int)$user['id'],
+					(int)$billResult['bill_id'],
+					$autoApply,
+					'Auto-applied to new bill #' . $billResult['bill_id'],
+					(int)$actorId
+				);
+				// Mark bill paid if credit covers it fully
+				if ($autoApply >= $billOutstanding - 0.01) {
+					$stmtBU = $db->prepare("UPDATE bills SET status = 'paid' WHERE id = ?");
+					$stmtBU->execute([(int)$billResult['bill_id']]);
+				}
+			}
+		}
+	} catch (\Throwable $e) {
+		error_log('Wallet auto-apply on bill creation failed: ' . $e->getMessage());
 	}
 
 	$sms = new SMS();
