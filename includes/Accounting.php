@@ -9,6 +9,7 @@ class Accounting {
 	private $periodLockTable = 'accounting_period_locks';
 	private $budgetTable = 'accounting_budgets';
 	private $transferTable = 'accounting_transfers';
+	private static bool $schemaEnsured = false;
 
 	public function __construct($db = null) {
 		if ($db === null) {
@@ -21,7 +22,10 @@ class Accounting {
 		}
 
 		$this->db = $db;
-		self::ensureTables($this->db);
+		if (!self::$schemaEnsured && !$this->db->inTransaction()) {
+			self::ensureTables($this->db);
+			self::$schemaEnsured = true;
+		}
 	}
 
 	public static function ensureTables($db = null) {
