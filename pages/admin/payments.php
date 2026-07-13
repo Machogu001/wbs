@@ -371,6 +371,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 				if ($db->inTransaction()) {
 					$db->rollBack();
 				}
+
+				// Defensive fallback: in rare cases an implicit DB commit may have
+				// persisted one or more payment rows before this exception was raised.
+				if (!$receiptSaved && !empty($recordedPaymentIds)) {
+					try {
+						$placeholders = implode(',', array_fill(0, count($recordedPaymentIds), '?'));
+						$stmtPersisted = $db->prepare("SELECT COUNT(*) FROM payments WHERE id IN ({$placeholders})");
+						foreach ($recordedPaymentIds as $idx => $persistedId) {
+							$stmtPersisted->bindValue($idx + 1, (int)$persistedId, PDO::PARAM_INT);
+						}
+						$stmtPersisted->execute();
+						if ((int)$stmtPersisted->fetchColumn() > 0) {
+							$receiptSaved = true;
+						}
+					} catch (Throwable $persistCheckError) {
+						// Keep original error handling path if persistence check fails.
+					}
+				}
+
 				if ($receiptSaved) {
 					$message = $paymentTarget === 'balance'
 						? ('Manual payment recorded and allocated to ' . count($allocationPlan) . ' invoice(s).')
