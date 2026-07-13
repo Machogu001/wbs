@@ -20,6 +20,7 @@ $message_type = 'danger';
 $billData = null;
 $userData = null;
 $latestPayment = null;
+$amountDue = 0.0;
 
 $token = isset($_GET['t']) ? trim($_GET['t']) : '';
 
@@ -37,14 +38,16 @@ if (!$db) {
         if (!$billData) {
             $message = 'Bill not found.';
         } else {
+            $paymentService = new Payment($db);
+            $amountDue = $paymentService->getBillOutstandingAmount((int)$billId);
+            if ($amountDue <= 0.01) {
+                $message = 'This bill has already been paid.';
+                $latestPayment = $paymentService->getLatestCompletedByBillId($billId);
+            }
             $userService = new User($db);
             $userData = $userService->getById($billData['user_id']);
             if (!$userData) {
                 $message = 'Account not found for this bill.';
-            } elseif ($billData['status'] === 'paid') {
-                $message = 'This bill has already been paid.';
-                $paymentService = new Payment($db);
-                $latestPayment = $paymentService->getLatestCompletedByBillId($billId);
             }
         }
     }
@@ -60,49 +63,56 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST' && $billData && $userData
         $message = 'Invalid phone number format. Use 07XXXXXXXX, 01XXXXXXXX, or 2547XXXXXXXX.';
     } else {
         $formatted_phone = '254' . $matches[1];
+        $paymentService = new Payment($db);
+        $amountDue = $paymentService->getBillOutstandingAmount((int)$billData['id']);
+        if ($amountDue <= 0.01) {
+            $message = 'This bill has already been paid.';
+            $latestPayment = $paymentService->getLatestCompletedByBillId((int)$billData['id']);
+            $message_type = 'success';
+        } else {
+            try {
+                $mpesa = new Mpesa();
+                $response = $mpesa->stkPush(
+                    $formatted_phone,
+                    $amountDue,
+                    $billData['account_number'],
+                    'Water Bill - ' . date('F Y', strtotime($billData['billing_month']))
+                );
 
-        try {
-            $mpesa = new Mpesa();
-            $response = $mpesa->stkPush(
-                $formatted_phone,
-                $billData['amount'],
-                $billData['account_number'],
-                'Water Bill - ' . date('F Y', strtotime($billData['billing_month']))
-            );
+                if (isset($response['error'])) {
+                    $details = '';
+                    if (isset($response['http_code'])) {
+                        $details .= ' (HTTP ' . $response['http_code'] . ')';
+                    }
+                    if (isset($response['details']) && is_array($response['details'])) {
+                        if (!empty($response['details']['errorMessage'])) {
+                            $details .= ': ' . $response['details']['errorMessage'];
+                        } elseif (!empty($response['details']['errorCode'])) {
+                            $details .= ' (Code ' . $response['details']['errorCode'] . ')';
+                        }
+                    }
+                    $message = 'Payment initiation failed: ' . $response['error'] . $details;
+                } else {
+                    $payment = new Payment($db);
+                    $payment->bill_id = $billData['id'];
+                    $payment->user_id = $billData['user_id'];
+                    $payment->phone_number = $formatted_phone;
+                    $payment->amount = $amountDue;
+                    $payment->merchant_request_id = $response['MerchantRequestID'];
+                    $payment->checkout_request_id = $response['CheckoutRequestID'];
+                    $payment->status = 'pending';
 
-            if (isset($response['error'])) {
-                $details = '';
-                if (isset($response['http_code'])) {
-                    $details .= ' (HTTP ' . $response['http_code'] . ')';
-                }
-                if (isset($response['details']) && is_array($response['details'])) {
-                    if (!empty($response['details']['errorMessage'])) {
-                        $details .= ': ' . $response['details']['errorMessage'];
-                    } elseif (!empty($response['details']['errorCode'])) {
-                        $details .= ' (Code ' . $response['details']['errorCode'] . ')';
+                    if ($payment->create()) {
+                        $message = 'Payment initiated. Check your phone for an M-Pesa prompt.';
+                        $message_type = 'success';
+                        $createdPaymentId = (int)$payment->id;
+                    } else {
+                        $message = 'Failed to save payment record.';
                     }
                 }
-                $message = 'Payment initiation failed: ' . $response['error'] . $details;
-            } else {
-                $payment = new Payment($db);
-                $payment->bill_id = $billData['id'];
-                $payment->user_id = $billData['user_id'];
-                $payment->phone_number = $formatted_phone;
-                $payment->amount = $billData['amount'];
-                $payment->merchant_request_id = $response['MerchantRequestID'];
-                $payment->checkout_request_id = $response['CheckoutRequestID'];
-                $payment->status = 'pending';
-
-                if ($payment->create()) {
-                    $message = 'Payment initiated. Check your phone for an M-Pesa prompt.';
-                    $message_type = 'success';
-                    $createdPaymentId = (int)$payment->id;
-                } else {
-                    $message = 'Failed to save payment record.';
-                }
+            } catch (Exception $e) {
+                $message = 'Error initiating payment: ' . $e->getMessage();
             }
-        } catch (Exception $e) {
-            $message = 'Error initiating payment: ' . $e->getMessage();
         }
     }
 }
@@ -249,7 +259,7 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST' && $billData && $userData
                             <dd class="col-sm-8"><?php echo htmlspecialchars(date('F Y', strtotime($billData['billing_month']))); ?></dd>
 
                             <dt class="col-sm-4">Amount Due</dt>
-                            <dd class="col-sm-8">KES <?php echo number_format((float)$billData['amount'], 2); ?></dd>
+                            <dd class="col-sm-8">KES <?php echo number_format((float)$amountDue, 2); ?></dd>
 
                             <dt class="col-sm-4">Due Date</dt>
                             <dd class="col-sm-8"><?php echo htmlspecialchars(date('d-m-Y', strtotime($billData['due_date']))); ?></dd>
