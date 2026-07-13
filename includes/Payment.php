@@ -580,10 +580,14 @@ class Payment {
 				. "Please log in and complete payment at https://wbs.bremac.co.ke/registration-payment\n"
 				. $companyName;
 		} else {
+			$billOutstanding = !empty($paymentRow['bill_id'])
+				? $this->getBillOutstandingAmount((int)$paymentRow['bill_id'])
+				: 0.0;
 			$messageText = "Dear {$customerName},\n"
 				. "Your {$methodLabel} payment of KES " . number_format($amount, 2)
 				. ($receipt !== '' ? " (Ref: {$receipt})" : '')
 				. " for Account No. {$accountNumber} has been received successfully.\n"
+				. "Remaining bill balance: KES " . number_format($billOutstanding, 2) . "\n"
 				. "Thank you.\n"
 				. $companyName;
 		}

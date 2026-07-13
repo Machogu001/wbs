@@ -18,6 +18,7 @@ $message_type = 'danger';
 $paymentRow = null;
 $billRow = null;
 $userRow = null;
+$remainingBalance = null;
 
 $token = isset($_GET['t']) ? trim($_GET['t']) : '';
 $paymentId = isset($_GET['p']) ? (int)$_GET['p'] : 0;
@@ -49,6 +50,7 @@ if (!$db) {
                     $message = 'Payment is not completed yet.';
                     $message_type = 'warning';
                 } else {
+                    $remainingBalance = $payment->getBillOutstandingAmount((int)$billId);
                     $message = 'Payment successful.';
                     $message_type = 'success';
                 }
@@ -150,6 +152,9 @@ if (!empty($paymentRow['received_by_user_id'])) {
 
                             <dt class="col-sm-4">Amount Paid</dt>
                             <dd class="col-sm-8">KES <?php echo number_format((float)$paymentRow['amount'], 2); ?></dd>
+
+							<dt class="col-sm-4">Remaining Balance</dt>
+							<dd class="col-sm-8">KES <?php echo number_format((float)($remainingBalance ?? 0), 2); ?></dd>
 
                             <dt class="col-sm-4">Payment Status</dt>
                             <dd class="col-sm-8"><span class="badge bg-success">Completed</span></dd>

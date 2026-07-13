@@ -59,6 +59,8 @@ $accountNumber = $billRow['account_number'];
 $customerName = $userRow['full_name'];
 $billingMonth = date('F Y', strtotime($billRow['billing_month']));
 $amountPaid = number_format((float)$paymentRow['amount'], 2);
+$remainingBalanceValue = $payment->getBillOutstandingAmount((int)$billId);
+$remainingBalance = number_format((float)$remainingBalanceValue, 2);
 $paidOn = date('d-m-Y H:i', strtotime($paymentRow['transaction_date'] ?? $paymentRow['created_at']));
 $paymentMethodMap = [
     'mpesa' => 'M-Pesa',
@@ -123,6 +125,7 @@ body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 10px; color: #0f1
         <tr><td class='label'>Customer Name</td><td class='value'>" . htmlspecialchars($customerName) . "</td></tr>
         <tr><td class='label'>Billing Month</td><td class='value'>" . htmlspecialchars($billingMonth) . "</td></tr>
         <tr><td class='label'>Amount Paid</td><td class='value'>KES " . htmlspecialchars($amountPaid) . "</td></tr>
+        <tr><td class='label'>Remaining Balance</td><td class='value'>KES " . htmlspecialchars($remainingBalance) . "</td></tr>
         <tr><td class='label'>Payment Status</td><td class='value'>Completed</td></tr>
         <tr><td class='label'>Paid On</td><td class='value'>" . htmlspecialchars($paidOn) . "</td></tr>
             <tr><td class='label'>Payment Method</td><td class='value'>" . htmlspecialchars($paymentMethodLabel) . "</td></tr>
