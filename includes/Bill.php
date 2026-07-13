@@ -319,7 +319,7 @@ class Bill {
 	public function getUsersBillingSummary() {
 		$query = "SELECT u.id, u.account_number, u.full_name, u.phone_number, u.meter_number,
 						 lb.id AS last_bill_id, lb.amount AS last_amount, lb.status AS last_status, lb.due_date AS last_due_date,
-						 COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') THEN b.amount ELSE 0 END), 0) AS total_unpaid
+						 COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') THEN GREATEST(0, COALESCE(b.amount, 0) - COALESCE(p_paid.completed_paid, 0) + COALESCE(pa_adj.approved_adjustments, 0)) ELSE 0 END), 0) AS total_unpaid
 				  FROM users u
 				  LEFT JOIN (
 					  SELECT b1.* FROM bills b1
@@ -330,6 +330,19 @@ class Bill {
 					  ) b2 ON b1.user_id = b2.user_id AND b1.id = b2.max_id
 				  ) lb ON lb.user_id = u.id
 				  LEFT JOIN bills b ON b.user_id = u.id
+				  LEFT JOIN (
+					  SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+					  FROM payments
+					  WHERE status = 'completed' AND bill_id IS NOT NULL
+					  GROUP BY bill_id
+				  ) p_paid ON p_paid.bill_id = b.id
+				  LEFT JOIN (
+					  SELECT p.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+					  FROM payment_adjustments pa
+					  INNER JOIN payments p ON p.id = pa.payment_id
+					  WHERE pa.status = 'approved' AND p.bill_id IS NOT NULL
+					  GROUP BY p.bill_id
+				  ) pa_adj ON pa_adj.bill_id = b.id
 				  GROUP BY u.id, u.account_number, u.full_name, u.phone_number, u.meter_number, lb.id, lb.amount, lb.status, lb.due_date
 				  ORDER BY u.full_name ASC";
 		$stmt = $this->conn->prepare($query);
