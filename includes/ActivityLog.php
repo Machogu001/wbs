@@ -3,12 +3,31 @@ class ActivityLog {
     private $conn;
     private $table = "activity_log";
     private $lookupTable = "activity_ip_lookup";
+    private static bool $tablesEnsured = false;
+    private static bool $lookupEnsured = false;
+    private static bool $purgeDone = false;
 
     public function __construct($db) {
         $this->conn = $db;
-        $this->ensureTable();
-        $this->ensureLookupTable();
-        $this->purgeOlderThanDays(30);
+
+        // Avoid DDL or cleanup while an outer transaction is active.
+        // DDL can implicitly commit and break surrounding transaction flow.
+        if ($this->conn->inTransaction()) {
+            return;
+        }
+
+        if (!self::$tablesEnsured) {
+            $this->ensureTable();
+            self::$tablesEnsured = true;
+        }
+        if (!self::$lookupEnsured) {
+            $this->ensureLookupTable();
+            self::$lookupEnsured = true;
+        }
+        if (!self::$purgeDone) {
+            $this->purgeOlderThanDays(30);
+            self::$purgeDone = true;
+        }
     }
 
     private function ensureTable() {
