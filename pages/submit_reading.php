@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
                             "Acc: {$account}\n" .
                             "Pay online: {$payUrl}";
 
-                        $sms->send($user['phone_number'], $messageText);
+                        $sms->sendWithFallback($user['phone_number'], $messageText, 'bill_notification');
 
                         // Also send an email bill notice if user has email
                         if (!empty($user['email'])) {

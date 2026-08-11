@@ -324,7 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 							"Acc: {$account}\n" .
 							"Pay online: {$payUrl}";
 
-						$sms->send($user['phone_number'], $messageText);
+						$sms->sendWithFallback($user['phone_number'], $messageText, 'bill_notification');
 						$reading_id = $readingService->createReading(
 							$user['id'],
 							$user['account_number'],

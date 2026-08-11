@@ -1329,6 +1329,69 @@
             }, 1000);
         }
 
+        function setLandingTwoFactorResendBusy(isBusy) {
+            var $phoneLink = $('#landingTwoFactorUsePhone');
+            var $emailLink = $('#landingTwoFactorUseEmail');
+
+            if ($phoneLink.length) {
+                $phoneLink.toggleClass('disabled', isBusy).css('pointer-events', isBusy ? 'none' : '');
+            }
+            if ($emailLink.length) {
+                $emailLink.toggleClass('disabled', isBusy).css('pointer-events', isBusy ? 'none' : '');
+            }
+        }
+
+        function requestLandingTwoFactorResend(method) {
+            if (landingTwoFactorResendRemaining > 0) {
+                if (window.showToast) {
+                    showToast('Please wait ' + landingTwoFactorResendRemaining + ' seconds before requesting another code.','warning');
+                }
+                return;
+            }
+
+            setLandingTwoFactorResendBusy(true);
+
+            $.ajax({
+                url: '/api/auth/resend_2fa',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ method: method }),
+                success: function(resp) {
+                    if (resp.status === 'success') {
+                        var actualMethod = (resp.data && resp.data.method) ? resp.data.method : method;
+                        var label = actualMethod === 'email' ? 'email' : 'phone';
+                        if (window.showToast) {
+                            showToast(resp.message || ('Verification code sent to your ' + label + '.'),'info');
+                        }
+                        showLandingTwoFactorPrompt(actualMethod === 'email' ? 'email' : 'phone');
+                        startLandingTwoFactorCooldown(60);
+                        if (actualMethod === 'sms' && window.startWebOtpListener) startWebOtpListener('#landing_two_factor_code');
+                    } else if (resp.status === 'cooldown') {
+                        var remaining = resp.data && resp.data.remaining ? resp.data.remaining : 0;
+                        if (remaining > 0) {
+                            startLandingTwoFactorCooldown(remaining);
+                        }
+                        if (window.showToast) {
+                            showToast(resp.message || 'Please wait before requesting another code.','warning');
+                        }
+                    } else if (window.showToast) {
+                        showToast(resp.message || 'Could not resend code.','danger');
+                    }
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON ? xhr.responseJSON.message : 'Could not resend code.';
+                    if (window.showToast) {
+                        showToast(error,'danger');
+                    }
+                },
+                complete: function() {
+                    if (landingTwoFactorResendRemaining <= 0) {
+                        setLandingTwoFactorResendBusy(false);
+                    }
+                }
+            });
+        }
+
         function submitLandingTwoFactorCode() {
             var code = $('#landing_two_factor_code').val().trim();
             if (!code) {
@@ -1396,80 +1459,12 @@
 
         $(document).on('click', '#landingTwoFactorUsePhone', function(e) {
             e.preventDefault();
-            if ($(this).hasClass('disabled')) return;
-            $.ajax({
-                url: '/api/auth/resend_2fa',
-                type: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({ method: 'sms' }),
-                success: function(resp) {
-                    if (resp.status === 'success') {
-                        var actualMethod = (resp.data && resp.data.method) ? resp.data.method : 'sms';
-                        var label = actualMethod === 'email' ? 'email' : 'phone';
-                        if (window.showToast) {
-                            showToast(resp.message || ('Verification code sent to your ' + label + '.'),'info');
-                        }
-                        showLandingTwoFactorPrompt(actualMethod === 'email' ? 'email' : 'phone');
-                        startLandingTwoFactorCooldown(60);
-                        if (actualMethod === 'sms' && window.startWebOtpListener) startWebOtpListener('#landing_two_factor_code');
-                    } else if (resp.status === 'cooldown') {
-                        var remaining = resp.data && resp.data.remaining ? resp.data.remaining : 0;
-                        if (remaining > 0) {
-                            startLandingTwoFactorCooldown(remaining);
-                        }
-                        if (window.showToast) {
-                            showToast(resp.message || 'Please wait before requesting another code.','warning');
-                        }
-                    } else if (window.showToast) {
-                        showToast(resp.message || 'Could not resend code.','danger');
-                    }
-                },
-                error: function(xhr) {
-                    const error = xhr.responseJSON ? xhr.responseJSON.message : 'Could not resend code.';
-                    if (window.showToast) {
-                        showToast(error,'danger');
-                    }
-                }
-            });
+            requestLandingTwoFactorResend('sms');
         });
 
         $(document).on('click', '#landingTwoFactorUseEmail', function(e) {
             e.preventDefault();
-            if ($(this).hasClass('disabled')) return;
-            $.ajax({
-                url: '/api/auth/resend_2fa',
-                type: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({ method: 'email' }),
-                success: function(resp) {
-                    if (resp.status === 'success') {
-                        var actualMethod = (resp.data && resp.data.method) ? resp.data.method : 'email';
-                        var label = actualMethod === 'email' ? 'email' : 'phone';
-                        if (window.showToast) {
-                            showToast(resp.message || ('Verification code sent to your ' + label + '.'),'info');
-                        }
-                        showLandingTwoFactorPrompt(actualMethod === 'email' ? 'email' : 'phone');
-                        startLandingTwoFactorCooldown(60);
-                        if (actualMethod === 'sms' && window.startWebOtpListener) startWebOtpListener('#landing_two_factor_code');
-                    } else if (resp.status === 'cooldown') {
-                        var remaining = resp.data && resp.data.remaining ? resp.data.remaining : 0;
-                        if (remaining > 0) {
-                            startLandingTwoFactorCooldown(remaining);
-                        }
-                        if (window.showToast) {
-                            showToast(resp.message || 'Please wait before requesting another code.','warning');
-                        }
-                    } else if (window.showToast) {
-                        showToast(resp.message || 'Could not resend code.','danger');
-                    }
-                },
-                error: function(xhr) {
-                    const error = xhr.responseJSON ? xhr.responseJSON.message : 'Could not resend code.';
-                    if (window.showToast) {
-                        showToast(error,'danger');
-                    }
-                }
-            });
+            requestLandingTwoFactorResend('email');
         });
 
         /* ── WebOTP: auto-fill SMS verification codes on phones/tablets —

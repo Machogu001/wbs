@@ -208,7 +208,7 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 		"Acc: {$account}\n" .
 		"Pay online: {$payUrl}";
 
-	$sms->send($user['phone_number'], $messageText);
+	$sms->sendWithFallback($user['phone_number'], $messageText, 'bill_notification');
 
 	if (!empty($user['email'])) {
 		require_once __DIR__ . '/../../includes/Email.php';
