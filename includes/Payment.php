@@ -671,8 +671,8 @@ class Payment {
 			try {
 				require_once __DIR__ . '/Email.php';
 				$email = new Email();
-				$emailResult = $email->send((string)$user['email'], 'Payment received', $messageText);
-				$emailStatus = !empty($emailResult['success']) ? 'sent' : 'failed';
+				$emailResult = $email->queue((string)$user['email'], 'Payment received', $messageText, 'payment_confirmation');
+				$emailStatus = !empty($emailResult['success']) ? 'queued' : 'failed';
 				$status['email'] = ['status' => $emailStatus];
 				if ($errorLogger) {
 					$errorLogger->logSystemError('PaymentNotification', 'Email confirmation status: ' . $emailStatus, __FILE__, __LINE__, array_merge($baseNotificationContext, [
@@ -683,7 +683,7 @@ class Payment {
 					]));
 				}
 				if ($emailStatus === 'failed') {
-					$status['warnings'][] = 'Email confirmation could not be sent.';
+					$status['warnings'][] = 'Email confirmation could not be queued.';
 				}
 			} catch (Throwable $e) {
 				error_log('Payment email notification failed for payment #' . $paymentId . ': ' . $e->getMessage());

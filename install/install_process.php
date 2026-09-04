@@ -908,6 +908,7 @@ class Database {
                             <li>Delete the <code>install/</code> directory for security</li>
                             <li>Configure M-Pesa credentials in <code>.env</code> (MPESA_ENV, MPESA_SHORTCODE or MPESA_SHORT_CODE, MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_PASSKEY, MPESA_CALLBACK_URL)</li>
                             <li>Ensure <code>PAYMENT_LINK_SECRET</code> is set in <code>.env</code></li>
+                            <li>Run <code>sudo bash scripts/install_background_jobs.sh</code> from the application folder to enable SMS, email, and payment-reminder background jobs</li>
                         </ul>
                         <p class="mb-1"><strong>.env setup:</strong> ' . htmlspecialchars($envSetupStatus) . '</p>
                         ' . (!empty($envSetupNotes) ? '<p class="mb-0 small text-danger">' . htmlspecialchars(implode(' ', $envSetupNotes)) . '</p>' : '') . '

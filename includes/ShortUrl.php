@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../config/database.php';
 
 class ShortUrl
 {
@@ -9,6 +10,15 @@ class ShortUrl
 
     public function __construct($db)
     {
+        if ($db === null) {
+            $database = new Database();
+            $db = $database->getConnection();
+        }
+
+        if ($db === null) {
+            throw new RuntimeException('Database connection required for short URLs');
+        }
+
         $this->db = $db;
         $this->createTable();
     }

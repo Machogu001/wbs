@@ -75,10 +75,11 @@ try {
 
         $paymentData = $payment->getById((int)$paymentData['id']) ?: $paymentData;
 
-        // Send SMS/email notification using the shared payment notifier.
+        // Load the user for the optional ETIMS submission below. The completed
+        // payment notification is sent by updatePaymentStatus() on the first
+        // transition to completed.
         $userService = new User($db);
         $user = $userService->getById($paymentData['user_id']);
-        $payment->sendCompletedPaymentNotification((int)$paymentData['id']);
 
         // Submit sale to ETIMS gateway if configured
         try {
@@ -160,10 +161,11 @@ try {
             if (!empty($user['email'])) {
                 require_once __DIR__ . '/../../includes/Email.php';
                 $email = new Email();
-                $email->send(
+                $email->queue(
                     $user['email'],
                     'Payment failed',
-                    $messageText
+                    $messageText,
+                    'payment_failure'
                 );
             }
         }

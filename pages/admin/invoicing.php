@@ -23,6 +23,8 @@ if(!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_inv
 
 $message = null;
 $message_type = 'success';
+$defaultBillingMonth = date('Y-m-01', strtotime('first day of last month'));
+$defaultDueDate = date('Y-m-d', strtotime('+3 days'));
 
 $settingsService = null;
 if ($db) {
@@ -213,7 +215,7 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 	if (!empty($user['email'])) {
 		require_once __DIR__ . '/../../includes/Email.php';
 		$email = new Email();
-		$email->send($user['email'], 'New water bill generated', $messageText);
+		$email->queue($user['email'], 'New water bill generated', $messageText, 'bill_notification');
 	}
 
 	$readingId = $readingService->createReading(
@@ -246,8 +248,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 	if (isset($_POST['action']) && $_POST['action'] === 'add_reading') {
 		$identifiers = $_POST['account_or_meter'] ?? [];
 		$currentReadings = $_POST['current_reading'] ?? [];
-		$billingMonth = $_POST['billing_month'] ?? '';
-		$dueDate = $_POST['due_date'] ?? '';
+		$billingMonth = trim((string)($_POST['billing_month'] ?? '')) ?: $defaultBillingMonth;
+		$dueDate = trim((string)($_POST['due_date'] ?? '')) ?: $defaultDueDate;
 
 		if (!is_array($identifiers)) {
 			$identifiers = [$identifiers];
@@ -307,8 +309,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 			$message_type = 'danger';
 		}
 	} elseif (isset($_POST['action']) && $_POST['action'] === 'import_readings_csv') {
-		$defaultBillingMonth = trim((string)($_POST['import_billing_month'] ?? ''));
-		$defaultDueDate = trim((string)($_POST['import_due_date'] ?? ''));
+		$importBillingMonth = trim((string)($_POST['import_billing_month'] ?? '')) ?: $defaultBillingMonth;
+		$importDueDate = trim((string)($_POST['import_due_date'] ?? '')) ?: $defaultDueDate;
 
 		if (!isset($_FILES['readings_csv']) || ($_FILES['readings_csv']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
 			$message = 'Please upload a CSV file to import readings.';
@@ -349,8 +351,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 						'row_number' => $rowNumber,
 						'account_or_meter' => $identifier,
 						'current_reading' => $currentReading,
-						'billing_month' => $billingMonth !== '' ? $billingMonth : $defaultBillingMonth,
-						'due_date' => $dueDate !== '' ? $dueDate : $defaultDueDate,
+						'billing_month' => $billingMonth !== '' ? $billingMonth : $importBillingMonth,
+						'due_date' => $dueDate !== '' ? $dueDate : $importDueDate,
 						'photo' => null,
 					];
 				}
@@ -506,11 +508,11 @@ if (isset($_SESSION['flash_message'])) {
 							</div>
 							<div class="col-xl-3 col-lg-3 col-md-6">
 								<label class="form-label fw-semibold">Default Billing Month</label>
-								<input type="date" name="import_billing_month" class="form-control" value="<?php echo date('Y-m-01'); ?>">
+								<input type="date" name="import_billing_month" class="form-control" value="<?php echo htmlspecialchars($defaultBillingMonth); ?>">
 							</div>
 							<div class="col-xl-3 col-lg-3 col-md-6">
 								<label class="form-label fw-semibold">Default Due Date</label>
-								<input type="date" name="import_due_date" class="form-control" value="<?php echo date('Y-m-d', strtotime('+14 days')); ?>">
+								<input type="date" name="import_due_date" class="form-control" value="<?php echo htmlspecialchars($defaultDueDate); ?>">
 							</div>
 							<div class="col-xl-1 col-lg-12 d-flex align-items-end">
 								<button type="submit" class="btn btn-primary w-100">
@@ -525,11 +527,11 @@ if (isset($_SESSION['flash_message'])) {
 						<div class="row g-3">
 							<div class="col-md-6 col-xl-4">
 								<label class="form-label fw-semibold">Billing Month</label>
-								<input type="date" name="billing_month" class="form-control" value="<?php echo date('Y-m-01'); ?>" required>
+								<input type="date" name="billing_month" class="form-control" value="<?php echo htmlspecialchars($defaultBillingMonth); ?>" required>
 							</div>
 							<div class="col-md-6 col-xl-4">
 								<label class="form-label fw-semibold">Due Date</label>
-								<input type="date" name="due_date" class="form-control" value="<?php echo date('Y-m-d', strtotime('+14 days')); ?>" required>
+								<input type="date" name="due_date" class="form-control" value="<?php echo htmlspecialchars($defaultDueDate); ?>" required>
 							</div>
 							<div class="col-xl-4 d-flex align-items-end">
 								<div class="invoicing-shared-note w-100">

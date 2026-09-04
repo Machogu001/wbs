@@ -14,6 +14,7 @@ require_once __DIR__ . '/../includes/Bill.php';
 require_once __DIR__ . '/../includes/BillingSettings.php';
 require_once __DIR__ . '/../includes/SMS.php';
 require_once __DIR__ . '/../includes/PaymentLink.php';
+require_once __DIR__ . '/../includes/ShortUrl.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -28,6 +29,8 @@ require_once __DIR__ . '/../templates/header.php';
 
 $message = null;
 $message_type = "success";
+$defaultBillingMonth = date('Y-m-01', strtotime('first day of last month'));
+$defaultDueDate = date('Y-m-d', strtotime('+3 days'));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
     // CSRF validation
@@ -36,8 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
         die('Invalid CSRF token.');
     }
     $current_reading = (float)$_POST['current_reading'];
-    $billing_month = $_POST['billing_month'];
-    $due_date = $_POST['due_date'];
+    $billing_month = trim((string)($_POST['billing_month'] ?? '')) ?: $defaultBillingMonth;
+    $due_date = trim((string)($_POST['due_date'] ?? '')) ?: $defaultDueDate;
 
     if ($current_reading <= 0) {
         $message = "Current reading must be greater than 0.";
@@ -99,6 +102,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
                         $account = $user['account_number'];
                         $paybill = MpesaConfig::getShortCode();
                         $payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
+                        try {
+                            $shortUrl = new ShortUrl($db);
+                            $payUrl = $shortUrl->shortenUrl($payUrl, (int)$billResult['bill_id']);
+                        } catch (Throwable $e) {
+                            // Keep the full payment link if shortening fails.
+                            error_log('Reading payment link shortening failed: ' . $e->getMessage());
+                        }
 
                         $messageText = "AC: {$account}\n" .
                             "BillDate: {$billDate}\n" .
@@ -119,10 +129,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
                         if (!empty($user['email'])) {
                             require_once __DIR__ . '/../includes/Email.php';
                             $email = new Email();
-                            $email->send(
+                            $email->queue(
                                 $user['email'],
                                 'New water bill generated',
-                                $messageText
+                                $messageText,
+                                'bill_notification'
                             );
                         }
                         $readingService = new MeterReading($db);
@@ -193,11 +204,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Billing Month</label>
-                            <input type="date" name="billing_month" class="form-control" value="<?php echo date('Y-m-01'); ?>" required>
+                            <input type="date" name="billing_month" class="form-control" value="<?php echo htmlspecialchars($defaultBillingMonth); ?>" required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Due Date</label>
-                            <input type="date" name="due_date" class="form-control" value="<?php echo date('Y-m-d', strtotime('+14 days')); ?>" required>
+                            <input type="date" name="due_date" class="form-control" value="<?php echo htmlspecialchars($defaultDueDate); ?>" required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Meter Photo (JPG/PNG)</label>

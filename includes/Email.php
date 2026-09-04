@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../config/email_config.php';
+require_once __DIR__ . '/EmailQueue.php';
 
 class Email
 {
@@ -60,6 +61,39 @@ class Email
 
         $result = $this->sendViaSmtp($toEmail, $subject, $message, $headerString);
         return $result;
+    }
+
+    /**
+     * Store non-interactive email for background delivery.
+     *
+     * @return array{success: bool, queued: bool, message: string}
+     */
+    public function queue(string $toEmail, string $subject, string $body, string $type = 'general'): array
+    {
+        $toEmail = trim($toEmail);
+        if ($toEmail === '' || !filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
+            return [
+                'success' => false,
+                'queued' => false,
+                'message' => 'Invalid recipient email address',
+            ];
+        }
+
+        try {
+            $queued = (new EmailQueue())->queue($toEmail, $subject, $body, $type);
+            return [
+                'success' => $queued,
+                'queued' => $queued,
+                'message' => $queued ? 'Email queued for delivery' : 'Unable to queue email',
+            ];
+        } catch (Throwable $e) {
+            error_log('Email queue error: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'queued' => false,
+                'message' => 'Unable to queue email',
+            ];
+        }
     }
 
     private function normalizeNewlines(string $text): string

@@ -34,7 +34,22 @@ A comprehensive water billing management system with M-Pesa payment integration 
 4. Configure M-Pesa credentials in `.env`
 5. Configure SMS credentials in `.env`
 6. Configure email (SMTP) credentials in `.env`
-7. Remove the `install/` directory after installation
+7. Enable background jobs: `sudo bash scripts/install_background_jobs.sh`
+8. Remove the `install/` directory after installation
+
+### Background Jobs
+
+Run this once after each new installation:
+
+```bash
+sudo bash scripts/install_background_jobs.sh
+```
+
+The script enables the system cron service and installs these jobs:
+
+- SMS queue processing every minute.
+- Email queue processing every minute, so invoice creation and payment processing do not wait for SMTP.
+- Payment reminders daily at 8:00 AM: one day before a due date and once after a bill becomes overdue.
 
 ## Configuration
 

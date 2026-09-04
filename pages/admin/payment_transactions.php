@@ -36,9 +36,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reque
         $messageType = 'danger';
     } else {
         $paymentId = (int)($_POST['payment_id'] ?? 0);
-        $amount = (float)($_POST['amount'] ?? 0);
-        $receipt = trim((string)($_POST['reference_no'] ?? ''));
-        if ($paymentId > 0 && $approvals->createFromPayment($paymentId, $amount, (int)($_SESSION['user_id'] ?? 0), $receipt)) {
+        $paymentStmt = $db->prepare('SELECT payment_method, checkout_request_id, amount, mpesa_receipt FROM payments WHERE id = ? LIMIT 1');
+        $paymentStmt->execute([$paymentId]);
+        $paymentForApproval = $paymentStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        $isMpesaPayment = $paymentForApproval !== null
+            && (strtolower((string)($paymentForApproval['payment_method'] ?? '')) === 'mpesa'
+                || trim((string)($paymentForApproval['checkout_request_id'] ?? '')) !== '');
+
+        if ($isMpesaPayment) {
+            $message = 'M-Pesa payments are completed automatically and do not require finance approval.';
+            $messageType = 'warning';
+        } elseif ($paymentForApproval && $approvals->createFromPayment(
+            $paymentId,
+            (float)$paymentForApproval['amount'],
+            (int)($_SESSION['user_id'] ?? 0),
+            trim((string)($paymentForApproval['mpesa_receipt'] ?? ''))
+        )) {
             $message = 'Finance approval item created.';
         } else {
             $message = 'Could not create finance approval item.';
@@ -163,14 +176,15 @@ include __DIR__ . '/../../templates/header.php';
                                         <?php if (($payment['status'] ?? '') === 'completed' && $receiptToken !== ''): ?>
                                             <a class="btn btn-sm btn-outline-primary" href="/payment-receipt?t=<?php echo urlencode($receiptToken); ?>&p=<?php echo (int)$payment['id']; ?>">Receipt</a>
                                         <?php endif; ?>
-                                        <form method="post" class="d-inline">
-                                            <input type="hidden" name="action" value="request_approval">
-                                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['payment_transactions_csrf']); ?>">
-                                            <input type="hidden" name="payment_id" value="<?php echo (int)$payment['id']; ?>">
-                                            <input type="hidden" name="amount" value="<?php echo htmlspecialchars((string)$payment['amount']); ?>">
-                                            <input type="hidden" name="reference_no" value="<?php echo htmlspecialchars((string)($payment['mpesa_receipt'] ?? '')); ?>">
-                                            <button type="submit" class="btn btn-sm btn-outline-secondary" data-confirm-message="Create a finance approval item for this payment?">Queue Approval</button>
-                                        </form>
+                                        <?php $isMpesaPayment = strtolower((string)($payment['payment_method'] ?? '')) === 'mpesa' || trim((string)($payment['checkout_request_id'] ?? '')) !== ''; ?>
+                                        <?php if (!$isMpesaPayment): ?>
+                                            <form method="post" class="d-inline">
+                                                <input type="hidden" name="action" value="request_approval">
+                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['payment_transactions_csrf']); ?>">
+                                                <input type="hidden" name="payment_id" value="<?php echo (int)$payment['id']; ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-secondary" data-confirm-message="Create a finance approval item for this payment?">Queue Approval</button>
+                                            </form>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

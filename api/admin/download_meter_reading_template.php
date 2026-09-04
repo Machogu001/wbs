@@ -31,7 +31,7 @@ if ($output === false) {
 }
 
 fputcsv($output, ['account_or_meter', 'current_reading', 'billing_month', 'due_date']);
-fputcsv($output, ['MTR0001', '1250.50', date('Y-m-01'), date('Y-m-d', strtotime('+14 days'))]);
+fputcsv($output, ['MTR0001', '1250.50', date('Y-m-01', strtotime('first day of last month')), date('Y-m-d', strtotime('+3 days'))]);
 fputcsv($output, ['MTR0002', '834.00', '', '']);
 
 fclose($output);
