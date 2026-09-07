@@ -222,6 +222,7 @@ $showGlobalPageHero = false;
                                 <li><a class="dropdown-item<?php echo in_array($currentPath, ['/accounting','/admin/accounting']) ? ' active' : ''; ?>" href="/accounting"><i class="bi bi-journal-text"></i> Accounting</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/payments' ? ' active' : ''; ?>" href="/admin/payments"><i class="bi bi-cash-stack"></i> Payments</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/payment-transactions' ? ' active' : ''; ?>" href="/admin/payment-transactions"><i class="bi bi-wallet2"></i> Transactions</a></li>
+                                <li><a class="dropdown-item<?php echo $currentPath === '/admin/bill-correction' ? ' active' : ''; ?>" href="/admin/bill-correction"><i class="bi bi-pencil-square"></i> Bill Correction</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/demand-notices' ? ' active' : ''; ?>" href="/admin/demand-notices"><i class="bi bi-file-earmark-exclamation"></i> Demand Notices</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/approvals' ? ' active' : ''; ?>" href="/admin/approvals"><i class="bi bi-check2-square"></i> Approvals</a></li>
@@ -257,6 +258,7 @@ $showGlobalPageHero = false;
                                         'view_accounting'       => ['/accounting',             'bi-journal-text',            'Accounting'],
                                         'view_reports'          => ['/reports',                'bi-bar-chart',               'Reports'],
                                         'view_payments'         => ['/admin/payments',         'bi-cash-stack',              'Payments'],
+                                        'correct_bills'         => ['/admin/bill-correction',  'bi-pencil-square',           'Bill Correction'],
                                         'manage_demand_notices' => ['/admin/demand-notices',   'bi-file-earmark-exclamation','Demand Notices'],
                                         'manage_approvals'      => ['/admin/approvals',        'bi-check2-square',           'Approvals'],
                                     ];

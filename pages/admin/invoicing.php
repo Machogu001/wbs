@@ -556,9 +556,9 @@ if (isset($_SESSION['flash_message'])) {
 										</div>
 										<div class="row g-3">
 											<div class="col-lg-5">
-												<label class="form-label fw-semibold">Search Client (Name or Account No.)</label>
-												<input type="text" name="account_or_meter[]" class="form-control client-search-input" list="clientList" placeholder="Start typing name or account" required>
-												<small class="text-muted">Type to search and select from suggestions.</small>
+												<label class="form-label fw-semibold">Search Client (Account / Meter / Name)</label>
+												<input type="text" name="account_or_meter[]" class="form-control client-search-input" list="clientList" placeholder="Start typing account, meter or name" required>
+												<small class="text-muted">Type to search; select from suggestions.</small>
 											</div>
 											<div class="col-lg-3 col-md-6">
 												<label class="form-label fw-semibold">Current Reading (m³)</label>

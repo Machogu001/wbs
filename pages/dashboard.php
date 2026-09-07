@@ -10,6 +10,7 @@ require_once __DIR__ . '/../config/database.php';require_once __DIR__ . '/../inc
 require_once __DIR__ . '/../includes/Bill.php';
 require_once __DIR__ . '/../includes/Payment.php';
 require_once __DIR__ . '/../includes/MeterReading.php';
+require_once __DIR__ . '/../includes/ClientWallet.php';
 require_once __DIR__ . '/../templates/header.php';
 
 $total_paid = 0.0;
@@ -33,6 +34,7 @@ $registration_collected_total = 0.0;
 $registration_payments_count = 0;
 $registration_outstanding_total = 0.0;
 $user_registration_outstanding = 0.0;
+$user_wallet_balance = 0.0;
 $user_registration_balance_value = 'Paid in full';
 $user_registration_balance_note = 'No registration fee balance is currently due on your account.';
 $balanceCardTitle = 'Account Balance';
@@ -102,6 +104,9 @@ if ($db) {
         $stmtBills->bindParam(':uid', $_SESSION['user_id'], PDO::PARAM_INT);
         $stmtBills->execute();
         $recentBills = $stmtBills->fetchAll(PDO::FETCH_ASSOC);
+
+        $walletService = new ClientWallet($db);
+        $user_wallet_balance = $walletService->getBalance((int)$_SESSION['user_id']);
 
         $latestRegistrationPayment = $paymentService->getLatestRegistrationByUserId((int)$_SESSION['user_id']);
         if ($latestRegistrationPayment && !empty($latestRegistrationPayment['bill_id'])) {
@@ -596,6 +601,17 @@ if ($db) {
                 </div>
             </a>
         </div>
+        <?php if ($user_wallet_balance > 0.01): ?>
+        <div class="col-md-6 col-xl-3 mb-3">
+            <div class="card metric-card metric-card-success dashboard-insight-card h-100" data-bs-toggle="tooltip" data-bs-placement="top" title="Overpayment on your account, automatically applied to your next bill.">
+                <div class="card-body">
+                    <h6 class="card-title text-uppercase small mb-2">Credit Balance (Overpayment)</h6>
+                    <p class="h4 mb-2">Ksh <?php echo number_format($user_wallet_balance, 2); ?></p>
+                    <p class="mb-0 small dashboard-insight-note">This will be automatically applied to your next bill.</p>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
     </div>
 

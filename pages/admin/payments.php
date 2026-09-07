@@ -44,6 +44,25 @@ $userBills = [];
 $userPayments = [];
 $paymentAdjustments = [];
 $client_list = $userService->listAll();
+$resolvePaymentClient = static function (User $userService, string $identifier): ?array {
+	$identifier = trim($identifier);
+	if ($identifier === '') {
+		return null;
+	}
+
+	$user = $userService->getByAccountNumber($identifier);
+	if (!$user) {
+		$user = $userService->getByMeterNumber($identifier);
+	}
+	if (!$user) {
+		$matches = $userService->searchByNameOrAccount($identifier, 2);
+		if (count($matches) === 1) {
+			$user = $matches[0];
+		}
+	}
+
+	return $user ?: null;
+};
 $loadUserBills = static function (int $userId) use ($billService, $paymentService): array {
 	$bills = $billService->getBillsByUser($userId);
 	foreach ($bills as &$billRow) {
@@ -52,6 +71,22 @@ $loadUserBills = static function (int $userId) use ($billService, $paymentServic
 	unset($billRow);
 	return $bills;
 };
+
+// Deep-link support: /admin/payments?account=MTR0005 (e.g. from the credit balance report)
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+	$deepLinkAccount = trim((string)($_GET['account'] ?? ''));
+	if ($deepLinkAccount !== '') {
+		$currentUser = $resolvePaymentClient($userService, $deepLinkAccount);
+		if ($currentUser) {
+			$userBills = $loadUserBills((int)$currentUser['id']);
+			$userPayments = $paymentService->getCompletedPaymentsByUserId((int)$currentUser['id']);
+			$paymentAdjustments = $paymentService->getAdjustmentsByUserId((int)$currentUser['id']);
+		} else {
+			$message = 'Account, meter number, or name not found.';
+			$message_type = 'danger';
+		}
+	}
+}
 
 // Handle account lookup
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'search_account') {
@@ -65,9 +100,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 		$message = 'Please enter an account number.';
 		$message_type = 'danger';
 	} else {
-		$currentUser = $userService->getByAccountNumber($account);
+		$currentUser = $resolvePaymentClient($userService, $account);
 		if (!$currentUser) {
-			$message = 'Account not found.';
+			$message = 'Account, meter number, or name not found. If using a name, enter enough to identify one client.';
 			$message_type = 'danger';
 		} else {
 			$userBills = $loadUserBills((int)$currentUser['id']);
@@ -106,9 +141,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 	$phone = trim($_POST['phone_number'] ?? '');
 	$paymentNote = trim((string)($_POST['payment_note'] ?? ''));
 
-	$currentUser = $account !== '' ? $userService->getByAccountNumber($account) : null;
+	$currentUser = $account !== '' ? $resolvePaymentClient($userService, $account) : null;
 	if (!$currentUser) {
-		$message = 'Account not found.';
+		$message = 'Account, meter number, or name not found. If using a name, enter enough to identify one client.';
 		$message_type = 'danger';
 	} elseif ($amount <= 0 || $paidDate === '') {
 		$message = 'Please fill in all required fields (amount and paid date).';
@@ -429,9 +464,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 	$units = (float)($_POST['units'] ?? 0);
 	$note = trim($_POST['note'] ?? '');
 
-	$currentUser = $account !== '' ? $userService->getByAccountNumber($account) : null;
+	$currentUser = $account !== '' ? $resolvePaymentClient($userService, $account) : null;
 	if (!$currentUser) {
-		$message = 'Account not found.';
+		$message = 'Account, meter number, or name not found. If using a name, enter enough to identify one client.';
 		$message_type = 'danger';
 	} elseif ($billId <= 0) {
 		$message = 'Please select a bill to credit.';
@@ -516,9 +551,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 	$amount = (float)($_POST['amount'] ?? 0);
 	$reason = trim((string)($_POST['reason'] ?? ''));
 
-	$currentUser = $account !== '' ? $userService->getByAccountNumber($account) : null;
+	$currentUser = $account !== '' ? $resolvePaymentClient($userService, $account) : null;
 	if (!$currentUser) {
-		$message = 'Account not found.';
+		$message = 'Account, meter number, or name not found. If using a name, enter enough to identify one client.';
 		$message_type = 'danger';
 	} else {
 		$paymentRow = $paymentService->getById($paymentId);
@@ -636,6 +671,11 @@ include __DIR__ . '/../../templates/header.php';
 									<option value="<?php echo htmlspecialchars($client['account_number']); ?>">
 										<?php echo htmlspecialchars($client['full_name'] . ' - ' . $client['account_number'] . ($client['meter_number'] ? ' (MTR: ' . $client['meter_number'] . ')' : '')); ?>
 									</option>
+									<?php if (!empty($client['meter_number'])): ?>
+										<option value="<?php echo htmlspecialchars($client['meter_number']); ?>">
+											<?php echo htmlspecialchars($client['full_name'] . ' - ' . $client['account_number'] . ' (Meter: ' . $client['meter_number'] . ')'); ?>
+										</option>
+									<?php endif; ?>
 									<?php if (!empty($client['full_name'])): ?>
 										<option value="<?php echo htmlspecialchars($client['full_name']); ?>"></option>
 									<?php endif; ?>
@@ -846,6 +886,7 @@ include __DIR__ . '/../../templates/header.php';
 										<th>ID</th>
 										<th>Billing Month</th>
 										<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
+										<th class="text-end">Balance (<?php echo htmlspecialchars($currency); ?>)</th>
 										<th>Status</th>
 										<th>Actions</th>
 									</tr>
@@ -856,11 +897,17 @@ include __DIR__ . '/../../templates/header.php';
 										<td>#<?php echo (int)$b['id']; ?></td>
 										<td><?php echo htmlspecialchars(date('M Y', strtotime((string)$b['billing_month']))); ?></td>
 										<td class="text-end"><?php echo number_format((float)$b['amount'], 2); ?></td>
+										<td class="text-end"><?php echo number_format((float)($b['outstanding_amount'] ?? $b['amount']), 2); ?></td>
 										<td><?php echo htmlspecialchars(ucfirst((string)$b['status'])); ?></td>
 										<td>
 											<div class="d-flex gap-2 flex-wrap">
 												<a href="/admin/bill-detail?bill_id=<?php echo (int)$b['id']; ?>" class="btn btn-sm btn-outline-dark">View Detail</a>
 												<a href="/invoice?bill_id=<?php echo (int)$b['id']; ?>" class="btn btn-sm btn-outline-dark" target="_blank" rel="noopener">Invoice</a>
+												<?php if ((float)($b['outstanding_amount'] ?? $b['amount']) > 0.01): ?>
+													<button type="button" class="btn btn-sm btn-outline-info send-reminder-btn" data-bill-id="<?php echo (int)$b['id']; ?>" title="Send payment reminder">
+														<i class="bi bi-bell me-1"></i>Remind
+													</button>
+												<?php endif; ?>
 											</div>
 										</td>
 									</tr>
@@ -985,6 +1032,52 @@ document.addEventListener('DOMContentLoaded', function () {
 		targetEl.addEventListener('change', syncManualPaymentFields);
 	}
 	syncManualPaymentFields();
+
+	document.querySelectorAll('.send-reminder-btn').forEach(function (button) {
+		button.addEventListener('click', function () {
+			var billId = button.getAttribute('data-bill-id');
+			if (!billId) return;
+
+			var originalText = button.innerHTML;
+			button.disabled = true;
+			button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Sending...';
+
+			var formData = new FormData();
+			formData.append('bill_id', billId);
+
+			fetch('/api/bills/send-reminder', {
+				method: 'POST',
+				body: formData,
+				headers: {
+					'X-Requested-With': 'XMLHttpRequest'
+				}
+			})
+				.then(function (response) { return response.json(); })
+				.then(function (data) {
+					if (data.success) {
+						if (window.showToast) {
+							showToast(data.message || 'Reminder sent successfully', 'success');
+						}
+						button.classList.remove('btn-outline-info');
+						button.classList.add('btn-outline-success');
+						button.innerHTML = '<i class="bi bi-check-circle me-1"></i>Sent';
+					} else {
+						if (window.showToast) {
+							showToast(data.message || 'Failed to send reminder', 'danger');
+						}
+						button.disabled = false;
+						button.innerHTML = originalText;
+					}
+				})
+				.catch(function (error) {
+					if (window.showToast) {
+						showToast('Error sending reminder: ' + (error && error.message ? error.message : 'Unknown error'), 'danger');
+					}
+					button.disabled = false;
+					button.innerHTML = originalText;
+				});
+		});
+	});
 });
 </script>
 <?php include __DIR__ . '/../../templates/footer.php'; ?>

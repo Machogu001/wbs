@@ -16,7 +16,7 @@ try {
 	$db = $database->getConnection();
 
 	$auth = new Auth($db);
-	if (!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_invoicing'))) {
+	if (!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_invoicing') && !$auth->hasPermission('view_payments') && !$auth->hasPermission('receive_payments'))) {
 		http_response_code(403);
 		echo json_encode(['success' => false, 'message' => 'Unauthorized']);
 		exit;

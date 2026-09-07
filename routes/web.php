@@ -38,6 +38,8 @@ return [
     // Invoicing workspace
     'invoicing' => 'pages/admin/invoicing.php',
     'admin/invoicing' => 'pages/admin/invoicing.php',
+    // Bill reading correction
+    'admin/bill-correction' => 'pages/admin/bill_correction.php',
     // Financial reports
     'reports' => 'pages/admin/reports.php',
     'admin/reports' => 'pages/admin/reports.php',

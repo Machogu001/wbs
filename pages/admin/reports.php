@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../includes/User.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
 require_once __DIR__ . '/../../includes/FinanceApproval.php';
 require_once __DIR__ . '/../../includes/InstallmentPlan.php';
+require_once __DIR__ . '/../../includes/ClientWallet.php';
 use Dompdf\Dompdf;
 
 function runReportsMaintenanceCommand(string $scriptPath, array $args = []): array {
@@ -767,6 +768,15 @@ $stmtOutstanding = $db->query("SELECT
 	{$monthlyOutstandingFromSql}");
 $outstandingRow = $stmtOutstanding->fetch(PDO::FETCH_ASSOC) ?: ['total_outstanding' => 0, 'outstanding_bills' => 0];
 
+// Clients currently holding a wallet credit balance (overpayments), for staff visibility
+new ClientWallet($db); // ensures customer_wallet table exists before querying it directly
+$stmtCreditBalances = $db->query("SELECT u.account_number, u.full_name, cw.balance, cw.updated_at
+	FROM customer_wallet cw
+	JOIN users u ON u.id = cw.user_id
+	WHERE cw.balance > 0.01
+	ORDER BY cw.balance DESC");
+$clientCreditBalances = $stmtCreditBalances ? $stmtCreditBalances->fetchAll(PDO::FETCH_ASSOC) : [];
+
 // Accounts receivable aging for monthly bills only
 $stmtAging = $db->query("SELECT
 	COALESCE(SUM(CASE WHEN b.status IN ('pending','overdue') AND DATEDIFF(CURDATE(), b.due_date) <= 0 THEN {$monthlyOutstandingExprSql} ELSE 0 END),0) AS current_bucket,
@@ -1465,6 +1475,43 @@ require_once __DIR__ . '/../../templates/header.php';
 						</div>
 					</div>
 				</div>
+
+			<div class="card shadow-sm reports-tools-card mt-3">
+				<div class="card-header d-flex justify-content-between align-items-center">
+					<h6 class="card-title mb-0"><i class="bi bi-piggy-bank me-1"></i> Clients with Credit Balance (Overpayments)</h6>
+					<span class="badge bg-success"><?php echo count($clientCreditBalances); ?> account(s)</span>
+				</div>
+				<div class="card-body p-0">
+					<?php if (empty($clientCreditBalances)): ?>
+						<p class="text-muted p-3 mb-0">No client currently has a credit balance / overpayment.</p>
+					<?php else: ?>
+						<div class="table-responsive">
+							<table class="table table-sm table-striped mb-0 align-middle">
+								<thead class="table-light">
+									<tr>
+										<th>Account</th>
+										<th>Customer</th>
+										<th class="text-end">Credit Balance (<?php echo htmlspecialchars($currency); ?>)</th>
+										<th>Last Updated</th>
+										<th>Action</th>
+									</tr>
+								</thead>
+								<tbody>
+									<?php foreach ($clientCreditBalances as $creditRow): ?>
+										<tr>
+											<td><?php echo htmlspecialchars($creditRow['account_number']); ?></td>
+											<td><?php echo htmlspecialchars($creditRow['full_name']); ?></td>
+											<td class="text-end fw-semibold text-success"><?php echo number_format((float)$creditRow['balance'], 2); ?></td>
+											<td><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime((string)$creditRow['updated_at']))); ?></td>
+											<td><a href="/admin/payments?account=<?php echo urlencode($creditRow['account_number']); ?>" class="btn btn-sm btn-outline-primary">View Account</a></td>
+										</tr>
+									<?php endforeach; ?>
+								</tbody>
+							</table>
+						</div>
+					<?php endif; ?>
+				</div>
+			</div>
 			</div>
 		</div>
 

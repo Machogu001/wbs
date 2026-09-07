@@ -378,6 +378,76 @@ try {
         INDEX idx_created (created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    // Email Queue table
+    $conn->exec("CREATE TABLE IF NOT EXISTS email_queue (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        recipient_email VARCHAR(255) NOT NULL,
+        subject VARCHAR(255) NOT NULL,
+        body LONGTEXT NOT NULL,
+        type VARCHAR(50) NOT NULL DEFAULT 'general',
+        status ENUM('pending', 'sent', 'failed_permanent') NOT NULL DEFAULT 'pending',
+        retry_count INT NOT NULL DEFAULT 0,
+        last_error TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        sent_at TIMESTAMP NULL,
+        last_attempt TIMESTAMP NULL,
+        INDEX idx_email_status_created (status, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Payment Reminder Log table
+    $conn->exec("CREATE TABLE IF NOT EXISTS payment_reminder_log (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        bill_id INT NOT NULL,
+        reminder_type ENUM('due_tomorrow', 'overdue') NOT NULL,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_bill_reminder (bill_id, reminder_type),
+        INDEX idx_sent_at (sent_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Customer Wallet tables (prepayment / overpayment credit balance)
+    $conn->exec("CREATE TABLE IF NOT EXISTS customer_wallet (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL UNIQUE,
+        balance DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        updated_at TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS customer_wallet_transactions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        type ENUM('credit','debit') NOT NULL,
+        amount DECIMAL(12,2) NOT NULL,
+        balance_after DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        reference VARCHAR(100) NULL,
+        bill_id INT NULL,
+        payment_id INT NULL,
+        note TEXT NULL,
+        created_by INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_user (user_id),
+        INDEX idx_bill (bill_id),
+        INDEX idx_payment (payment_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Bill Reading Corrections audit table
+    $conn->exec("CREATE TABLE IF NOT EXISTS bill_reading_corrections (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        bill_id INT NOT NULL,
+        user_id INT NOT NULL,
+        old_current_reading DECIMAL(10,2) NOT NULL,
+        new_current_reading DECIMAL(10,2) NOT NULL,
+        old_amount DECIMAL(10,2) NOT NULL,
+        new_amount DECIMAL(10,2) NOT NULL,
+        amount_delta DECIMAL(10,2) NOT NULL,
+        overpayment_credited DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        reason TEXT NULL,
+        corrected_by INT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_bill (bill_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
     // Error logs table
     $conn->exec("CREATE TABLE IF NOT EXISTS error_logs (
         id INT AUTO_INCREMENT PRIMARY KEY,

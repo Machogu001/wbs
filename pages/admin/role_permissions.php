@@ -21,6 +21,7 @@ $permissionDefs = [
     'receive_payments'      => ['label' => 'Receive Payments',         'description' => 'Record manual payment receipts for invoices and balances', 'icon' => 'bi-receipt-cutoff'],
     'view_invoicing'        => ['label' => 'View Invoicing',           'description' => 'Access invoicing workspace', 'icon' => 'bi-receipt'],
     'view_bill_detail'      => ['label' => 'View Bill Detail',         'description' => 'View individual bill details', 'icon' => 'bi-file-earmark-text'],
+    'correct_bills'         => ['label' => 'Correct Bill Readings',    'description' => 'Fix wrongly entered meter readings and reconcile ledgers/wallet', 'icon' => 'bi-pencil-square'],
     'manage_demand_notices' => ['label' => 'Demand Notices',           'description' => 'Access and manage demand notices', 'icon' => 'bi-exclamation-triangle'],
     'manage_approvals'      => ['label' => 'Finance Approvals',        'description' => 'Access approval workflows', 'icon' => 'bi-check2-circle'],
     'handle_support'        => ['label' => 'Support Chat & Inquiries', 'description' => 'Access support chat and inquiry inbox', 'icon' => 'bi-headset'],

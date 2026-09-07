@@ -9,6 +9,7 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/Auth.php';
 require_once __DIR__ . '/../includes/Bill.php';
 require_once __DIR__ . '/../includes/BillingSettings.php';
+require_once __DIR__ . '/../includes/ClientWallet.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
 $database = new Database();
@@ -71,6 +72,8 @@ foreach ($bills as $bill) {
 use Dompdf\Dompdf;
 
 $user = $_SESSION['user_data'] ?? [];
+$walletService = new ClientWallet($db);
+$walletBalance = $walletService->getBalance((int)($user['id'] ?? 0));
 $settingsService = new BillingSettings($db);
 $settings = $settingsService->getSettings();
 $companyName = $settings['company_name'] ?? 'BreMac Consultant Ltd';
@@ -230,6 +233,11 @@ $html = '<!DOCTYPE html>
                         <td class="summary-label">Total Unpaid:</td>
                         <td class="summary-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($total_unpaid, 2) . '</td>
                     </tr>
+                    ' . ($walletBalance > 0.01 ? '
+                    <tr>
+                        <td class="summary-label">Credit Balance (Overpayment):</td>
+                        <td class="summary-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($walletBalance, 2) . '</td>
+                    </tr>' : '') . '
                 </table>
             </div>
 
