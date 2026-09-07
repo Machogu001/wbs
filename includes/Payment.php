@@ -27,6 +27,7 @@ class Payment {
 		$this->conn = $db;
 		$this->ensureRegistrationColumn();
 		$this->ensureManualReceiptColumns();
+		$this->ensureEtimsReceiptColumns();
 		$this->ensureAdjustmentTable();
 	}
 
@@ -108,6 +109,20 @@ class Payment {
 
 		try {
 			$this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN received_by_user_id INT NULL AFTER registration_id");
+		} catch (\PDOException $e) {
+			// ignore if already exists
+		}
+	}
+
+	private function ensureEtimsReceiptColumns(): void {
+		try {
+			$this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN etims_invoice_id BIGINT NULL AFTER etims_last_error");
+		} catch (\PDOException $e) {
+			// ignore if already exists
+		}
+
+		try {
+			$this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN etims_qr_svg_url VARCHAR(255) NULL AFTER etims_invoice_id");
 		} catch (\PDOException $e) {
 			// ignore if already exists
 		}

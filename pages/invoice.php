@@ -9,6 +9,8 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/Auth.php';
 require_once __DIR__ . '/../includes/Bill.php';
 require_once __DIR__ . '/../includes/BillingSettings.php';
+require_once __DIR__ . '/../includes/Payment.php';
+require_once __DIR__ . '/../includes/User.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
 $bill_id = isset($_GET['bill_id']) ? (int)$_GET['bill_id'] : 0;
@@ -43,21 +45,33 @@ if (!$bill) {
 }
 $billLineItems = $billService->getBillLineItems((int)$bill_id);
 
-$user = $_SESSION['user_data'] ?? [];
+$userService = new User($db);
+$user = $userService->getById((int)$bill['user_id']);
+if (!$user) {
+    header("Location: " . ($canAdminDownloadInvoice ? "/admin/payments" : "/bills"));
+    exit;
+}
 
-// Try to load the latest completed M-Pesa payment for this bill (including ETIMS metadata)
+// Load completed payments for this bill, including latest eTIMS metadata.
 $payment = null;
+$paymentRows = [];
 try {
-    $stmtPay = $db->prepare("SELECT id, amount, status, mpesa_receipt, phone_number, etims_invoice_id, etims_qr_svg_url, COALESCE(transaction_date, created_at) AS paid_at
+    $paymentColumnsStmt = $db->query("SHOW COLUMNS FROM payments");
+    $paymentColumns = $paymentColumnsStmt ? array_column($paymentColumnsStmt->fetchAll(PDO::FETCH_ASSOC), 'Field') : [];
+    $etimsInvoiceSelect = in_array('etims_invoice_id', $paymentColumns, true) ? 'etims_invoice_id' : 'NULL AS etims_invoice_id';
+    $etimsQrSelect = in_array('etims_qr_svg_url', $paymentColumns, true) ? 'etims_qr_svg_url' : 'NULL AS etims_qr_svg_url';
+
+    $stmtPay = $db->prepare("SELECT id, amount, status, payment_method, mpesa_receipt, phone_number, {$etimsInvoiceSelect}, {$etimsQrSelect}, COALESCE(transaction_date, created_at) AS paid_at
         FROM payments
         WHERE bill_id = :bill_id AND status = 'completed'
-        ORDER BY COALESCE(transaction_date, created_at) DESC
-        LIMIT 1");
+        ORDER BY COALESCE(transaction_date, created_at) DESC, id DESC");
     $stmtPay->bindParam(':bill_id', $bill_id, PDO::PARAM_INT);
     $stmtPay->execute();
-    $payment = $stmtPay->fetch(PDO::FETCH_ASSOC) ?: null;
+    $paymentRows = $stmtPay->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $payment = $paymentRows[0] ?? null;
 } catch (Exception $e) {
     $payment = null;
+    $paymentRows = [];
 }
 
 // Load issuer/company settings to align invoice format with getssl implementation
@@ -84,6 +98,24 @@ $baseAmount = isset($bill['base_amount']) ? (float)$bill['base_amount'] : (float
 $taxRate = isset($bill['tax_rate']) ? (float)$bill['tax_rate'] : 0.0;
 $taxAmount = isset($bill['tax_amount']) ? (float)$bill['tax_amount'] : 0.0;
 $totalAmount = (float)$bill['amount'];
+$paymentService = new Payment($db);
+$balanceAmount = $paymentService->getBillOutstandingAmount((int)$bill_id);
+$paidAmount = max(0.0, round($totalAmount - $balanceAmount, 2));
+$isFullyPaid = $balanceAmount <= 0.01;
+$paymentRowsHtml = '';
+foreach ($paymentRows as $paymentRow) {
+    $code = trim((string)($paymentRow['mpesa_receipt'] ?? ''));
+    if ($code === '') {
+        $code = 'PAY-' . (int)$paymentRow['id'];
+    }
+    $method = trim((string)($paymentRow['payment_method'] ?? ''));
+    $paymentRowsHtml .= '<tr>'
+        . '<td>' . htmlspecialchars(date('d-m-Y H:i', strtotime((string)$paymentRow['paid_at']))) . '</td>'
+        . '<td>' . htmlspecialchars($method !== '' ? ucfirst($method) : 'M-Pesa') . '</td>'
+        . '<td>' . htmlspecialchars($code) . '</td>'
+        . '<td class="text-right">' . number_format((float)$paymentRow['amount'], 2) . '</td>'
+        . '</tr>';
+}
 
 $lineRowsHtml = '';
 if (empty($billLineItems)) {
@@ -137,6 +169,7 @@ $html = '<!DOCTYPE html>
         .summary-total-label { font-weight: 700; color: #1e40af; border-top: 2px solid #1e40af; padding-top: 6px; }
         .summary-total-value { font-weight: 700; color: #1e40af; border-top: 2px solid #1e40af; padding-top: 6px; }
         .status-pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #ffffff; }
+        .paid-stamp { display: inline-block; margin-top: 10px; border: 3px solid #16a34a; color: #16a34a; font-size: 20px; font-weight: 800; letter-spacing: 0.10em; padding: 8px 18px; text-transform: uppercase; transform: rotate(-4deg); }
         .footer-note { margin-top: 26px; font-size: 10px; color: #64748b; text-align: center; border-top: 1px solid #cbd5e1; padding-top: 12px; }
         .right-meta { text-align: right; font-size: 12px; }
     </style>
@@ -174,7 +207,7 @@ $html = '<!DOCTYPE html>
                         <tr>
                             <th style="color:#e11d48; border-bottom-color:#e11d48;">Billed To</th>
                             <th style="color:#ea580c; border-bottom-color:#ea580c;">Account</th>
-                            <th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Amount Due (' . htmlspecialchars($currency) . ')</th>
+                            <th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Balance Due (' . htmlspecialchars($currency) . ')</th>
                             <th style="color:#0284c7; border-bottom-color:#0284c7;">Due Date</th>
                             <th class="text-right" style="color:#7c3aed; border-bottom-color:#7c3aed;">Prev (m³)</th>
                             <th class="text-right" style="color:#7c3aed; border-bottom-color:#7c3aed;">Current (m³)</th>
@@ -185,7 +218,7 @@ $html = '<!DOCTYPE html>
                         <tr>
                             <td><strong>' . htmlspecialchars($user['full_name'] ?? 'Customer') . '</strong></td>
                             <td>' . htmlspecialchars($user['account_number'] ?? '') . '</td>
-                            <td class="text-right"><strong>' . number_format($bill['amount'], 2) . '</strong></td>
+                            <td class="text-right"><strong>' . number_format($balanceAmount, 2) . '</strong></td>
                             <td>' . htmlspecialchars(date('d-m-Y', strtotime($bill['due_date']))) . '</td>
                             <td class="text-right">' . number_format($bill['previous_reading'], 2) . '</td>
                             <td class="text-right">' . number_format($bill['current_reading'], 2) . '</td>
@@ -226,11 +259,22 @@ $html = '<!DOCTYPE html>
                             <td class="summary-total-label">Total Due:</td>
                             <td class="summary-total-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($totalAmount, 2) . '</td>
                         </tr>
+                        ' . ($paidAmount > 0 ? '
+                        <tr>
+                            <td class="summary-label">Paid Amount:</td>
+                            <td class="summary-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($paidAmount, 2) . '</td>
+                        </tr>
+                        ' : '') . '
+                        <tr>
+                            <td class="summary-total-label">Balance:</td>
+                            <td class="summary-total-value text-right">' . htmlspecialchars($currency) . ' ' . number_format($balanceAmount, 2) . '</td>
+                        </tr>
                     </table>
+                    ' . ($isFullyPaid ? '<div class="paid-stamp">Paid in Full</div>' : '') . '
                 </div>
             </div>
 
-            ' . ($payment ? '
+            ' . (!empty($paymentRowsHtml) ? '
             <div class="section">
                 <div class="section-title">Payment Information</div>
                 <table>
@@ -243,12 +287,7 @@ $html = '<!DOCTYPE html>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr>
-                            <td>' . htmlspecialchars(date('d-m-Y H:i', strtotime($payment['paid_at']))) . '</td>
-                            <td>M-Pesa</td>
-                            <td>' . htmlspecialchars($payment['mpesa_receipt'] ?: '-') . '</td>
-                            <td class="text-right">' . number_format($payment['amount'], 2) . '</td>
-                        </tr>
+                        ' . $paymentRowsHtml . '
                     </tbody>
                 </table>
             </div>

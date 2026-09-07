@@ -264,6 +264,8 @@ try {
         etims_last_status_code INT NULL,
         etims_last_response TEXT NULL,
         etims_last_error TEXT NULL,
+        etims_invoice_id BIGINT NULL,
+        etims_qr_svg_url VARCHAR(255) NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
