@@ -74,6 +74,22 @@ class ClientWallet
     }
 
     /**
+     * Return the last wallet update timestamp for a user, if any.
+     */
+    public function getLastUpdated(int $userId): ?string
+    {
+        if ($userId <= 0) {
+            return null;
+        }
+
+        $stmt = $this->db->prepare('SELECT COALESCE(updated_at, created_at) FROM customer_wallet WHERE user_id = ? LIMIT 1');
+        $stmt->execute([$userId]);
+        $updatedAt = $stmt->fetchColumn();
+
+        return $updatedAt ? (string)$updatedAt : null;
+    }
+
+    /**
      * Return recent wallet transactions for display.
      */
     public function getTransactions(int $userId, int $limit = 50): array

@@ -168,7 +168,7 @@ try {
             "Temporary Password: " . $tempPassword . "\n" .
             "Please login and change your password at " . $loginUrl . "\n" .
             $companyName;
-        $sms->send($user->phone_number, $messageText);
+        $sms->send($user->phone_number, $messageText, 'account_creation');
 
         http_response_code(201);
         echo json_encode([
@@ -338,7 +338,7 @@ try {
             "Meter No: " . $user->meter_number . "\n" .
             "You can now log in at " . $loginUrl . " using your account number, phone, email or username to view your bills and make payments.\n" .
             $companyName;
-        $sms->send($user->phone_number, $messageText);
+        $sms->send($user->phone_number, $messageText, 'registration');
 
         if (!empty($user->email)) {
             require_once __DIR__ . '/../../includes/Email.php';

@@ -204,7 +204,7 @@ class InternalComms
             }
 
             if ($sendImmediately) {
-                $result = $sms->send($phone, $smsText);
+                $result = $sms->send($phone, $smsText, false);
                 if (!empty($result['success'])) {
                     $immediateSentCount++;
                     try {

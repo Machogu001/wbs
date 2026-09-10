@@ -146,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $actionMessageType = 'warning';
                     } else {
                         $sms = new SMS($db);
-                        $result = $sms->send((string)$row['phone'], (string)$row['message']);
+                        $result = $sms->send((string)$row['phone'], (string)$row['message'], false);
 
                         if (!empty($result['success'])) {
                             $smsQueue->markSent($smsId, (string)($result['response'] ?? ''), (int)($result['http_code'] ?? 200));

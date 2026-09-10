@@ -506,6 +506,32 @@ class Payment {
 		if (!empty($paymentRow['bill_id'])) {
 			$this->syncBillStatusFromPayments((int)$paymentRow['bill_id']);
 		}
+
+		if (!empty($paymentRow['registration_id'])) {
+			$this->activateUserIfRegistrationPaid(
+				(int)$paymentRow['registration_id'],
+				!empty($paymentRow['bill_id']) ? (int)$paymentRow['bill_id'] : null
+			);
+		}
+
+		try {
+			$this->sendCompletedPaymentNotification($paymentId);
+		} catch (\Throwable $e) {
+			error_log('Payment confirmation notification failed for payment #' . $paymentId . ': ' . $e->getMessage());
+		}
+	}
+
+	// Flips a customer's account to active once their registration fee is fully settled.
+	private function activateUserIfRegistrationPaid(int $userId, ?int $billId): void {
+		if ($userId <= 0) {
+			return;
+		}
+		if ($billId && $this->getBillOutstandingAmount($billId) > 0.01) {
+			return;
+		}
+		$stmt = $this->conn->prepare("UPDATE users SET status = 'active' WHERE id = :id AND status <> 'active'");
+		$stmt->bindParam(':id', $userId, PDO::PARAM_INT);
+		$stmt->execute();
 	}
 
 	public function sendCompletedPaymentNotification(int $paymentId): array {
@@ -585,14 +611,13 @@ class Payment {
 		];
 
 		if ($registrationFullyPaid) {
-			$messageText = "Dear {$customerName},\n"
-				. "Your registration payment of KES " . number_format($amount, 2)
-				. ($receipt !== '' ? " (Ref: {$receipt})" : '') . " has been received successfully.\n"
-				. "Your water account is now active.\n"
-				. "Account No: {$accountNumber}\n"
-				. (!empty($user['meter_number']) ? "Meter No: " . $user['meter_number'] . "\n" : '')
-				. "You can now log in to view your bills and make payments.\n"
-				. $companyName;
+			$supportPhone = !empty($settings['support_phone']) ? $settings['support_phone'] : '254724400202';
+			$messageText = "Dear {$customerName}, your water supply account has been successfully registered.\n\n"
+				. "Account No.: {$accountNumber}\n"
+				. "Customer Name: {$customerName}\n"
+				. "Meter No.: " . ($user['meter_number'] ?? '') . "\n"
+				. "Connection Address: " . ($user['address'] ?? '') . "\n\n"
+				. "Thank you for choosing {$companyName}. For inquiries, contact {$supportPhone}.";
 		} elseif ($isRegistrationPayment) {
 			$messageText = "Dear {$customerName},\n"
 				. "We have received KES " . number_format($amount, 2)

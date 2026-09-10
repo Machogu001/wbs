@@ -334,6 +334,12 @@ require_once __DIR__ . '/../../templates/header.php';
                                     $status = (string)($inquiry['status'] ?? 'pending');
                                     $isHandled = $status === 'handled';
                                     $badgeClass = $isHandled ? 'success' : 'warning';
+                                    $createdAtValue = !empty($inquiry['created_at']) ? (string)$inquiry['created_at'] : '';
+                                    $updatedAtValue = !empty($inquiry['updated_at']) ? (string)$inquiry['updated_at'] : '';
+                                    $repliedAtValue = !empty($inquiry['replied_at']) ? (string)$inquiry['replied_at'] : '';
+                                    $createdAtDisplay = $createdAtValue !== '' && strtotime($createdAtValue) ? date('d-m-Y H:i', strtotime($createdAtValue)) : ($createdAtValue !== '' ? $createdAtValue : '—');
+                                    $updatedAtDisplay = $updatedAtValue !== '' && strtotime($updatedAtValue) ? date('d-m-Y H:i', strtotime($updatedAtValue)) : ($updatedAtValue !== '' ? $updatedAtValue : '—');
+                                    $repliedAtDisplay = $repliedAtValue !== '' && strtotime($repliedAtValue) ? date('d-m-Y H:i', strtotime($repliedAtValue)) : ($repliedAtValue !== '' ? $repliedAtValue : '');
                                 ?>
                                 <tr>
                                     <?php if ($isAdminUser): ?>
@@ -359,10 +365,10 @@ require_once __DIR__ . '/../../templates/header.php';
                                         </span>
                                     </td>
                                     <td>
-                                        <div><?php echo htmlspecialchars((string)$inquiry['created_at']); ?></div>
-                                        <div class="text-muted small">Updated: <?php echo htmlspecialchars((string)$inquiry['updated_at']); ?></div>
-                                        <?php if (!empty($inquiry['replied_at'])): ?>
-                                            <div class="text-success small">Replied: <?php echo htmlspecialchars((string)$inquiry['replied_at']); ?></div>
+                                        <div><?php echo htmlspecialchars($createdAtDisplay); ?></div>
+                                        <div class="text-muted small">Updated: <?php echo htmlspecialchars($updatedAtDisplay); ?></div>
+                                        <?php if ($repliedAtDisplay !== ''): ?>
+                                            <div class="text-success small">Replied: <?php echo htmlspecialchars($repliedAtDisplay); ?></div>
                                         <?php endif; ?>
                                     </td>
                                     <td>

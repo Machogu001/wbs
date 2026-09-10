@@ -38,7 +38,7 @@ try {
         // Send SMS with the new password
         $sms = new SMS();
         $message = "Your new WBS portal password is: {$newPassword}. Please login and change it immediately.";
-        $smsResult = $sms->send($userRow['phone_number'], $message);
+        $smsResult = $sms->send($userRow['phone_number'], $message, 'otp');
 
         // Also send an email if the user has an email address
         if (!empty($userRow['email'])) {

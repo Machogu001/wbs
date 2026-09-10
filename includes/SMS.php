@@ -37,9 +37,12 @@ class SMS {
 	}
 
 	/**
-	 * Send SMS immediately (blocking - used for critical messages)
+	 * Send SMS immediately (blocking - used for critical messages).
+	 * $type categorizes the message (e.g. 'otp', 'registration', 'payment_confirmation')
+	 * for the Sent SMS log; pass false to skip logging (used for internal queue retries
+	 * that already track the message as an existing sms_queue row).
 	 */
-	public function send($phone, $message) {
+	public function send($phone, $message, $type = 'general') {
 		if (empty($this->apiToken) || empty($this->senderId)) {
 			// Queue for later if no credentials
 			$this->queue->queue($phone, $message, 'critical');
@@ -120,21 +123,26 @@ class SMS {
 			$success = true;
 		}
 
-		return [
+		$result = [
 			'success' => $success,
 			'http_code' => $httpCode,
 			'response' => $response
 		];
+
+		if ($success && $type !== false) {
+			$this->recordSentMessage($phone, $message, $type, $result);
+		}
+
+		return $result;
 	}
 
 	/**
 	 * Attempt immediate delivery for non-bulk messages and fall back to the queue if delivery fails.
 	 */
 	public function sendWithFallback($phone, $message, $type = 'general') {
-		$result = $this->send($phone, $message);
+		$result = $this->send($phone, $message, $type);
 
 		if (!empty($result['success'])) {
-			$this->recordSentMessage($phone, $message, $type, $result);
 			$result['delivery_mode'] = 'immediate';
 			return $result;
 		}

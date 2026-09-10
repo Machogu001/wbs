@@ -770,7 +770,7 @@ $outstandingRow = $stmtOutstanding->fetch(PDO::FETCH_ASSOC) ?: ['total_outstandi
 
 // Clients currently holding a wallet credit balance (overpayments), for staff visibility
 new ClientWallet($db); // ensures customer_wallet table exists before querying it directly
-$stmtCreditBalances = $db->query("SELECT u.account_number, u.full_name, cw.balance, cw.updated_at
+$stmtCreditBalances = $db->query("SELECT u.account_number, u.full_name, cw.balance, COALESCE(cw.updated_at, cw.created_at) AS updated_at
 	FROM customer_wallet cw
 	JOIN users u ON u.id = cw.user_id
 	WHERE cw.balance > 0.01
@@ -1502,7 +1502,11 @@ require_once __DIR__ . '/../../templates/header.php';
 											<td><?php echo htmlspecialchars($creditRow['account_number']); ?></td>
 											<td><?php echo htmlspecialchars($creditRow['full_name']); ?></td>
 											<td class="text-end fw-semibold text-success"><?php echo number_format((float)$creditRow['balance'], 2); ?></td>
-											<td><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime((string)$creditRow['updated_at']))); ?></td>
+											<?php
+																	$creditUpdatedAt = !empty($creditRow['updated_at']) ? (string)$creditRow['updated_at'] : '';
+																	$creditUpdatedAtDisplay = $creditUpdatedAt !== '' && strtotime($creditUpdatedAt) ? date('d-m-Y H:i', strtotime($creditUpdatedAt)) : ($creditUpdatedAt !== '' ? $creditUpdatedAt : '—');
+																?>
+																<td><?php echo htmlspecialchars($creditUpdatedAtDisplay); ?></td>
 											<td><a href="/admin/payments?account=<?php echo urlencode($creditRow['account_number']); ?>" class="btn btn-sm btn-outline-primary">View Account</a></td>
 										</tr>
 									<?php endforeach; ?>

@@ -474,7 +474,11 @@ function deriveNetworkOwnerLabel(array $metadata)
 								?>
 								<tr>
 									<td><input type="checkbox" name="log_ids[]" value="<?php echo (int)$log['id']; ?>"></td>
-									<td class="activity-log-col-time"><?php echo htmlspecialchars($log['created_at']); ?></td>
+									<?php
+													$logCreatedAt = !empty($log['created_at']) ? (string)$log['created_at'] : '';
+													$logCreatedAtDisplay = $logCreatedAt !== '' && strtotime($logCreatedAt) ? date('d-m-Y H:i', strtotime($logCreatedAt)) : ($logCreatedAt !== '' ? $logCreatedAt : '—');
+												?>
+												<td class="activity-log-col-time"><?php echo htmlspecialchars($logCreatedAtDisplay); ?></td>
 									<td class="activity-log-col-admin">
 										<?php if (!empty($log['full_name'])): ?>
 											<strong><?php echo htmlspecialchars($log['full_name']); ?></strong><br>

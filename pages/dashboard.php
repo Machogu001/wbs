@@ -35,6 +35,7 @@ $registration_payments_count = 0;
 $registration_outstanding_total = 0.0;
 $user_registration_outstanding = 0.0;
 $user_wallet_balance = 0.0;
+$user_wallet_last_updated = null;
 $user_registration_balance_value = 'Paid in full';
 $user_registration_balance_note = 'No registration fee balance is currently due on your account.';
 $balanceCardTitle = 'Account Balance';
@@ -107,6 +108,7 @@ if ($db) {
 
         $walletService = new ClientWallet($db);
         $user_wallet_balance = $walletService->getBalance((int)$_SESSION['user_id']);
+        $user_wallet_last_updated = $walletService->getLastUpdated((int)$_SESSION['user_id']);
 
         $latestRegistrationPayment = $paymentService->getLatestRegistrationByUserId((int)$_SESSION['user_id']);
         if ($latestRegistrationPayment && !empty($latestRegistrationPayment['bill_id'])) {
@@ -607,6 +609,13 @@ if ($db) {
                 <div class="card-body">
                     <h6 class="card-title text-uppercase small mb-2">Credit Balance (Overpayment)</h6>
                     <p class="h4 mb-2">Ksh <?php echo number_format($user_wallet_balance, 2); ?></p>
+                    <p class="mb-0 small dashboard-insight-note">
+                        <?php if ($user_wallet_last_updated): ?>
+                            Last updated: <?php echo htmlspecialchars(date('d M Y, H:i', strtotime($user_wallet_last_updated))); ?>
+                        <?php else: ?>
+                            Last updated: Not available
+                        <?php endif; ?>
+                    </p>
                     <p class="mb-0 small dashboard-insight-note">This will be automatically applied to your next bill.</p>
                 </div>
             </div>

@@ -169,7 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 					$sms = new SMS();
 					$maskPhone = $currentPhone;
 					$messageText = "Your OTP to change your phone number is {$otp}. It expires in 5 minutes.";
-					$smsResult = $sms->send($currentPhone, $messageText);
+					$smsResult = $sms->send($currentPhone, $messageText, 'otp');
 					if (!$smsResult['success']) {
 						throw new Exception('Failed to send OTP SMS. Please try again.');
 					}
@@ -275,7 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 					$otp = (string)random_int(100000, 999999);
 					$sms = new SMS();
 					$messageText = "Your OTP to change your email address is {$otp}. It expires in 5 minutes.";
-					$smsResult = $sms->send($currentPhoneForOtp, $messageText);
+					$smsResult = $sms->send($currentPhoneForOtp, $messageText, 'otp');
 					if (!$smsResult['success']) {
 						throw new Exception('Failed to send OTP SMS. Please try again.');
 					}

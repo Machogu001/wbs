@@ -20,6 +20,7 @@ if(!$auth->isLoggedIn() || (!$auth->isAdmin() && !$auth->hasPermission('view_cus
 }
 
 $isAdminUser = $auth->isAdmin();
+$usersCsrfToken = (string)($_SESSION['app_csrf_token'] ?? '');
 
 // Load registration fee setting for display and logic
 $settingsService = new BillingSettings($db);
@@ -199,6 +200,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		$errorMessage = 'You do not have permission to modify customer records.';
 	} else {
 
+	$formType = trim((string)($_POST['form_type'] ?? ''));
+
 	if ($formType === 'update_status') {
 		try {
 			$userId = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
@@ -346,6 +349,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		} catch (Exception $e) {
 			$errorMessage = $e->getMessage();
 		}
+	} elseif ($formType === 'resend_registration_stk') {
+		// Retry a failed/expired registration payment by resending the M-Pesa STK push
+		try {
+			$userId = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
+			if ($userId <= 0) {
+				throw new Exception('Invalid user.');
+			}
+
+			$userModel = new User($db);
+			$targetUser = $userModel->getById($userId);
+			if (!$targetUser) {
+				throw new Exception('User not found.');
+			}
+			if (($targetUser['status'] ?? '') === 'active') {
+				throw new Exception('This account is already active.');
+			}
+			if ($registrationFee <= 0) {
+				throw new Exception('No registration fee is configured.');
+			}
+
+			$paymentModel = new Payment($db);
+			$lastRegistrationPayment = $paymentModel->getLatestRegistrationByUserId($userId);
+			$billId = !empty($lastRegistrationPayment['bill_id']) ? (int)$lastRegistrationPayment['bill_id'] : null;
+
+			$amountToCharge = $billId ? $paymentModel->getBillOutstandingAmount($billId) : round($registrationFee, 2);
+			if ($billId && $amountToCharge <= 0.01) {
+				throw new Exception('Registration fee already paid. Activate the account instead.');
+			}
+
+			if (empty($targetUser['phone_number']) || !preg_match('/^(?:254|\+254|0)?((?:7|1)\d{8})$/', $targetUser['phone_number'], $matches)) {
+				throw new Exception('Invalid or missing phone number for M-Pesa payment.');
+			}
+			$formattedPhone = '254' . $matches[1];
+
+			$mpesa = new Mpesa();
+			$response = $mpesa->stkPush(
+				$formattedPhone,
+				$amountToCharge,
+				$targetUser['account_number'] ?? 'REG',
+				'Registration Fee'
+			);
+
+			if (isset($response['error'])) {
+				$details = '';
+				if (isset($response['http_code'])) {
+					$details .= ' (HTTP ' . $response['http_code'] . ')';
+				}
+				if (!empty($response['details']['errorMessage'])) {
+					$details .= ': ' . $response['details']['errorMessage'];
+				}
+				throw new Exception('Payment initiation failed: ' . $response['error'] . $details);
+			}
+
+			if (!$billId) {
+				$billService = new Bill($db);
+				$dueDate = date('Y-m-d', strtotime('+14 days'));
+				$billId = $billService->createRegistrationFeeBill(
+					$userId,
+					$targetUser['account_number'] ?? 'REG',
+					$registrationFee,
+					$dueDate,
+					'pending'
+				);
+			}
+
+			$newPayment = new Payment($db);
+			$newPayment->bill_id = $billId;
+			$newPayment->user_id = $userId;
+			$newPayment->phone_number = $formattedPhone;
+			$newPayment->amount = $amountToCharge;
+			$newPayment->merchant_request_id = $response['MerchantRequestID'] ?? null;
+			$newPayment->checkout_request_id = $response['CheckoutRequestID'] ?? null;
+			$newPayment->status = 'pending';
+			$newPayment->registration_id = $userId;
+
+			if (!$newPayment->create()) {
+				throw new Exception('Failed to save the new payment record.');
+			}
+
+			$_SESSION['flash_message'] = 'A new M-Pesa registration payment prompt (KES ' . number_format($amountToCharge, 2) . ') was sent to ' . $formattedPhone . '.';
+			$_SESSION['flash_type'] = 'success';
+			header('Location: ' . buildUsersPageUrl([
+				'page' => $currentPage,
+				'customer_search' => $customerSearch
+			]));
+			exit;
+		} catch (Exception $e) {
+			$errorMessage = $e->getMessage();
+		}
 		} else {
 		// Default: create new user
 		try {
@@ -466,39 +558,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 					}
 				}
 
-				// Send SMS with account details on successful creation
-				$sms = new SMS();
-				$companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
-				$loginUrl = 'https://wbs.bremac.co.ke/';
-				if ($registrationFee > 0 && $registration_already_paid && $user->status !== 'active') {
-					$messageText = "Dear " . $user->full_name . ",\n" .
-						"Your water account has been created successfully.\n" .
-						"Account No: " . $user->account_number . "\n" .
-						"Meter No: " . $user->meter_number . "\n" .
-						"Registration paid: KES " . number_format($registration_paid_amount, 2) . "\n" .
-						"Registration balance due: KES " . number_format($registrationBalance, 2) . "\n" .
-						"Your account will be activated after the full registration fee is paid.\n" .
-						"Log in at https://wbs.bremac.co.ke/registration-payment to complete the balance payment.\n" .
-						$companyName;
-				} else {
+				// Registration payment already recorded above triggers its own SMS/email
+				// via Payment::sendCompletedPaymentNotification(); only send the generic
+				// "account created" notice when there was no registration fee to collect.
+				if ($registrationFee <= 0 || !$registration_already_paid) {
+					$sms = new SMS();
+					$companyName = !empty($settings['company_name']) ? $settings['company_name'] : 'BreMac Consultant Ltd';
+					$loginUrl = 'https://wbs.bremac.co.ke/';
 					$messageText = "Dear " . $user->full_name . ",\n" .
 						"Your water account has been created successfully.\n" .
 						"Account No: " . $user->account_number . "\n" .
 						"Meter No: " . $user->meter_number . "\n" .
 						"You can now log in at " . $loginUrl . " using your account number, phone or email to view your bills and make payments.\n" .
 						$companyName;
-				}
-				$sms->send($user->phone_number, $messageText);
+					$sms->send($user->phone_number, $messageText, 'registration');
 
-				// Also send an email if available
-				if (!empty($user->email)) {
-					require_once __DIR__ . '/../../includes/Email.php';
-					$email = new Email();
-					$email->send(
-						$user->email,
-						'Your new water account details',
-						$messageText
-					);
+					// Also send an email if available
+					if (!empty($user->email)) {
+						require_once __DIR__ . '/../../includes/Email.php';
+						$email = new Email();
+						$email->send(
+							$user->email,
+							'Your new water account details',
+							$messageText
+						);
+					}
 				}
 
 				$_SESSION['flash_message'] = 'User created successfully.';
@@ -782,6 +866,18 @@ require_once __DIR__ . '/../../templates/header.php';
 													<i class="bi bi-geo-alt"></i>
 												</a>
 												<?php if ($isAdminUser): ?>
+												<?php if (($u['status'] ?? '') !== 'active' && $registrationFee > 0): ?>
+														<form method="post" action="" class="d-inline">
+															<input type="hidden" name="form_type" value="resend_registration_stk">
+															<input type="hidden" name="user_id" value="<?php echo (int)$u['id']; ?>">
+															<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
+															<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
+															<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($usersCsrfToken); ?>">
+															<button type="submit" class="btn btn-sm btn-outline-primary" title="Resend M-Pesa registration payment prompt">
+																<i class="bi bi-arrow-repeat"></i> Retry Payment
+															</button>
+														</form>
+													<?php endif; ?>
 												<?php if (($u['status'] ?? '') !== 'active'): ?>
 														<form method="post" action="" class="d-inline">
 															<input type="hidden" name="form_type" value="update_status">
@@ -820,6 +916,7 @@ require_once __DIR__ . '/../../templates/header.php';
 														<input type="hidden" name="user_id" value="<?php echo (int)$u['id']; ?>">
 																<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
 																<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
+																<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($usersCsrfToken); ?>">
 														<button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Delete</button>
 													</form>
 												<?php endif; // isAdminUser ?>
