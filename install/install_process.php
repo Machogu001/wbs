@@ -77,6 +77,7 @@ try {
         address TEXT,
         meter_number VARCHAR(50) UNIQUE NULL,
         connection_type ENUM('domestic', 'commercial', 'industrial') DEFAULT 'domestic',
+        unit_rate DECIMAL(10,4) NULL,
         location_label VARCHAR(191) NULL,
         latitude DECIMAL(10,7) NULL,
         longitude DECIMAL(10,7) NULL,

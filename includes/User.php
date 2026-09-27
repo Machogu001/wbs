@@ -14,6 +14,7 @@ class User {
     public $address;
     public $meter_number;
     public $connection_type;
+    public $unit_rate;
     public $location_label;
     public $latitude;
     public $longitude;
@@ -30,6 +31,7 @@ class User {
         $this->ensureLocationColumns();
         $this->ensureTwoFactorColumns();
         $this->ensureMeterNumberNullable();
+        $this->ensureUnitRateColumn();
         $this->ensureUsernameColumn();
         $this->ensureUsernameUniqueIndex();
     }
@@ -47,6 +49,7 @@ class User {
                     address = :address,
                     meter_number = :meter_number,
                     connection_type = :connection_type,
+                    unit_rate = :unit_rate,
                     location_label = :location_label,
                     latitude = :latitude,
                     longitude = :longitude,
@@ -71,6 +74,8 @@ class User {
         $stmt->bindParam(":address", $this->address);
         $stmt->bindParam(":meter_number", $this->meter_number);
         $stmt->bindParam(":connection_type", $this->connection_type);
+        $unitRate = $this->unit_rate !== null && $this->unit_rate !== '' ? (float)$this->unit_rate : null;
+        $stmt->bindParam(":unit_rate", $unitRate);
         $locationLabel = $this->location_label !== null && $this->location_label !== '' ? $this->location_label : null;
         // Latitude/longitude are optional; allow null
         $lat = $this->latitude !== null && $this->latitude !== '' ? $this->latitude : null;
@@ -88,6 +93,14 @@ class User {
         }
         
         return false;
+    }
+
+    private function ensureUnitRateColumn(): void {
+        try {
+            $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN unit_rate DECIMAL(10,4) NULL AFTER connection_type");
+        } catch (PDOException $e) {
+            // Ignore if the column already exists.
+        }
     }
     
     // Check if phone exists

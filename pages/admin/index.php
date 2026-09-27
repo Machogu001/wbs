@@ -40,6 +40,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 		http_response_code(403);
 		die('Invalid CSRF token.');
 	}
+	if (isset($_POST['action']) && $_POST['action'] === 'delete_failed_payment') {
+		if (!$can_delete_tariff) {
+			http_response_code(403);
+			$message = 'You are not allowed to delete payments.';
+			$message_type = 'danger';
+		} else {
+			$paymentId = (int)($_POST['payment_id'] ?? 0);
+			try {
+				$stmt = $db->prepare("SELECT status FROM payments WHERE id = :id LIMIT 1");
+				$stmt->execute([':id' => $paymentId]);
+				$payment = $stmt->fetch(PDO::FETCH_ASSOC);
+
+				if (!$payment || $payment['status'] !== 'failed') {
+					$message = 'Only failed payments can be deleted.';
+					$message_type = 'danger';
+				} else {
+					$db->beginTransaction();
+					$deleteAdjustments = $db->prepare("DELETE FROM payment_adjustments WHERE payment_id = :id");
+					$deleteAdjustments->execute([':id' => $paymentId]);
+					$deletePayment = $db->prepare("DELETE FROM payments WHERE id = :id AND status = 'failed'");
+					$deletePayment->execute([':id' => $paymentId]);
+					if ($deletePayment->rowCount() !== 1) {
+						throw new RuntimeException('Payment was changed before it could be deleted.');
+					}
+					$db->commit();
+
+					$logger = new ActivityLog($db);
+					$logger->log($_SESSION['user_id'] ?? null, 'delete_payment', 'payment', $paymentId, 'Deleted failed payment', ['payment_id' => $paymentId]);
+					$_SESSION['flash_message'] = 'Failed payment deleted successfully.';
+					$_SESSION['flash_type'] = 'success';
+					header('Location: /settings');
+					exit;
+				}
+			} catch (Throwable $e) {
+				if ($db->inTransaction()) {
+					$db->rollBack();
+				}
+				$message = 'Failed to delete payment: ' . $e->getMessage();
+				$message_type = 'danger';
+			}
+		}
+	}
 	if (isset($_POST['action']) && $_POST['action'] === 'update_settings') {
 		$rate = (float)$_POST['rate_per_unit'];
 		$service = (float)$_POST['service_charge'];
@@ -144,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 				? 'Tariff plan updated successfully.'
 				: 'Tariff plan created successfully.';
 			$_SESSION['flash_type'] = 'success';
-			header('Location: /settings?edit_tariff_id=' . (int)$savedId);
+			header('Location: /settings?tab=tariff');
 			exit;
 		} catch (Throwable $e) {
 			$message = 'Failed to save tariff plan: ' . $e->getMessage();
@@ -425,6 +467,7 @@ $clients_summary = [];
 $client_list = [];
 $tariff_plans = [];
 $editing_tariff = null;
+$tariff_tab_active = (($_GET['tab'] ?? '') === 'tariff') || isset($_GET['new_tariff']) || isset($_GET['edit_tariff_id']);
 if ($db && $settingsService) {
 	$settings = $settingsService->getSettings();
 	$tariff_plans = $settingsService->listTariffPlans(false);
@@ -538,7 +581,7 @@ require_once __DIR__ . '/../../templates/header.php';
 <!-- Tab nav -->
 <ul class="nav ssp-tabs mb-0" id="sspTabNav" role="tablist">
 <li class="nav-item" role="presentation">
-<button class="nav-link active" id="ssp-tab-billing" data-bs-toggle="tab" data-bs-target="#ssp-panel-billing" type="button" role="tab">
+<button class="nav-link<?php echo $tariff_tab_active ? '' : ' active'; ?>" id="ssp-tab-billing" data-bs-toggle="tab" data-bs-target="#ssp-panel-billing" type="button" role="tab">
 <i class="bi bi-sliders2"></i> Billing Settings
 </button>
 </li>
@@ -546,9 +589,8 @@ require_once __DIR__ . '/../../templates/header.php';
 <button class="nav-link" id="ssp-tab-etims" data-bs-toggle="tab" data-bs-target="#ssp-panel-etims" type="button" role="tab">
 <i class="bi bi-cloud-upload"></i> eTIMS &amp; Tax
 </button>
-</li>
 <li class="nav-item" role="presentation">
-<button class="nav-link" id="ssp-tab-tariff" data-bs-toggle="tab" data-bs-target="#ssp-panel-tariff" type="button" role="tab">
+<button class="nav-link<?php echo $tariff_tab_active ? ' active' : ''; ?>" id="ssp-tab-tariff" data-bs-toggle="tab" data-bs-target="#ssp-panel-tariff" type="button" role="tab">
 <i class="bi bi-bar-chart-steps"></i> Tariff Plans
 </button>
 </li>
@@ -559,7 +601,7 @@ require_once __DIR__ . '/../../templates/header.php';
 <!-- =========================================
      TAB 1: Billing Settings
 ========================================= -->
-<div class="tab-pane fade show active" id="ssp-panel-billing" role="tabpanel">
+<div class="tab-pane fade<?php echo $tariff_tab_active ? '' : ' show active'; ?>" id="ssp-panel-billing" role="tabpanel">
 <form method="POST">
 <input type="hidden" name="action" value="update_settings">
 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
@@ -757,10 +799,12 @@ foreach ($months as $num => $label): ?>
 <!-- =========================================
      TAB 3: Tariff Plans
 ========================================= -->
-<div class="tab-pane fade" id="ssp-panel-tariff" role="tabpanel">
+<div class="tab-pane fade<?php echo $tariff_tab_active ? ' show active' : ''; ?>" id="ssp-panel-tariff" role="tabpanel">
 
+<?php $showTariffForm = !empty($editing_tariff) || isset($_GET['new_tariff']); ?>
+<?php if ($showTariffForm): ?>
 <div class="ssp-section">
-<div class="ssp-section-hd"><i class="bi bi-pencil-square"></i> <?php echo !empty($editing_tariff) ? 'Edit Tariff Plan' : 'New Tariff Plan'; ?></div>
+<div class="ssp-section-hd d-flex justify-content-between align-items-center"><span><i class="bi bi-pencil-square"></i> <?php echo !empty($editing_tariff) ? 'Edit Tariff Plan' : 'New Tariff Plan'; ?></span><a href="/settings?new_tariff=1&amp;tab=tariff" class="btn btn-sm btn-outline-primary">New Tariff</a></div>
 <div class="ssp-section-body">
 <form method="POST" class="row g-3">
 <input type="hidden" name="action" value="save_tariff_plan">
@@ -774,7 +818,8 @@ foreach ($months as $num => $label): ?>
 <div class="col-md-2">
 <label class="form-label">Category</label>
 <select name="tariff_category" class="form-select" required>
-<?php $selectedCategory = (string)($editing_tariff['category'] ?? 'all'); ?>
+<?php $selectedCategory = (string)($editing_tariff['category'] ?? ''); ?>
+<option value="" <?php echo $selectedCategory === '' ? 'selected' : ''; ?> disabled>Select category</option>
 <?php foreach (['all' => 'All', 'domestic' => 'Domestic', 'commercial' => 'Commercial', 'industrial' => 'Industrial'] as $catValue => $catLabel): ?>
 <option value="<?php echo htmlspecialchars($catValue); ?>" <?php echo $selectedCategory === $catValue ? 'selected' : ''; ?>><?php echo htmlspecialchars($catLabel); ?></option>
 <?php endforeach; ?>
@@ -782,7 +827,7 @@ foreach ($months as $num => $label): ?>
 </div>
 <div class="col-md-2">
 <label class="form-label">Effective From</label>
-<input type="date" class="form-control" name="effective_from" value="<?php echo htmlspecialchars((string)($editing_tariff['effective_from'] ?? date('Y-m-01'))); ?>" required>
+<input type="date" class="form-control" name="effective_from" value="<?php echo htmlspecialchars((string)($editing_tariff['effective_from'] ?? '')); ?>" required>
 </div>
 <div class="col-md-2">
 <label class="form-label">Effective To</label>
@@ -790,32 +835,30 @@ foreach ($months as $num => $label): ?>
 </div>
 <div class="col-md-2 d-flex align-items-end pb-1">
 <div class="form-check form-switch">
-<input class="form-check-input" type="checkbox" name="tariff_is_active" id="tariff_is_active" <?php echo !isset($editing_tariff['is_active']) || !empty($editing_tariff['is_active']) ? 'checked' : ''; ?>>
+<input class="form-check-input" type="checkbox" name="tariff_is_active" id="tariff_is_active" <?php echo !empty($editing_tariff['is_active']) ? 'checked' : ''; ?>>
 <label class="form-check-label fw-semibold" for="tariff_is_active">Active</label>
 </div>
 </div>
 
 <div class="col-md-4">
 <label class="form-label">Default Rate (KES/m³)</label>
-<input type="number" step="0.0001" min="0" class="form-control" name="base_rate_per_unit" value="<?php echo htmlspecialchars((string)($editing_tariff['base_rate_per_unit'] ?? ($settings['rate_per_unit'] ?? '50.0000'))); ?>" required>
+<input type="number" step="0.0001" min="0" class="form-control" name="base_rate_per_unit" value="<?php echo htmlspecialchars((string)($editing_tariff['base_rate_per_unit'] ?? '')); ?>" placeholder="e.g. 130.0000" required>
 </div>
 <div class="col-md-4">
 <label class="form-label">Service Charge (KES)</label>
-<input type="number" step="0.01" min="0" class="form-control" name="tariff_service_charge" value="<?php echo htmlspecialchars((string)($editing_tariff['service_charge'] ?? ($settings['service_charge'] ?? '0.00'))); ?>" required>
+<input type="number" step="0.01" min="0" class="form-control" name="tariff_service_charge" value="<?php echo htmlspecialchars((string)($editing_tariff['service_charge'] ?? '')); ?>" placeholder="e.g. 100.00" required>
 </div>
 <div class="col-md-4">
 <label class="form-label">VAT Rate (%)</label>
-<input type="number" step="0.01" min="0" max="100" class="form-control" name="tariff_vat_rate" value="<?php echo htmlspecialchars((string)($editing_tariff['vat_rate'] ?? ($settings['vat_rate'] ?? '0.00'))); ?>" required>
+<input type="number" step="0.01" min="0" max="100" class="form-control" name="tariff_vat_rate" value="<?php echo htmlspecialchars((string)($editing_tariff['vat_rate'] ?? '')); ?>" placeholder="e.g. 16.00" required>
 </div>
 
 <?php
 $tariffBlocks = $editing_tariff['blocks'] ?? [
-['from_unit' => 0, 'to_unit' => 10, 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
-['from_unit' => 10, 'to_unit' => 20, 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
-['from_unit' => 20, 'to_unit' => '', 'rate_per_unit' => $settings['rate_per_unit'] ?? 50],
+['from_unit' => '', 'to_unit' => '', 'rate_per_unit' => ''],
 ];
 if (empty($tariffBlocks)) {
-$tariffBlocks = [['from_unit' => 0, 'to_unit' => '', 'rate_per_unit' => $settings['rate_per_unit'] ?? 50]];
+$tariffBlocks = [['from_unit' => '', 'to_unit' => '', 'rate_per_unit' => '']];
 }
 ?>
 
@@ -849,7 +892,7 @@ $tariffBlocks = [['from_unit' => 0, 'to_unit' => '', 'rate_per_unit' => $setting
 <div class="ssp-tariff-block tariff-block-row">
 <div>
 <label class="form-label">From Unit</label>
-<input type="number" step="0.01" min="0" class="form-control" name="block_from_unit[]" value="0">
+<input type="number" step="0.01" min="0" class="form-control" name="block_from_unit[]" value="" placeholder="e.g. 0">
 </div>
 <div>
 <label class="form-label">To Unit <span class="text-muted fw-normal">(blank = open)</span></label>
@@ -857,7 +900,7 @@ $tariffBlocks = [['from_unit' => 0, 'to_unit' => '', 'rate_per_unit' => $setting
 </div>
 <div>
 <label class="form-label">Rate (KES/m³)</label>
-<input type="number" step="0.0001" min="0" class="form-control" name="block_rate[]" value="0">
+<input type="number" step="0.0001" min="0" class="form-control" name="block_rate[]" value="" placeholder="e.g. 130.0000">
 </div>
 <div class="ssp-tb-remove">
 <button type="button" class="btn btn-outline-danger w-100 js-remove-tariff-block"><i class="bi bi-trash"></i></button>
@@ -880,7 +923,7 @@ formnovalidate
 <i class="bi bi-trash me-1"></i>Delete Tariff Plan
 </button>
 <?php endif; ?>
-<a href="/settings" class="btn btn-outline-secondary">Reset</a>
+<a href="/settings?tab=tariff" class="btn btn-outline-secondary">Cancel</a>
 </div>
 </form>
 <?php if (!empty($editing_tariff['id']) && !empty($can_delete_tariff)): ?>
@@ -893,9 +936,11 @@ formnovalidate
 </div>
 </div>
 
+<?php endif; ?>
+
 <!-- Tariff Plans Table -->
 <div class="ssp-section">
-<div class="ssp-section-hd"><i class="bi bi-table"></i> Existing Tariff Plans</div>
+<div class="ssp-section-hd d-flex justify-content-between align-items-center"><span><i class="bi bi-table"></i> Existing Tariff Plans</span><?php if (!$showTariffForm): ?><a href="/settings?new_tariff=1&amp;tab=tariff" class="btn btn-sm btn-primary">Add New Tariff</a><?php endif; ?></div>
 <div class="ssp-section-body p-0">
 <div class="table-responsive">
 <table class="table table-sm align-middle mb-0">
@@ -922,7 +967,7 @@ formnovalidate
 <td><?php echo !empty($plan['is_active']) ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>'; ?></td>
 <td>
 <div class="d-flex gap-1 flex-wrap">
-<a href="/settings?edit_tariff_id=<?php echo (int)$plan['id']; ?>" class="btn btn-sm btn-outline-primary">Edit</a>
+<a href="/settings?edit_tariff_id=<?php echo (int)$plan['id']; ?>&amp;tab=tariff" class="btn btn-sm btn-outline-primary">Edit</a>
 <form method="POST" class="d-inline">
 <input type="hidden" name="action" value="toggle_tariff_plan">
 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
@@ -1253,7 +1298,14 @@ formnovalidate
 											<?php endif; ?>
 										</td>
 										<td>
-											<?php if ($p['status'] === 'completed' && (empty($p['etims_status']) || $p['etims_status'] !== 'sent')): ?>
+											<?php if ($p['status'] === 'failed' && $can_delete_tariff): ?>
+												<form method="POST" class="d-inline" onsubmit="return confirm('Delete this failed payment? This cannot be undone.');">
+													<input type="hidden" name="action" value="delete_failed_payment">
+													<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+													<input type="hidden" name="payment_id" value="<?php echo (int)$p['id']; ?>">
+													<button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+												</form>
+											<?php elseif ($p['status'] === 'completed' && (empty($p['etims_status']) || $p['etims_status'] !== 'sent')): ?>
 												<button type="button" class="btn btn-sm btn-outline-primary js-etims-resend-btn">
 													<?php echo empty($p['etims_status']) ? 'Send' : 'Retry'; ?>
 												</button>
@@ -1275,6 +1327,14 @@ formnovalidate
 
 <script>
 (function() {
+	const tabHash = window.location.hash;
+	if (tabHash && window.bootstrap) {
+		const tabButton = document.querySelector('[data-bs-target="' + tabHash + '"]');
+		if (tabButton) {
+			bootstrap.Tab.getOrCreateInstance(tabButton).show();
+		}
+	}
+
 	const searchInput = document.getElementById('clientSearch');
 	const dataList = document.getElementById('clientList');
 	const filterSelect = document.getElementById('billingFilter');

@@ -272,6 +272,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$tax_pin = trim($_POST['tax_pin'] ?? '');
 			$meter_number = normalizeMeterNumberInput($_POST['meter_number'] ?? '');
 			$connection_type = trim($_POST['connection_type'] ?? 'domestic');
+			$unit_rate_input = trim($_POST['unit_rate'] ?? '');
+			$unit_rate = $unit_rate_input !== '' ? (float)$unit_rate_input : null;
 			$location_label = trim($_POST['location_label'] ?? '');
 			$latitude = trim($_POST['latitude'] ?? '');
 			$longitude = trim($_POST['longitude'] ?? '');
@@ -280,6 +282,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 			if ($first_name === '' || $last_name === '' || $phone_number === '' || $id_number === '' || $address === '') {
 				throw new Exception('Please fill in all required fields.');
+			}
+			if ($unit_rate !== null && $unit_rate < 0) {
+				throw new Exception('Client unit rate cannot be negative.');
 			}
 
 			if ($meter_number === '') {
@@ -305,7 +310,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			// Customers page always stores customer role
 			$role = 'customer';
 
-			$sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, meter_number = :meter_number, connection_type = :connection_type, location_label = :location_label, latitude = :latitude, longitude = :longitude, role = :role';
+			$sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, meter_number = :meter_number, connection_type = :connection_type, unit_rate = :unit_rate, location_label = :location_label, latitude = :latitude, longitude = :longitude, role = :role';
 			$updatePassword = ($password !== '');
 			if ($updatePassword) {
 				$sql .= ', password_hash = :password_hash';
@@ -322,6 +327,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$stmt->bindParam(':tax_pin', $taxPinValue);
 			$stmt->bindParam(':meter_number', $meter_number);
 			$stmt->bindParam(':connection_type', $connection_type);
+			$stmt->bindValue(':unit_rate', $unit_rate, $unit_rate === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
 			$locValue = $location_label !== '' ? $location_label : null;
 			$latValue = $latitude !== '' ? (float)$latitude : null;
 			$lngValue = $longitude !== '' ? (float)$longitude : null;
@@ -453,6 +459,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$address = trim($_POST['address'] ?? '');
 			$tax_pin = trim($_POST['tax_pin'] ?? '');
 			$connection_type = trim($_POST['connection_type'] ?? 'domestic');
+			$unit_rate_input = trim($_POST['unit_rate'] ?? '');
+			$unit_rate = $unit_rate_input !== '' ? (float)$unit_rate_input : null;
 				$location_label = trim($_POST['location_label'] ?? '');
 				$latitude = trim($_POST['latitude'] ?? '');
 				$longitude = trim($_POST['longitude'] ?? '');
@@ -466,6 +474,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			// Basic validation
 			if ($first_name === '' || $last_name === '' || $phone_number === '' || $email === '' || $id_number === '' || $address === '' || $password === '') {
 				throw new Exception('Please fill in all required fields.');
+			}
+			if ($unit_rate !== null && $unit_rate < 0) {
+				throw new Exception('Client unit rate cannot be negative.');
 			}
 
 			$user = new User($db);
@@ -510,6 +521,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$user->tax_pin = $tax_pin !== '' ? $tax_pin : null;
 			$user->meter_number = $meter_number;
 			$user->connection_type = $connection_type !== '' ? $connection_type : 'domestic';
+			$user->unit_rate = $unit_rate;
 			$user->location_label = $location_label !== '' ? $location_label : null;
 			$user->latitude = $latitude !== '' ? (float)$latitude : null;
 			$user->longitude = $longitude !== '' ? (float)$longitude : null;
@@ -1093,6 +1105,11 @@ require_once __DIR__ . '/../../templates/header.php';
 									<option value="commercial" <?php echo $selType === 'commercial' ? 'selected' : ''; ?>>Commercial</option>
 								</select>
 							</div>
+								<div class="col-md-6 mb-3">
+									<label for="unit_rate" class="form-label">Client Unit Rate (KES)</label>
+									<input type="number" class="form-control" id="unit_rate" name="unit_rate" min="0" step="0.0001" value="<?php echo htmlspecialchars(isset($_POST['unit_rate']) ? $_POST['unit_rate'] : ($editUser['unit_rate'] ?? '')); ?>">
+									<div class="form-text">Leave blank to use the global or tariff-plan rate.</div>
+								</div>
 							<div class="col-md-6 mb-3">
 								<label for="password" class="form-label"><?php echo $isEditMode ? 'Password (leave blank to keep current)' : 'Password *'; ?></label>
 								<input type="password" class="form-control" id="password" name="password" autocomplete="new-password" <?php echo $isEditMode ? '' : 'required'; ?>>

@@ -44,19 +44,24 @@ class Bill {
 		$consumption = max(0, (float)$current_reading - $previous_reading);
 		$connectionType = 'domestic';
 		try {
-			$stmtUser = $this->conn->prepare("SELECT connection_type FROM users WHERE id = :id LIMIT 1");
+			$stmtUser = $this->conn->prepare("SELECT connection_type, unit_rate FROM users WHERE id = :id LIMIT 1");
 			$stmtUser->execute([':id' => (int)$user_id]);
 			$userRow = $stmtUser->fetch(PDO::FETCH_ASSOC) ?: [];
 			if (!empty($userRow['connection_type'])) {
 				$connectionType = (string)$userRow['connection_type'];
 			}
+			$clientUnitRate = array_key_exists('unit_rate', $userRow) && $userRow['unit_rate'] !== null
+				? max(0.0, (float)$userRow['unit_rate'])
+				: null;
 		} catch (\Throwable $e) {
 			// Keep legacy behavior if user lookup fails.
+			$clientUnitRate = null;
 		}
 
 		$billingDate = date('Y-m-d', strtotime((string)$billing_month));
 		$activeTariff = $this->getActiveTariffPlan($billingDate, $connectionType);
-		$usageCharge = $this->calculateUsageCharge($consumption, (float)$rate_per_unit, $activeTariff);
+		$effectiveRate = $clientUnitRate !== null ? $clientUnitRate : (float)$rate_per_unit;
+		$usageCharge = $this->calculateUsageCharge($consumption, $effectiveRate, $activeTariff, $clientUnitRate !== null);
 		$serviceChargeApplied = (float)$service_charge;
 		$subtotalAmount = $usageCharge + $serviceChargeApplied;
 		$taxRate = $this->resolveVatRate($activeTariff);
@@ -79,7 +84,7 @@ class Bill {
 		$stmt->bindParam(":previous_reading", $previous_reading);
 		$stmt->bindParam(":current_reading", $current_reading);
 		$stmt->bindParam(":consumption", $consumption);
-		$stmt->bindParam(":rate_per_unit", $rate_per_unit);
+		$stmt->bindParam(":rate_per_unit", $effectiveRate);
 		$stmt->bindParam(":service_charge", $service_charge);
 		$stmt->bindParam(":base_amount", $subtotalAmount);
 		$stmt->bindParam(":tax_rate", $taxRate);
@@ -143,7 +148,7 @@ class Bill {
 				'previous_reading' => $previous_reading,
 				'current_reading' => (float)$current_reading,
 				'consumption' => $consumption,
-				'rate_per_unit' => (float)$rate_per_unit,
+				'rate_per_unit' => $effectiveRate,
 				'service_charge' => (float)$service_charge,
 				'base_amount' => $subtotalAmount,
 				'tax_rate' => $taxRate,
@@ -515,9 +520,12 @@ class Bill {
 		return $plan;
 	}
 
-	private function calculateUsageCharge(float $consumption, float $fallbackRate, ?array $tariffPlan): float {
+	private function calculateUsageCharge(float $consumption, float $fallbackRate, ?array $tariffPlan, bool $useFlatRate = false): float {
 		if ($consumption <= 0) {
 			return 0.0;
+		}
+		if ($useFlatRate) {
+			return round($consumption * $fallbackRate, 2);
 		}
 
 		$blocks = is_array($tariffPlan['blocks'] ?? null) ? $tariffPlan['blocks'] : [];
