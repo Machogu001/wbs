@@ -228,6 +228,63 @@ function mobileApiUserHasPermission(PDO $db, array $user, string $permission): b
     return in_array($permission, $permissionCache[$role], true);
 }
 
+function mobileApiUserHasAnyPermission(PDO $db, array $user, array $permissions): bool
+{
+    foreach ($permissions as $permission) {
+        if (mobileApiUserHasPermission($db, $user, (string)$permission)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function mobileApiNormalizePhone(string $countryCode, string $localNumber): string
+{
+    $code = preg_replace('/\D+/', '', $countryCode);
+    $local = preg_replace('/\D+/', '', $localNumber);
+    $local = ltrim($local, '0');
+    if ($code === '' || $local === '') {
+        return '';
+    }
+    return $code . $local;
+}
+
+function mobileApiNormalizeMeter(string $meterNumber): string
+{
+    return preg_replace('/\s+/', '', strtoupper(trim($meterNumber)));
+}
+
+function mobileApiNormalizeCurrencyAmount($amount): float
+{
+    $normalized = preg_replace('/[^0-9.\-]/', '', (string)$amount);
+    if ($normalized === '' || $normalized === '-' || $normalized === '.') {
+        return 0.0;
+    }
+    return round((float)$normalized, 2);
+}
+
+function mobileApiResolveClient(User $userService, string $identifier): ?array
+{
+    $identifier = trim($identifier);
+    if ($identifier === '') {
+        return null;
+    }
+
+    $user = $userService->getByAccountNumber($identifier);
+    if (!$user) {
+        $user = $userService->getByMeterNumber($identifier);
+    }
+    if (!$user) {
+        $matches = $userService->searchByNameOrAccount($identifier, 2);
+        if (count($matches) === 1) {
+            $user = $matches[0];
+        }
+    }
+
+    return $user ?: null;
+}
+
 function mobileApiRequireStaffPermission(PDO $db, array $user, array $permissions = [], array $roles = []): void
 {
     if (mobileApiUserHasRole($user, 'admin')) {

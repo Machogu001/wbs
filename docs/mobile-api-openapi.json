@@ -380,6 +380,267 @@
         "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "responses": { "200": { "description": "Manual payment recorded" } }
       }
+    },
+    "/api/mobile/admin/demand_notices.php": {
+      "get": {
+        "summary": "List demand notices and summary counts",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Demand notices" } }
+      },
+      "post": {
+        "summary": "Generate or update demand notices",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Demand notice action completed" } }
+      }
+    },
+    "/api/mobile/admin/integration_health.php": {
+      "get": {
+        "summary": "Get live integration health",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Integration health" } }
+      }
+    },
+    "/api/mobile/admin/support_inquiries.php": {
+      "get": {
+        "summary": "List support inquiries",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Support inquiries" } }
+      },
+      "post": {
+        "summary": "Reply to or update a support inquiry",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Support inquiry updated" } }
+      }
+    },
+    "/api/mobile/admin/activity_logs.php": {
+      "get": {
+        "summary": "List activity logs",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Activity logs" } }
+      },
+      "post": {
+        "summary": "Delete selected activity logs",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Activity logs updated" } }
+      }
+    },
+    "/api/mobile/admin/system_logs.php": {
+      "get": {
+        "summary": "Get system logs and SMS queue status",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "System logs" } }
+      },
+      "post": {
+        "summary": "Manage system logs and SMS queue records",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "System logs updated" } }
+      }
+    },
+    "/api/mobile/admin/blog.php": {
+      "get": {
+        "summary": "Load blog management data",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Blog data" } }
+      },
+      "post": {
+        "summary": "Manage blog posts and comments",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Blog action completed" } }
+      }
+    },
+    "/api/mobile/admin/accounting_overview.php": {
+      "get": {
+        "summary": "Get accounting overview data",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Accounting overview" } }
+      },
+      "post": {
+        "summary": "Manage accounting overview actions",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Accounting action completed" } }
+      }
+    },
+    "/api/mobile/admin/accounting_reports.php": {
+      "get": {
+        "summary": "Get accounting reports",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Accounting reports" } }
+      }
+    },
+    "/api/mobile/admin/accounting_ledger.php": {
+      "get": {
+        "summary": "Get accounting ledger and journal data",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Accounting ledger" } }
+      },
+      "post": {
+        "summary": "Reverse a journal entry",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Journal entry reversed" } }
+      }
+    },
+    "/api/mobile/admin/accounting_budget.php": {
+      "get": {
+        "summary": "Get accounting budget data",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Accounting budget" } }
+      },
+      "post": {
+        "summary": "Save accounting budget",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Budget saved" } }
+      }
+    },
+    "/api/mobile/admin/accounting_transfers.php": {
+      "get": {
+        "summary": "Get accounting transfers",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Accounting transfers" } }
+      },
+      "post": {
+        "summary": "Post accounting transfer",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Transfer posted" } }
+      }
+    },
+    "/api/mobile/admin/users.php": {
+      "get": {
+        "summary": "Get customer management data",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Customers" } }
+      },
+      "post": {
+        "summary": "Manage customers",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Customer action completed" } }
+      }
+    },
+    "/api/mobile/admin/staff_users.php": {
+      "get": {
+        "summary": "Get staff users",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Staff users" } }
+      },
+      "post": {
+        "summary": "Manage staff users",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Staff action completed" } }
+      }
+    },
+    "/api/mobile/admin/role_permissions.php": {
+      "get": {
+        "summary": "Get role permissions",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Role permissions" } }
+      },
+      "post": {
+        "summary": "Save role permissions",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Role permissions saved" } }
+      }
+    },
+    "/api/mobile/admin/customer_locations.php": {
+      "get": {
+        "summary": "Get customer location pins",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Customer locations" } }
+      }
+    },
+    "/api/mobile/admin/settings.php": {
+      "get": {
+        "summary": "Get settings and tariff plans",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Settings" } }
+      },
+      "post": {
+        "summary": "Manage settings and tariff plans",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Settings action completed" } }
+      }
+    },
+    "/api/mobile/admin/terms_conditions.php": {
+      "get": {
+        "summary": "Get terms and conditions",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Terms and conditions" } }
+      },
+      "post": {
+        "summary": "Update terms and conditions",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Terms updated" } }
+      }
+    },
+    "/api/mobile/admin/payments.php": {
+      "get": {
+        "summary": "Get payments workspace data",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Payments workspace" } }
+      },
+      "post": {
+        "summary": "Manage payment workflows",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Payment action completed" } }
+      }
+    },
+    "/api/mobile/admin/payment_transactions.php": {
+      "get": {
+        "summary": "Get payment transactions",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Payment transactions" } }
+      },
+      "post": {
+        "summary": "Manage payment transactions",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Payment transaction action completed" } }
+      }
+    },
+    "/api/mobile/admin/registration_proformas.php": {
+      "get": {
+        "summary": "Get registration proformas",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Registration proformas" } }
+      },
+      "post": {
+        "summary": "Manage registration proformas",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Registration proforma action completed" } }
+      }
+    },
+    "/api/mobile/admin/invoicing.php": {
+      "get": {
+        "summary": "Get invoicing workspace",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Invoicing workspace" } }
+      },
+      "post": {
+        "summary": "Manage invoicing entries",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Invoicing action completed" } }
+      }
+    },
+    "/api/mobile/admin/bill_correction.php": {
+      "get": {
+        "summary": "Get bill correction data",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Bill correction workspace" } }
+      },
+      "post": {
+        "summary": "Apply bill correction",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Bill corrected" } }
+      }
+    },
+    "/api/mobile/admin/reports.php": {
+      "get": {
+        "summary": "Get reporting data",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Reports" } }
+      },
+      "post": {
+        "summary": "Run reports maintenance action",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Reports maintenance completed" } }
+      }
     }
   }
 }

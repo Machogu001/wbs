@@ -305,6 +305,178 @@ Update complaint status.
 
 Record a manual payment against one invoice or auto-allocate it across open invoices.
 
+### `GET /api/mobile/admin/demand_notices.php`
+
+Load demand notice summary counts and recent notices.
+
+### `POST /api/mobile/admin/demand_notices.php`
+
+Generate overdue demand notices or update a notice status.
+
+### `GET /api/mobile/admin/integration_health.php`
+
+Load live integration health for SMS, M-Pesa, email, and eTIMS.
+
+### `GET /api/mobile/admin/support_inquiries.php`
+
+Load support inquiries and summary counts.
+
+### `POST /api/mobile/admin/support_inquiries.php`
+
+Reply to a support inquiry, mark it handled, reopen it, or delete it when authorized.
+
+### `GET /api/mobile/admin/activity_logs.php`
+
+Load paginated activity logs with filters.
+
+### `POST /api/mobile/admin/activity_logs.php`
+
+Delete selected activity log entries.
+
+### `GET /api/mobile/admin/system_logs.php`
+
+Load recent error logs, error statistics, and SMS queue status.
+
+### `POST /api/mobile/admin/system_logs.php`
+
+Delete error logs, clean SMS queue records, or retry an SMS immediately.
+
+### `GET /api/mobile/admin/blog.php`
+
+Load blog management data, posts, attachments, and pending comments.
+
+### `POST /api/mobile/admin/blog.php`
+
+Create or update posts, delete posts, moderate comments, or delete comments.
+
+### `GET /api/mobile/admin/accounting_overview.php`
+
+Load accounting summary, chart of accounts, trial balance, reconciliation, and period locks.
+
+### `POST /api/mobile/admin/accounting_overview.php`
+
+Create or update chart-of-accounts items, toggle account status, post journal entries, and lock or unlock accounting periods.
+
+### `GET /api/mobile/admin/accounting_reports.php`
+
+Load balance sheet, profit and loss, cash flow, and accounts receivable aging data.
+
+### `GET /api/mobile/admin/accounting_ledger.php`
+
+Load chart of accounts, one account ledger, recent journal entries, and one selected journal entry.
+
+### `POST /api/mobile/admin/accounting_ledger.php`
+
+Reverse a journal entry.
+
+### `GET /api/mobile/admin/accounting_budget.php`
+
+Load budget planning accounts and budget-vs-actual data.
+
+### `POST /api/mobile/admin/accounting_budget.php`
+
+Save monthly, quarterly, or yearly budgets.
+
+### `GET /api/mobile/admin/accounting_transfers.php`
+
+Load recent fund transfers and transferable accounts.
+
+### `POST /api/mobile/admin/accounting_transfers.php`
+
+Post a fund transfer between accounts.
+
+### `GET /api/mobile/admin/users.php`
+
+Load customer management data, searchable customer rows, and optional edit context.
+
+### `POST /api/mobile/admin/users.php`
+
+Create customers, update customers, change customer status, add meters, resend registration STK prompts, or delete customers.
+
+### `GET /api/mobile/admin/staff_users.php`
+
+Load office staff users.
+
+### `POST /api/mobile/admin/staff_users.php`
+
+Create, update, suspend, delete, or reset staff accounts.
+
+### `GET /api/mobile/admin/role_permissions.php`
+
+Load current role permissions.
+
+### `POST /api/mobile/admin/role_permissions.php`
+
+Save role permission assignments.
+
+### `GET /api/mobile/admin/customer_locations.php`
+
+Load all pinned customer GPS locations.
+
+### `GET /api/mobile/admin/settings.php`
+
+Load system settings and tariff plans.
+
+### `POST /api/mobile/admin/settings.php`
+
+Update core settings, tariff plans, or failed payment cleanup actions.
+
+### `GET /api/mobile/admin/terms_conditions.php`
+
+Load the editable terms content and rendered preview.
+
+### `POST /api/mobile/admin/terms_conditions.php`
+
+Update terms and conditions after password confirmation.
+
+### `GET /api/mobile/admin/payments.php`
+
+Load payments workspace data for a searched customer.
+
+### `POST /api/mobile/admin/payments.php`
+
+Search customer payment context, record manual payments, apply credit notes, or raise payment adjustment requests.
+
+### `GET /api/mobile/admin/payment_transactions.php`
+
+Load payment transaction history and status counts.
+
+### `POST /api/mobile/admin/payment_transactions.php`
+
+Queue a finance approval item for a non-M-Pesa payment.
+
+### `GET /api/mobile/admin/registration_proformas.php`
+
+Load registration proformas and share links.
+
+### `POST /api/mobile/admin/registration_proformas.php`
+
+Create a registration proforma or trigger a registration STK push.
+
+### `GET /api/mobile/admin/invoicing.php`
+
+Load invoicing defaults and settings.
+
+### `POST /api/mobile/admin/invoicing.php`
+
+Create one or many billing readings or import reading batches.
+
+### `GET /api/mobile/admin/bill_correction.php`
+
+Load bill correction search results, a selected bill, and correction history.
+
+### `POST /api/mobile/admin/bill_correction.php`
+
+Apply a bill reading correction.
+
+### `GET /api/mobile/admin/reports.php`
+
+Load reporting summaries, recent bills, recent payments, and audit status.
+
+### `POST /api/mobile/admin/reports.php`
+
+Run billing audit or journal repair maintenance actions.
+
 ### `GET /api/mobile/meter_readings.php`
 
 Return recent meter-reading submissions.

@@ -1,105 +1,99 @@
 <?php
 
-require_once __DIR__ . '/../config/database.php';
-require_once __DIR__ . '/../includes/BillingSettings.php';
-
-$companyName = 'Water Billing System';
-$supportPhone = '+25472400202';
-$supportEmail = 'support@bremac.co.ke';
-$effectiveDate = '2026-09-29';
-
-try {
-    $db = (new Database())->getConnection();
-    if ($db) {
-        $settings = (new BillingSettings($db))->getSettings();
-        if (!empty($settings['company_name'])) {
-            $companyName = (string)$settings['company_name'];
-        }
-        if (!empty($settings['support_phone'])) {
-            $supportPhone = (string)$settings['support_phone'];
-        }
-        if (!empty($settings['support_email'])) {
-            $supportEmail = (string)$settings['support_email'];
-        }
-    }
-} catch (Throwable $e) {
-    // Fall back to defaults when settings are unavailable.
-}
-
-$page_title = 'Privacy Policy';
+$page_title = 'My Water Bill Privacy Policy';
 include __DIR__ . '/../templates/header.php';
 ?>
 
-<div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-xl-9 col-lg-10">
-            <div class="pb-banner pb-banner--cobalt mb-4">
-                <div class="pb-bg" aria-hidden="true">
-                    <div class="pb-grid"></div>
-                    <div class="pb-blob pb-blob--a"></div>
-                    <div class="pb-blob pb-blob--b"></div>
-                    <i class="bi bi-shield-lock pb-watermark"></i>
-                </div>
-                <div class="pb-inner">
-                    <div class="pb-left">
-                        <div class="pb-eyebrow-row">
-                            <span class="pb-eyebrow-chip"><i class="bi bi-shield-check"></i> Public Policy</span>
-                        </div>
-                        <h1 class="pb-title mb-2">Privacy Policy</h1>
-                        <p class="pb-subtitle mb-0">How <?php echo htmlspecialchars($companyName, ENT_QUOTES, 'UTF-8'); ?> collects, uses, stores, and protects information in the Water Billing System.</p>
-                    </div>
-                </div>
-            </div>
+<style>
+body {
+    background: #f5f7fb;
+}
 
-            <div class="card shadow-sm border-0">
-                <div class="card-body p-4 p-lg-5">
-                    <p class="text-muted mb-4">Effective date: <?php echo htmlspecialchars($effectiveDate, ENT_QUOTES, 'UTF-8'); ?></p>
+.privacy-policy-shell {
+    padding: 40px 16px;
+}
 
-                    <h3>1. Information We Collect</h3>
-                    <p>We may collect customer, staff, and payment-related information needed to provide water billing and support services. This may include account numbers, names, phone numbers, email addresses, physical addresses, meter numbers, billing records, payment references, and customer support communications.</p>
+.privacy-policy-card {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 32px;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+    color: #172b4d;
+    font: 16px/1.6 Arial, sans-serif;
+}
 
-                    <h3>2. How We Use Information</h3>
-                    <p>Information is used to register accounts, manage meters, issue bills, receive and reconcile payments, deliver receipts and notifications, support customer service, detect fraud or misuse, and maintain operational and financial records for the water service.</p>
+.privacy-policy-card h1,
+.privacy-policy-card h2 {
+    color: #073b8f;
+}
 
-                    <h3>3. Payments And Transaction Data</h3>
-                    <p>When payments are processed through integrated services such as M-Pesa, the system stores transaction details required for confirmation, reconciliation, receipts, and audit history. Sensitive payment credentials are not intentionally displayed publicly through this website.</p>
+.privacy-policy-card a {
+    color: #0969da;
+}
 
-                    <h3>4. Meter Readings And Uploaded Files</h3>
-                    <p>If users submit meter readings, photographs, or related supporting documents, those files may be stored and reviewed for billing, verification, dispute resolution, and service administration.</p>
+.privacy-policy-card ul {
+    padding-left: 1.25rem;
+}
+</style>
 
-                    <h3>5. Communications</h3>
-                    <p>The system may send SMS messages, emails, payment prompts, reminders, support responses, verification codes, and operational notices using the contact details provided by the user or maintained by the service operator.</p>
+<section class="privacy-policy-shell">
+    <div class="privacy-policy-card">
+        <h1>My Water Bill Privacy Policy</h1>
+        <p><strong>Effective date:</strong> 29 September 2026</p>
+        <p>
+            BreMac provides My Water Bill to help authorized customers and staff access water billing
+            services. This policy explains how information is handled when you use the app.
+        </p>
 
-                    <h3>6. Who Can Access Information</h3>
-                    <p>Access to personal and billing data is restricted to authenticated users, authorized staff, administrators, service providers involved in communication or payment processing, and other parties where disclosure is required for lawful operational purposes.</p>
+        <h2>Information we process</h2>
+        <ul>
+            <li>Account identifiers and authentication information used to sign in.</li>
+            <li>Profile and contact information, including name, phone number, email, address, and tax PIN.</li>
+            <li>Water account information, including account numbers, meters, readings, bills, and statements.</li>
+            <li>Payment information, including amounts, payment status, phone number, method, and receipt references.</li>
+            <li>Meter photographs and reading details submitted through the app.</li>
+            <li>Support complaints and related status information.</li>
+            <li>Device model information used to identify authenticated sessions.</li>
+        </ul>
 
-                    <h3>7. Data Security</h3>
-                    <p>Reasonable technical and administrative safeguards are used to protect account data, billing records, and system access. These safeguards may include authentication controls, role-based permissions, audit logs, and restricted administrative access.</p>
+        <h2>How we use information</h2>
+        <p>
+            Information is used to authenticate users, provide billing and payment services, process
+            meter readings, deliver account notifications, support customers, prevent unauthorized
+            access, and perform authorized staff operations.
+        </p>
 
-                    <h3>8. Data Retention</h3>
-                    <p>Records may be retained for as long as necessary to operate the service, resolve disputes, enforce terms, meet reporting obligations, maintain audit trails, and comply with legal or regulatory requirements.</p>
+        <h2>Sharing and service providers</h2>
+        <p>
+            Information may be processed by service providers needed to operate the service, including
+            payment, SMS, email, and hosting providers. We do not sell personal information.
+        </p>
 
-                    <h3>9. Sharing And Disclosure</h3>
-                    <p>Information may be shared with payment processors, messaging providers, hosting or technical support providers, auditors, and regulatory or lawful authorities when necessary to operate the system, provide requested services, investigate incidents, or comply with legal obligations.</p>
+        <h2>Security and retention</h2>
+        <p>
+            Data is transmitted using encrypted HTTPS connections. Access is restricted according to
+            authenticated account roles and permissions. Information is retained as required to provide
+            billing services, maintain financial records, resolve disputes, and meet legal obligations.
+        </p>
 
-                    <h3>10. User Responsibilities</h3>
-                    <p>Users should provide accurate account information, keep their login credentials private, protect their devices, and promptly report suspected unauthorized access or incorrect account activity.</p>
+        <h2>Your choices</h2>
+        <p>
+            You may update available profile information in the app. To request correction, access, or
+            deletion of eligible personal information, contact us. Financial and billing records may
+            need to be retained where required by law or legitimate business obligations.
+        </p>
 
-                    <h3>11. Policy Updates</h3>
-                    <p>This privacy policy may be updated from time to time to reflect operational, legal, or technical changes. The latest published version on this page will apply from the effective date shown above.</p>
+        <h2>Children</h2>
+        <p>My Water Bill is not directed to children and is intended for authorized water-service customers and staff.</p>
 
-                    <h3>12. Contact</h3>
-                    <p>If you have questions about this privacy policy or your information in the system, contact the support team using the details below.</p>
-
-                    <div class="mt-4 p-3 rounded" style="background:#f8fafc; border:1px solid #dbeafe;">
-                        <div><strong>Service Operator:</strong> <?php echo htmlspecialchars($companyName, ENT_QUOTES, 'UTF-8'); ?></div>
-                        <div><strong>Phone:</strong> <a href="tel:<?php echo htmlspecialchars($supportPhone, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($supportPhone, ENT_QUOTES, 'UTF-8'); ?></a></div>
-                        <div><strong>Email:</strong> <a href="mailto:<?php echo htmlspecialchars($supportEmail, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($supportEmail, ENT_QUOTES, 'UTF-8'); ?></a></div>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <h2>Contact</h2>
+        <p>
+            For privacy questions or requests, email
+            <a href="mailto:admin@bremac.co.ke">admin@bremac.co.ke</a>.
+        </p>
     </div>
-</div>
+</section>
 
 <?php include __DIR__ . '/../templates/footer.php'; ?>
