@@ -209,6 +209,37 @@
         ],
         "responses": { "200": { "description": "Payments" } }
       }
+    "/api/mobile/payment_status.php": {
+      "get": {
+        "summary": "Poll customer payment status for an STK attempt",
+        "security": [{ "apiKeyAuth": [] }, { "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Recommended payment identifier returned by initiate_payment"
+          },
+          {
+            "name": "checkout_request_id",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Optional M-Pesa checkout request identifier"
+          },
+          {
+            "name": "bill_id",
+            "in": "query",
+            "schema": { "type": "integer" },
+            "description": "Optional fallback to fetch the latest payment attempt for a bill"
+          }
+        ],
+        "responses": {
+          "200": { "description": "Payment status payload" },
+          "404": { "description": "Payment status not found" },
+          "422": { "description": "Missing identifier" }
+        }
+      }
+    },
     },
     "/api/mobile/payment.php": {
       "get": {

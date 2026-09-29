@@ -242,6 +242,66 @@ Return paginated payment history.
 
 Return a single payment with receipt URLs.
 
+### `GET /api/mobile/payment_status.php`
+
+Poll the latest STK payment state for the authenticated customer.
+
+Query parameters:
+
+- `payment_id` recommended, using the `payment.payment_id` returned by `POST /api/mobile/initiate_payment.php`
+- `checkout_request_id` optional alternative key
+- `bill_id` optional fallback that returns the latest payment attempt on that bill
+
+Example:
+
+```text
+GET /api/mobile/payment_status.php?payment_id=193
+```
+
+Success response shape:
+
+```json
+{
+  "status": "success",
+  "message": "Payment status loaded.",
+  "data": {
+    "payment": {
+      "id": 193,
+      "bill_id": 71,
+      "amount": 2440,
+      "status": "pending",
+      "phone_number": "254748103009",
+      "merchant_request_id": "29115-34620561-1",
+      "checkout_request_id": "ws_CO_290920261234567890",
+      "mpesa_receipt": "",
+      "created_at": "2026-09-29 13:42:10",
+      "billing_month": "2026-09-01",
+      "account_number": "MTR0005",
+      "payment_method": "mpesa",
+      "transaction_date": "",
+      "bill_amount": 2440,
+      "bill_status": "pending",
+      "due_date": "2026-10-05",
+      "outstanding_amount": 2440,
+      "is_final": false,
+      "is_successful": false,
+      "receipt_url": "",
+      "receipt_pdf_url": ""
+    },
+    "polling": {
+      "recommended_interval_seconds": 5,
+      "should_continue": true
+    }
+  }
+}
+```
+
+Polling rules:
+
+- keep polling while `payment.status` is `pending` and `polling.should_continue` is `true`
+- stop polling when `payment.status` becomes `completed` or `failed`
+- when completed, use `receipt_url` or `receipt_pdf_url` to show the receipt
+
 ### `GET /api/mobile/statement.php`
 
 Return an authenticated statement view with filtered bills, filtered payments, and totals.
@@ -268,6 +328,7 @@ Notes:
 
 - `phone` is optional if the user profile already has a phone number.
 - The API charges the current outstanding amount, not the original bill amount.
+- Use the returned `payment.payment_id` or `payment.checkout_request_id` with `GET /api/mobile/payment_status.php` to poll for completion.
 
 ## Staff And Admin Endpoints
 
