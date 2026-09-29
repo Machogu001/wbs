@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/Accounting.php';
+require_once __DIR__ . '/../includes/BillingSettings.php';
 
 if($_SERVER['REQUEST_METHOD'] != 'POST') {
     header('Location: install.php');
@@ -57,6 +58,21 @@ function installerUpsertEnvKey(string $envPath, string $key, string $value, bool
     return file_put_contents($envPath, $updated, LOCK_EX) !== false;
 }
 
+function installerTableExists(PDO $conn, string $tableName): bool {
+    $stmt = $conn->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = :table_name');
+    $stmt->execute([':table_name' => $tableName]);
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+function installerColumnExists(PDO $conn, string $tableName, string $columnName): bool {
+    $stmt = $conn->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :table_name AND column_name = :column_name');
+    $stmt->execute([
+        ':table_name' => $tableName,
+        ':column_name' => $columnName,
+    ]);
+    return (int)$stmt->fetchColumn() > 0;
+}
+
 try {
     $conn = new PDO("mysql:host=$db_host", $db_user, $db_pass);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -90,6 +106,23 @@ try {
         status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',
         INDEX idx_phone (phone_number),
         INDEX idx_account (account_number)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS user_meters (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        user_id INT NOT NULL,
+        meter_number VARCHAR(50) UNIQUE NOT NULL,
+        meter_label VARCHAR(191) NULL,
+        status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+        is_primary TINYINT(1) NOT NULL DEFAULT 0,
+        registration_bill_id INT NULL,
+        created_by_user_id INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_user_id (user_id),
+        INDEX idx_registration_bill_id (registration_bill_id),
+        INDEX idx_created_by_user_id (created_by_user_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     // Bills table
@@ -136,7 +169,20 @@ try {
         etims_integration_url VARCHAR(255) NULL,
         etims_api_key VARCHAR(255) NULL,
         etims_taxation_type_code VARCHAR(10) NULL,
+        terms_conditions_content LONGTEXT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS short_urls (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        short_code VARCHAR(10) UNIQUE NOT NULL,
+        full_url LONGTEXT NOT NULL,
+        bill_id INT NULL,
+        clicks INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NULL,
+        INDEX idx_short_code (short_code),
+        INDEX idx_bill_id (bill_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     $conn->exec("CREATE TABLE IF NOT EXISTS tariff_plans (
@@ -710,6 +756,7 @@ try {
             ('finance','view_bill_detail'),
             ('finance','manage_demand_notices'),
             ('finance','manage_approvals'),
+            ('finance','manage_registration_proformas'),
             ('finance','send_messages'),
             ('reader','view_invoicing'),
             ('reader','send_messages'),
@@ -718,6 +765,24 @@ try {
             ('support','view_bill_detail'),
             ('support','send_messages')");
     }
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS registration_proformas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        bill_id INT NOT NULL,
+        created_by_user_id INT NULL,
+        notes TEXT NULL,
+        account_setup_token VARCHAR(96) NULL,
+        account_setup_expires_at DATETIME NULL,
+        account_setup_completed_at DATETIME NULL,
+        account_setup_sent_at DATETIME NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_registration_proforma_user (user_id),
+        UNIQUE KEY uniq_registration_proforma_bill (bill_id),
+        KEY idx_registration_proforma_created_by (created_by_user_id),
+        KEY idx_registration_proforma_setup_token (account_setup_token)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     // IP geo-lookup cache table (used by activity log)
     $conn->exec("CREATE TABLE IF NOT EXISTS activity_ip_lookup (
@@ -796,13 +861,14 @@ try {
 
     $settingsCount = $conn->query("SELECT COUNT(*) as count FROM billing_settings")->fetch(PDO::FETCH_ASSOC);
     if (!$settingsCount || (int)$settingsCount['count'] === 0) {
+        $defaultTermsTemplate = BillingSettings::getDefaultTermsTemplate();
         $stmtSettings = $conn->prepare(
             "INSERT INTO billing_settings
              (id, rate_per_unit, service_charge, registration_fee, enforce_location_accuracy, company_name, support_phone,
               support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate,
-              company_pin, etims_integration_url, etims_api_key, etims_taxation_type_code)
+              company_pin, etims_integration_url, etims_api_key, etims_taxation_type_code, terms_conditions_content)
              VALUES (1, 50.00, 0.00, 0.00, 0, :company_name, :support_phone,
-                     :support_email, 'KES', :locale_code, :timezone_name, 1, 0.00, NULL, NULL, NULL, NULL)"
+                     :support_email, 'KES', :locale_code, :timezone_name, 1, 0.00, NULL, NULL, NULL, NULL, :terms_conditions_content)"
         );
         $stmtSettings->execute([
             ':company_name'  => $company_name,
@@ -810,6 +876,7 @@ try {
             ':support_email' => $support_email,
             ':locale_code'   => $locale_code,
             ':timezone_name' => $timezone_name,
+            ':terms_conditions_content' => $defaultTermsTemplate,
         ]);
     }
 
@@ -859,6 +926,20 @@ try {
             (user_id, credit_limit, available_credit, status) VALUES (?, 10000.00, 10000.00, 'active')")
             ->execute([$testUserRow['id']]);
     }
+
+    $conn->exec("INSERT INTO user_meters (user_id, meter_number, meter_label, status, is_primary, registration_bill_id)
+        SELECT u.id, u.meter_number, NULL, 'active', 1, NULL
+        FROM users u
+        LEFT JOIN user_meters um ON um.user_id = u.id AND um.is_primary = 1
+        WHERE u.meter_number IS NOT NULL AND u.meter_number <> '' AND um.id IS NULL");
+
+    $featureReadinessChecks = [
+        'Multi-meter registry ready' => installerTableExists($conn, 'user_meters'),
+        'Primary meter seed applied' => (int)$conn->query("SELECT COUNT(*) FROM user_meters WHERE is_primary = 1")->fetchColumn() > 0,
+        'Short payment/message links ready' => installerTableExists($conn, 'short_urls'),
+        'Editable terms storage ready' => installerColumnExists($conn, 'billing_settings', 'terms_conditions_content'),
+        'Dial-code selector ready' => (int)$conn->query("SELECT COUNT(*) FROM country_dial_codes")->fetchColumn() > 0,
+    ];
 
     // Best-effort: ensure key .env entries exist for a fresh install.
     // Existing values are preserved (no overwrite) to avoid clobbering real secrets.
@@ -966,6 +1047,14 @@ class Database {
                     <ul>
                         <li><strong>Registration Fee:</strong> KES 0.00</li>
                         <li><strong>GPS Enforcement:</strong> <span class="badge bg-secondary">Off</span> <span class="text-muted">(can be enabled later in Settings)</span></li>
+                    </ul>
+                    <h5>Feature Readiness Checks:</h5>
+                    <ul>
+                        <li><strong>Multi-meter registry:</strong> ' . ($featureReadinessChecks['Multi-meter registry ready'] ? '<span class="badge bg-success">Ready</span>' : '<span class="badge bg-danger">Missing</span>') . '</li>
+                        <li><strong>Primary meter seed:</strong> ' . ($featureReadinessChecks['Primary meter seed applied'] ? '<span class="badge bg-success">Ready</span>' : '<span class="badge bg-danger">Missing</span>') . '</li>
+                        <li><strong>Short public links:</strong> ' . ($featureReadinessChecks['Short payment/message links ready'] ? '<span class="badge bg-success">Ready</span>' : '<span class="badge bg-danger">Missing</span>') . '</li>
+                        <li><strong>Editable terms storage:</strong> ' . ($featureReadinessChecks['Editable terms storage ready'] ? '<span class="badge bg-success">Ready</span>' : '<span class="badge bg-danger">Missing</span>') . '</li>
+                        <li><strong>Phone country selector:</strong> ' . ($featureReadinessChecks['Dial-code selector ready'] ? '<span class="badge bg-success">Ready</span>' : '<span class="badge bg-danger">Missing</span>') . '</li>
                     </ul>
                     <h5>Admin Credentials:</h5>
                     <ul>

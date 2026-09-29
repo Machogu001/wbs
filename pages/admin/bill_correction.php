@@ -117,6 +117,9 @@ include __DIR__ . '/../../templates/header.php';
 				<h2 class="pb-title">Bill Reading Correction</h2>
 				<p class="pb-subtitle">Fix a wrongly entered meter reading. The bill, ledgers, and any resulting overpayment credit are updated together.</p>
 			</div>
+			<div class="pb-right">
+				<a href="/settings" class="pb-btn"><i class="bi bi-arrow-left"></i> Back</a>
+			</div>
 		</div>
 	</div>
 
@@ -130,7 +133,8 @@ include __DIR__ . '/../../templates/header.php';
 			<form method="GET" class="row g-3">
 				<div class="col-md-8">
 					<label class="form-label">Account / Meter / Name</label>
-					<input type="text" name="q" class="form-control" placeholder="Start typing account, meter or name" value="<?php echo htmlspecialchars($identifier); ?>" required>
+					<input type="text" name="q" id="bill-correction-client-search" class="form-control js-client-autocomplete" placeholder="Start typing account, meter or name" value="<?php echo htmlspecialchars($identifier); ?>" autocomplete="off" required>
+					<div class="form-text">Suggestions appear as you type. You can search by account number, meter number, or client name.</div>
 				</div>
 				<div class="col-md-4 d-flex align-items-end">
 					<button type="submit" class="btn btn-primary w-100"><i class="bi bi-search me-1"></i> Search</button>
@@ -247,4 +251,20 @@ include __DIR__ . '/../../templates/header.php';
 	</div>
 	<?php endif; ?>
 </div>
+
+<script src="/public/js/admin-client-autocomplete.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+	var searchInput = document.getElementById('bill-correction-client-search');
+	if (!searchInput || !window.WbsClientAutocomplete) {
+		return;
+	}
+
+	window.WbsClientAutocomplete.init('.js-client-autocomplete', {
+		endpoint: '/api/admin/search_clients',
+		minChars: 2,
+		debounceMs: 250
+	});
+});
+</script>
 <?php include __DIR__ . '/../../templates/footer.php'; ?>

@@ -7,6 +7,7 @@
     $footerRegistrationFee = 0.00;
     $footerCurrencyCode = 'KES';
     $footerEnforceLocationAccuracy = 0;
+    $footerTermsContent = '';
     $footerCountryCodeOptions = [
         ['value' => '254', 'label' => 'Kenya (+254)'],
         ['value' => '256', 'label' => 'Uganda (+256)'],
@@ -42,6 +43,7 @@
                     if (!empty($footerSettings['enforce_location_accuracy'])) {
                         $footerEnforceLocationAccuracy = 1;
                     }
+                    $footerTermsContent = BillingSettings::renderTermsContent($footerSettings, 'https://wbs.bremac.co.ke/');
 
                     $countryDialCodeService = new CountryDialCode($dbFooter);
                     $dbCountryCodeOptions = $countryDialCodeService->listActive();
@@ -208,28 +210,27 @@
             </div>
         </div>
     </div>
-
-    <!-- Global Registration Modal (quick access) -->
-        <div class="modal fade" id="registerModal" tabindex="-1" aria-hidden="true">
-		<div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+    
+    <!-- Global Registration Modal -->
+    <div class="modal fade" id="registerModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-person-plus"></i> Create Account</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="small text-muted mb-3" id="landingRegisterIntro">
-                        You can register directly from any page. For a larger view,
-                        you can also use the full registration page from the menu.
+                    <div id="landingRegisterIntro" class="mb-3 text-muted small">
+                        Register as a client to start the connection and payment setup flow, or as office staff for an internal account.
                     </div>
+
                     <div id="landingRegisterMessage" class="alert d-none"></div>
 
-                    <!-- M-Pesa payment waiting/countdown panel (hidden until STK is sent) -->
                     <div id="landingPaymentWaiting" class="reg-payment-waiting d-none">
                         <div class="reg-countdown-ring">
                             <svg viewBox="0 0 90 90">
-                                <circle class="ring-bg" cx="45" cy="45" r="38"/>
-                                <circle class="ring-arc" id="landingRingArc" cx="45" cy="45" r="38"/>
+                                <circle class="ring-bg" cx="45" cy="45" r="38"></circle>
+                                <circle class="ring-arc" id="landingRingArc" cx="45" cy="45" r="38"></circle>
                             </svg>
                             <span class="reg-countdown-number" id="landingCountdownNum">59</span>
                         </div>
@@ -248,142 +249,199 @@
                     <form id="landingRegisterForm" novalidate>
                         <div class="mb-3">
                             <label for="landing_registration_type" class="form-label">Register As *</label>
-                            <select class="form-select" id="landing_registration_type" required>
+                            <select class="form-select" id="landing_registration_type" name="registration_type" required>
                                 <option value="client" selected>Client</option>
                                 <option value="staff">Office Staff</option>
                             </select>
-                            <div class="form-text">Clients include billing and meter setup. Office staff accounts are created without meter numbers and require a unique username.</div>
+                            <div class="form-text">Clients get meter/account setup and payment flow. Office staff get a staff account without a meter number.</div>
                         </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label for="landing_first_name" class="form-label">First Name *</label>
-                                <input type="text" class="form-control" id="landing_first_name" autocomplete="given-name" required>
-                                <div class="invalid-feedback">Please enter your first name.</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="landing_middle_name" class="form-label">Middle Name</label>
-                                <input type="text" class="form-control" id="landing_middle_name" autocomplete="additional-name">
-                            </div>
-                            <div class="col-md-6">
-                                <label for="landing_last_name" class="form-label">Last Name *</label>
-                                <input type="text" class="form-control" id="landing_last_name" autocomplete="family-name" required>
-                                <div class="invalid-feedback">Please enter your last name.</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="landing_phone_number_local" class="form-label">Phone Number *</label>
-                                <div class="input-group">
-                                    <span class="input-group-text">+</span>
-                                    <select class="form-select" id="landing_phone_country_code" style="max-width: 190px;" required>
-                                        <?php foreach ($footerCountryCodeOptions as $option): ?>
-                                            <?php $code = (string)($option['value'] ?? ''); ?>
-                                            <?php $label = (string)($option['label'] ?? ''); ?>
-                                            <option value="<?php echo htmlspecialchars($code); ?>" <?php echo $code === '254' ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option>
-                                        <?php endforeach; ?>
+
+                        <div class="row landing-client-only-field">
+                            <div class="col-md-6 col-lg-4">
+                                <div class="mb-3">
+                                    <label for="landing_customer_type" class="form-label">Client Type *</label>
+                                    <select class="form-select" id="landing_customer_type" name="customer_type">
+                                        <option value="individual" selected>Individual / Personal</option>
+                                        <option value="company">Company / Organization</option>
                                     </select>
-                                    <input type="tel" class="form-control" id="landing_phone_number_local" placeholder="e.g. 712345678" autocomplete="tel-national" inputmode="numeric" required>
-                                </div>
-                                <div class="invalid-feedback">Please choose country code and enter a valid phone number.</div>
-                            </div>
-                            <div class="col-md-6 landing-staff-only-field d-none">
-                                <label for="landing_username" class="form-label">Username *</label>
-                                <input type="text" class="form-control" id="landing_username" minlength="3" maxlength="30" pattern="^[A-Za-z0-9._-]{3,30}$" autocomplete="username">
-                                <div class="form-text">Used to login for office staff accounts.</div>
-                                <div class="invalid-feedback">Please enter a valid username (3-30 characters: letters, numbers, dot, underscore, hyphen).</div>
-                            </div>
-                            <div class="col-md-6 landing-client-only-field">
-                                <label for="landing_email" class="form-label">Email Address *</label>
-                                <div class="input-group">
-                                    <span class="input-group-text"><i class="bi bi-envelope"></i></span>
-                                    <input type="email" class="form-control" id="landing_email" autocomplete="email">
-                                </div>
-                                <div class="invalid-feedback">Please enter a valid email address.</div>
-                            </div>
-                            <div class="col-md-6 landing-client-only-field">
-                                <label for="landing_id_number" class="form-label">ID Number *</label>
-                                <input type="text" class="form-control" id="landing_id_number" autocomplete="off" required>
-                                <div class="invalid-feedback">Please enter your ID number.</div>
-                            </div>
-                            <div class="col-md-6 landing-client-only-field">
-                                <label for="landing_tax_pin" class="form-label">PIN / Tax ID (optional)</label>
-                                <input type="text" class="form-control" id="landing_tax_pin" placeholder="e.g. P012345678Z" autocomplete="off">
-                            </div>
-                            <div class="col-12 landing-client-only-field">
-                                <label for="landing_address" class="form-label">Physical Address *</label>
-                                <textarea class="form-control" id="landing_address" rows="2"></textarea>
-                                <div class="invalid-feedback">Please enter your address.</div>
-                            </div>
-                            <div class="col-12 landing-client-only-field">
-                                <label for="landing_location_label" class="form-label" id="landing_location_label_label">Location (optional)</label>
-                                <input type="text" class="form-control location-autocomplete" id="landing_location_label" placeholder="e.g. P5PP+CJ, Nguluni" autocomplete="off">
-                                <div class="invalid-feedback">Please enter your location.</div>
-                                <div class="form-text" id="landing_location_label_help">Optional short location such as Plus Code or estate name (e.g. "P5PP+CJ, Nguluni").</div>
-                                <div class="mt-2">
-                                    <button type="button" class="btn btn-outline-primary btn-sm" id="landingUseGpsBtn">
-                                        <i class="bi bi-geo-alt"></i> Use my current GPS location
-                                    </button>
-                                </div>
-                                <input type="hidden" id="landing_latitude">
-                                <input type="hidden" id="landing_longitude">
-                                <input type="hidden" id="landing_gps_accuracy" value="">
-                                <div id="landing_gps_accuracy_feedback" class="form-text d-none"></div>
-                            </div>
-                            <div class="col-md-6 landing-client-only-field">
-                                <label for="landing_connection_type" class="form-label">Connection Type *</label>
-                                <select class="form-select" id="landing_connection_type">
-                                    <option value="">Select type</option>
-                                    <option value="domestic">Domestic</option>
-                                    <option value="commercial">Commercial</option>
-                                    <option value="industrial">Industrial</option>
-                                </select>
-                                <div class="invalid-feedback">Please select connection type.</div>
-                            </div>
-                            <div class="col-md-6 landing-client-only-field">
-                                <label for="landing_register_password" class="form-label">Password *</label>
-                                <div class="input-group">
-                                    <input type="password" class="form-control" id="landing_register_password" autocomplete="new-password">
-                                    <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
-                                </div>
-                                <div class="form-check mt-1">
-                                    <input class="form-check-input" type="checkbox" id="landingRegisterShowPassword">
-                                    <label class="form-check-label small" for="landingRegisterShowPassword">Show password</label>
                                 </div>
                             </div>
-                            <div class="col-md-6 landing-client-only-field">
-                                <label for="landing_confirm_password" class="form-label">Confirm Password *</label>
-                                <div class="input-group">
-                                    <input type="password" class="form-control" id="landing_confirm_password" autocomplete="new-password">
-                                    <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
+                            <div class="col-md-6 col-lg-4 landing-company-client-field d-none">
+                                <div class="mb-3">
+                                    <label for="landing_company_name" class="form-label">Company Name *</label>
+                                    <input type="text" class="form-control" id="landing_company_name" name="company_name" autocomplete="organization">
+                                    <div class="invalid-feedback">Please enter the company name.</div>
                                 </div>
-                                <div class="form-check mt-1">
-                                    <input class="form-check-input" type="checkbox" id="landingRegisterShowConfirmPassword">
-                                    <label class="form-check-label small" for="landingRegisterShowConfirmPassword">Show confirm password</label>
-                                </div>
-                                <div class="invalid-feedback">Please confirm your password.</div>
                             </div>
-                            <div class="col-12">
-                                <div class="form-check mb-2">
-                                    <input class="form-check-input" type="checkbox" id="landing_terms" required>
-                                    <label class="form-check-label" for="landing_terms">
-                                        I agree to the <a href="#" data-bs-toggle="modal" data-bs-target="#termsModal">Terms and Conditions</a>
-                                    </label>
-                                    <div class="invalid-feedback">You must agree to the terms and conditions.</div>
+                            <div class="col-md-6 col-lg-4 landing-company-client-field d-none">
+                                <div class="mb-3">
+                                    <label for="landing_company_registration_number" class="form-label">Company Registration Number *</label>
+                                    <input type="text" class="form-control" id="landing_company_registration_number" name="company_registration_number" autocomplete="off">
+                                    <div class="invalid-feedback">Please enter the company registration number.</div>
                                 </div>
-                                <?php if (!empty($footerRegistrationFee) && $footerRegistrationFee > 0): ?>
-                                <div class="alert alert-info py-2 mb-2 landing-client-only-field">
-                                    <small>
-                                        A one-time non-refundable installation/registration fee of
-                                        <strong><?php echo htmlspecialchars($footerCurrencyCode); ?>
-                                        <?php echo number_format($footerRegistrationFee, 2); ?></strong>
-                                        will be charged via M-Pesa STK push when you submit this form.
-                                    </small>
-                                </div>
-                                <?php endif; ?>
                             </div>
                         </div>
+
+                        <div class="row">
+                            <div class="col-md-6 col-lg-4">
+                                <div class="mb-3">
+                                    <label for="landing_first_name" class="form-label" id="landing_first_name_label">First Name *</label>
+                                    <input type="text" class="form-control" id="landing_first_name" name="first_name" autocomplete="given-name" required>
+                                    <div class="invalid-feedback">Please enter your first name.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4">
+                                <div class="mb-3">
+                                    <label for="landing_middle_name" class="form-label" id="landing_middle_name_label">Middle Name</label>
+                                    <input type="text" class="form-control" id="landing_middle_name" name="middle_name" autocomplete="additional-name">
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4">
+                                <div class="mb-3">
+                                    <label for="landing_last_name" class="form-label" id="landing_last_name_label">Last Name *</label>
+                                    <input type="text" class="form-control" id="landing_last_name" name="last_name" autocomplete="family-name" required>
+                                    <div class="invalid-feedback">Please enter your last name.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4">
+                                <div class="mb-3">
+                                    <label for="landing_phone_number_local" class="form-label">Phone Number *</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">+</span>
+                                        <select class="form-select" id="landing_phone_country_code" name="phone_country_code" style="max-width: 190px;" required>
+                                            <?php foreach ($footerCountryCodeOptions as $option): ?>
+                                                <?php $code = (string)($option['value'] ?? ''); ?>
+                                                <?php $label = (string)($option['label'] ?? ''); ?>
+                                                <option value="<?php echo htmlspecialchars($code); ?>" <?php echo $code === '254' ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <input type="tel" class="form-control" id="landing_phone_number_local" name="phone_number_local" placeholder="e.g. 712345678" autocomplete="tel-national" inputmode="numeric" required>
+                                    </div>
+                                    <div class="invalid-feedback">Please choose country code and enter a valid phone number.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4 landing-staff-only-field d-none">
+                                <div class="mb-3">
+                                    <label for="landing_username" class="form-label">Username *</label>
+                                    <input type="text" class="form-control" id="landing_username" name="username" minlength="3" maxlength="30" pattern="^[A-Za-z0-9._-]{3,30}$" autocomplete="username">
+                                    <div class="form-text">Used to login for office staff accounts.</div>
+                                    <div class="invalid-feedback">Please enter a valid username (3-30 characters: letters, numbers, dot, underscore, hyphen).</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row landing-client-only-field">
+                            <div class="col-md-6 col-lg-4">
+                                <div class="mb-3">
+                                    <label for="landing_email" class="form-label">Email Address *</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                                        <input type="email" class="form-control" id="landing_email" name="email" autocomplete="email">
+                                    </div>
+                                    <div class="invalid-feedback">Please enter a valid email address.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4">
+                                <div class="mb-3">
+                                    <label for="landing_id_number" class="form-label" id="landing_id_number_label">ID Number *</label>
+                                    <input type="text" class="form-control" id="landing_id_number" name="id_number" autocomplete="off">
+                                    <div class="invalid-feedback">Please enter your ID number.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4">
+                                <div class="mb-3">
+                                    <label for="landing_tax_pin" class="form-label">PIN / Tax ID (optional)</label>
+                                    <input type="text" class="form-control" id="landing_tax_pin" name="tax_pin" placeholder="e.g. P012345678Z" autocomplete="off">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row landing-client-only-field">
+                            <div class="col-lg-8">
+                                <div class="mb-3">
+                                    <label for="landing_address" class="form-label">Physical Address *</label>
+                                    <textarea class="form-control" id="landing_address" name="address" rows="2"></textarea>
+                                    <div class="invalid-feedback">Please enter your address.</div>
+                                </div>
+                            </div>
+                            <div class="col-lg-4">
+                                <div class="mb-3">
+                                    <label for="landing_location_label" class="form-label" id="landing_location_label_label">Location (optional)</label>
+                                    <input type="text" class="form-control location-autocomplete" id="landing_location_label" name="location_label" placeholder="e.g. P5PP+CJ, Nguluni" autocomplete="off">
+                                    <div class="invalid-feedback">Please enter your location.</div>
+                                    <div class="form-text" id="landing_location_label_help">Optional short location such as Plus Code or estate name.</div>
+                                    <div class="mt-2">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" id="landingUseGpsBtn">
+                                            <i class="bi bi-geo-alt"></i> Use my current GPS location
+                                        </button>
+                                    </div>
+                                    <input type="hidden" id="landing_latitude" name="latitude">
+                                    <input type="hidden" id="landing_longitude" name="longitude">
+                                    <input type="hidden" id="landing_gps_accuracy" name="gps_accuracy" value="">
+                                    <div id="landing_gps_accuracy_feedback" class="form-text d-none"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row landing-client-only-field">
+                            <div class="col-md-6 col-lg-4">
+                                <div class="mb-3">
+                                    <label for="landing_connection_type" class="form-label">Connection Type *</label>
+                                    <select class="form-select" id="landing_connection_type" name="connection_type">
+                                        <option value="">Select type</option>
+                                        <option value="domestic">Domestic</option>
+                                        <option value="commercial">Commercial</option>
+                                        <option value="industrial">Industrial</option>
+                                    </select>
+                                    <div class="invalid-feedback">Please select connection type.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row landing-client-only-field">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="landing_register_password" class="form-label">Password *</label>
+                                    <div class="input-group">
+                                        <input type="password" class="form-control" id="landing_register_password" name="password" autocomplete="new-password">
+                                        <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </div>
+                                    <div class="invalid-feedback">Please enter a password.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="landing_confirm_password" class="form-label">Confirm Password *</label>
+                                    <div class="input-group">
+                                        <input type="password" class="form-control" id="landing_confirm_password" name="confirm_password" autocomplete="new-password">
+                                        <button class="btn btn-outline-secondary toggle-password" type="button" aria-label="Show or hide password">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </div>
+                                    <div class="invalid-feedback">Please confirm your password.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-check mb-3 landing-client-only-field">
+                            <input class="form-check-input" type="checkbox" id="landing_terms" required>
+                            <label class="form-check-label" for="landing_terms">
+                                I agree to the <a href="#" data-bs-toggle="modal" data-bs-target="#termsModal">Terms and Conditions</a>
+                            </label>
+                            <div class="invalid-feedback">You must agree to the terms and conditions.</div>
+                        </div>
+
+                        <?php if (!empty($footerRegistrationFee) && $footerRegistrationFee > 0): ?>
+                        <div class="alert alert-info py-2 mb-3 landing-client-only-field">
+                            <small>
+                                Registration fee: <strong><?php echo htmlspecialchars($footerCurrencyCode); ?> <?php echo number_format($footerRegistrationFee, 2); ?></strong>.
+                                Non-refundable. M-Pesa STK push will be sent on submit.
+                            </small>
+                        </div>
+                        <?php endif; ?>
+
                         <div class="d-grid gap-2 mt-3">
                             <button type="submit" class="btn btn-primary" id="landingRegisterBtn">
                                 <i class="bi bi-person-plus"></i> Create Account
@@ -395,7 +453,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Global Terms & Conditions Modal (used by all registration forms) -->
     <div class="modal fade" id="termsModal" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -405,211 +463,13 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p><strong>Community Water Supply Connection – BREMAC CONSULTANT LIMITED</strong></p>
-
-                    <h6>1. Registration and Membership</h6>
-                    <p>
-                        All individuals wishing to receive a household water connection must first register through the
-                        official registration platform
-                        <a href="https://wbs.bremac.co.ke/" target="_blank" rel="noopener noreferrer">BreMac Water Supply</a>.
-                        Registration requires accurate personal details including the applicant’s full name, phone number,
-                        and location.
-                    </p>
-
-                    <h6>2. Installation Fee</h6>
-                    <p>
-                        A one-time non-refundable installation fee of
-                        <?php echo htmlspecialchars($footerCurrencyCode); ?>
-                        <?php echo number_format($footerRegistrationFee, 2); ?>
-                        is required for each household connection. This fee covers planning, materials, labor,
-                        and connection to the main distribution line.
-                    </p>
-
-                    <h6>3. Payment Method</h6>
-                    <p>
-                        The preferred payment method is through the online registration system where applicants will
-                        receive a prompt to complete payment.
-                    </p>
-                    <p>
-                        <strong>Alternative payment (for members unable to access the online platform):</strong><br>
-                        M-Pesa Paybill Number: 4166503<br>
-                        Business Name: BREMAC CONSULTANT LIMITED<br>
-                        Account Number: Registered Customer Account Number
-                    </p>
-                    <p>
-                        Applicants must retain the M-Pesa confirmation message as proof of payment.
-                    </p>
-
-                    <h6>4. Installation Schedule</h6>
-                    <p>
-                        Installation of household connections will begin as soon as site conditions are suitable for
-                        safe trenching and pipe laying. Scheduling may be adjusted due to factors such as adverse
-                        weather, very hard ground, or other conditions that make excavation unsafe or impractical.
-                    </p>
-
-                    <h6>5. Connection Approval</h6>
-                    <p>
-                        A connection will only be scheduled after:
-                    </p>
-                    <ul>
-                        <li>Successful registration</li>
-                        <li>Full payment of the installation fee</li>
-                        <li>Verification of payment by the project administrators</li>
-                    </ul>
-
-                    <h6>6. Account Creation</h6>
-                    <p>
-                        Upon successful payment, a customer account will be created. Account details and confirmation
-                        will be sent to the registered phone number via SMS from the Sender ID: <strong>BREMAC LTD</strong>.
-                    </p>
-
-                    <h6>7. Water Usage Charges</h6>
-                    <p>
-                        Water usage charges, tariffs, and billing procedures will be communicated to members separately
-                        once the supply system becomes fully operational.
-                    </p>
-
-                    <h6>8. Access for Installation</h6>
-                    <p>
-                        Members must allow reasonable access to their property for trenching, pipe installation, meter
-                        installation, and maintenance work.
-                    </p>
-
-                    <h6>9. Responsibility for Internal Plumbing</h6>
-                    <p>
-                        The project installation covers connection from the main distribution line to the designated
-                        connection point. Any internal plumbing within the property is the responsibility of the property
-                        owner.
-                    </p>
-
-                    <h6>10. Damage or Interference</h6>
-                    <p>
-                        Tampering with pipelines, meters, valves, or any part of the water infrastructure is strictly
-                        prohibited. Any damage caused intentionally or through negligence will be repaired at the
-                        responsible member’s cost.
-                    </p>
-
-                    <h6>11. Service Interruptions</h6>
-                    <p>
-                        While every effort will be made to ensure a reliable water supply, the project management shall
-                        not be liable for temporary service interruptions caused by maintenance, repairs, weather
-                        conditions, or other unforeseen circumstances.
-                    </p>
-
-                    <h6>12. Refund Policy</h6>
-                    <p>
-                        The installation fee is non-refundable once registration and payment have been confirmed and
-                        planning or procurement processes have commenced.
-                    </p>
-
-                    <h6>13. Changes to Terms</h6>
-                    <p>
-                        BREMAC CONSULTANT LIMITED reserves the right to update or modify these terms and conditions when
-                        necessary. Members will be notified of any significant changes.
-                    </p>
-
-                    <h6>14. Compliance</h6>
-                    <p>
-                        All registered members agree to abide by these terms and conditions as part of participating in
-                        the community water supply project.
-                    </p>
-
-                    <hr>
-
-                    <h6>Community Water Supply Rules</h6>
-                    <p><strong>BREMAC CONSULTANT LIMITED</strong></p>
-                    <p>
-                        To ensure fair access, sustainability, and proper management of the community water supply
-                        system, all members are required to observe the following rules:
-                    </p>
-
-                    <h6>1. Registered Members Only</h6>
-                    <p>
-                        Only individuals who have completed registration and paid the required installation fee are
-                        eligible for a household water connection.
-                    </p>
-
-                    <h6>2. Authorized Connections</h6>
-                    <p>
-                        All water connections must be installed <strong>only by authorized technicians</strong>
-                        appointed by BREMAC CONSULTANT LIMITED. Members are not allowed to install or modify
-                        connections themselves.
-                    </p>
-
-                    <h6>3. Prohibition of Illegal Connections</h6>
-                    <p>
-                        Unauthorized tapping into the main pipeline, bypassing meters, or sharing connections without
-                        approval is strictly prohibited. Any illegal connection will lead to immediate disconnection
-                        and penalties.
-                    </p>
-
-                    <h6>4. Protection of Water Infrastructure</h6>
-                    <p>
-                        Members must help protect the water infrastructure including pipelines, valves, meters, and
-                        fittings. Any damage caused intentionally or through negligence must be repaired at the
-                        responsible person’s cost.
-                    </p>
-
-                    <h6>5. Water Meter Integrity</h6>
-                    <p>
-                        Water meters must not be tampered with, altered, bypassed, or interfered with in any way.
-                        Tampering may result in disconnection, penalties, and possible termination of service.
-                    </p>
-
-                    <h6>6. Timely Payment of Bills</h6>
-                    <p>
-                        All members must settle their water usage bills within the stipulated payment period.
-                        Persistent non-payment may result in temporary suspension of water supply until outstanding
-                        balances are cleared.
-                    </p>
-
-                    <h6>7. Access for Maintenance</h6>
-                    <p>
-                        Authorized personnel may need access to properties for meter reading, maintenance, inspection,
-                        or repair. Members must cooperate and allow reasonable access when required.
-                    </p>
-
-                    <h6>8. Responsible Water Use</h6>
-                    <p>
-                        Members are encouraged to use water responsibly and avoid wastage. Water should not be used
-                        for activities that may strain the supply system or reduce availability for other members.
-                    </p>
-
-                    <h6>9. Leak Reporting</h6>
-                    <p>
-                        Members should promptly report any leaks, pipe bursts, or system faults to help prevent water
-                        loss and infrastructure damage.
-                    </p>
-
-                    <h6>10. Connection Transfer</h6>
-                    <p>
-                        Water connections are linked to the registered property and member. Any transfer, relocation,
-                        or change of ownership must be communicated to the project administration for proper records
-                        update.
-                    </p>
-
-                    <h6>11. Dispute Resolution</h6>
-                    <p>
-                        Any concerns or disputes related to billing, connections, or services should be reported to
-                        the project administration team for review and resolution.
-                    </p>
-
-                    <h6>12. Compliance with Rules</h6>
-                    <p>
-                        Failure to comply with these community rules may lead to penalties, suspension of service, or
-                        disconnection from the water supply system.
-                    </p>
-
-                    <h6>13. Community Cooperation</h6>
-                    <p>
-                        The success of the water project depends on cooperation among all members. Every member is
-                        encouraged to support the proper use, protection, and sustainability of the water system.
-                    </p>
-
-                    <p>
-                        For inquiries or assistance, members may contact the project administration team.<br>
-                        <strong>BREMAC CONSULTANT LIMITED</strong>
-                    </p>
+                    <?php echo $footerTermsContent !== '' ? $footerTermsContent : BillingSettings::renderTermsContent([
+                        'company_name' => 'BreMac Consultant Ltd',
+                        'support_phone' => $footerSupportPhone,
+                        'support_email' => $footerSupportEmail,
+                        'currency_code' => $footerCurrencyCode,
+                        'registration_fee' => $footerRegistrationFee,
+                    ], 'https://wbs.bremac.co.ke/'); ?>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="termsModalCloseButton">Close</button>
@@ -1199,6 +1059,10 @@
             return $('#landing_registration_type').val() === 'client';
         }
 
+        function isLandingCompanyClient() {
+            return isLandingClientRegistration() && $('#landing_customer_type').val() === 'company';
+        }
+
         function isLandingStaffRegistration() {
             return $('#landing_registration_type').val() === 'staff';
         }
@@ -1206,14 +1070,23 @@
         function toggleLandingRegistrationModeUI() {
             var isClient = isLandingClientRegistration();
             var isStaff = isLandingStaffRegistration();
+            var isCompany = isLandingCompanyClient();
             var enforceLocation = !!window.ENFORCE_LOCATION_ACCURACY;
             $('.landing-client-only-field').toggleClass('d-none', !isClient);
             $('.landing-staff-only-field').toggleClass('d-none', !isStaff);
+            $('.landing-company-client-field').toggleClass('d-none', !isClient || !isCompany);
 
-            $('#landing_email, #landing_id_number, #landing_address, #landing_connection_type, #landing_register_password, #landing_confirm_password')
+            $('#landing_email, #landing_address, #landing_connection_type, #landing_register_password, #landing_confirm_password')
                 .prop('required', isClient);
+            $('#landing_id_number').prop('required', isClient && !isCompany);
+            $('#landing_company_name, #landing_company_registration_number').prop('required', isClient && isCompany);
             $('#landing_location_label').prop('required', isClient && enforceLocation);
             $('#landing_username').prop('required', isStaff);
+
+            $('#landing_first_name_label').text(isCompany ? 'Contact Person First Name *' : 'First Name *');
+            $('#landing_middle_name_label').text(isCompany ? 'Contact Person Middle Name' : 'Middle Name');
+            $('#landing_last_name_label').text(isCompany ? 'Contact Person Last Name *' : 'Last Name *');
+            $('#landing_id_number_label').text(isCompany ? 'Contact Person ID Number (optional)' : 'ID Number *');
 
             $('#landing_location_label_label').text(enforceLocation ? 'Location *' : 'Location (optional)');
             $('#landing_location_label_help').text(
@@ -1223,9 +1096,12 @@
             );
 
             if (!isClient) {
-                $('#landing_email, #landing_id_number, #landing_address, #landing_location_label, #landing_connection_type, #landing_register_password, #landing_confirm_password')
+                $('#landing_email, #landing_id_number, #landing_address, #landing_location_label, #landing_connection_type, #landing_register_password, #landing_confirm_password, #landing_company_name, #landing_company_registration_number')
                     .removeClass('is-invalid');
                 $('#landing_register_password, #landing_confirm_password').val('');
+            }
+            if (!isCompany) {
+                $('#landing_company_name, #landing_company_registration_number').removeClass('is-invalid').val('');
             }
             if (!isStaff) {
                 $('#landing_username').removeClass('is-invalid').val('');
@@ -1238,7 +1114,7 @@
             }
         }
 
-        $('#landing_registration_type').on('change', toggleLandingRegistrationModeUI);
+        $('#landing_registration_type, #landing_customer_type').on('change', toggleLandingRegistrationModeUI);
         $('#landing_location_label').on('input change', clearLandingLocationInvalidState);
         toggleLandingRegistrationModeUI();
 
@@ -1863,6 +1739,7 @@
 
             const isClient = isLandingClientRegistration();
             const isStaff  = isLandingStaffRegistration();
+            const isCompany = isLandingCompanyClient();
             const password        = String($form.find('#landing_register_password').val() || '');
             const confirmPassword = String($form.find('#landing_confirm_password').val() || '');
             const username        = String($form.find('#landing_username').val() || '').trim();
@@ -1899,10 +1776,11 @@
 
             const formData = {
                 registration_type:  $form.find('#landing_registration_type').val(),
+                customer_type:      $form.find('#landing_customer_type').val(),
                 first_name:         $form.find('#landing_first_name').val(),
                 middle_name:        $form.find('#landing_middle_name').val(),
                 last_name:          $form.find('#landing_last_name').val(),
-                full_name:          ($form.find('#landing_first_name').val() + ' ' + $form.find('#landing_middle_name').val() + ' ' + $form.find('#landing_last_name').val()).trim(),
+                full_name:          isCompany ? $form.find('#landing_company_name').val() : ($form.find('#landing_first_name').val() + ' ' + $form.find('#landing_middle_name').val() + ' ' + $form.find('#landing_last_name').val()).trim(),
                 phone_country_code: $form.find('#landing_phone_country_code').val(),
                 phone_number_local: $form.find('#landing_phone_number_local').val(),
                 phone_number:       buildLandingNormalizedPhone(),
@@ -1919,6 +1797,8 @@
                 formData.connection_type = $form.find('#landing_connection_type').val();
                 formData.password        = password;
                 formData.tax_pin         = $form.find('#landing_tax_pin').val();
+                formData.company_name = $form.find('#landing_company_name').val();
+                formData.company_registration_number = $form.find('#landing_company_registration_number').val();
             }
 
             var registerBtn = $('#landingRegisterBtn');

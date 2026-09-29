@@ -90,7 +90,7 @@ require_once __DIR__ . '/../../templates/header.php';
 <?php
 $customersJson = json_encode($customersWithPins ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
 $selectedUserIdJs = (int)$selectedUserId;
-$googleMapsApiKey = getenv('GOOGLE_MAPS_API_KEY') ?: '';
+$googleMapsApiKey = Database::env('GOOGLE_MAPS_API_KEY', '');
 
 if ($googleMapsApiKey) {
     $custom_scripts = <<<JS

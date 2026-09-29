@@ -1,19 +1,22 @@
 <?php
 session_start();
-if(!isset($_SESSION['user_id'])) {
-    header("Location: /login");
-    exit;
-}
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/Auth.php';
 require_once __DIR__ . '/../includes/Bill.php';
 require_once __DIR__ . '/../includes/BillingSettings.php';
 require_once __DIR__ . '/../includes/Payment.php';
+require_once __DIR__ . '/../includes/PaymentLink.php';
 require_once __DIR__ . '/../includes/User.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
+$token = trim((string)($_GET['t'] ?? ''));
 $bill_id = isset($_GET['bill_id']) ? (int)$_GET['bill_id'] : 0;
+$tokenBillId = $token !== '' ? (int)(PaymentLink::getBillIdFromToken($token) ?? 0) : 0;
+$isPublicProformaRequest = $tokenBillId > 0;
+if ($bill_id <= 0 && $tokenBillId > 0) {
+    $bill_id = $tokenBillId;
+}
 if ($bill_id <= 0) {
     header("Location: /bills");
     exit;
@@ -22,7 +25,7 @@ if ($bill_id <= 0) {
 $database = new Database();
 $db = $database->getConnection();
 $auth = new Auth($db);
-if (!$auth->isLoggedIn()) {
+if (!$auth->isLoggedIn() && !$isPublicProformaRequest) {
     header("Location: /login");
     exit;
 }
@@ -31,16 +34,29 @@ if (!$db) {
     exit;
 }
 
-$canAdminDownloadInvoice = $auth->isAdmin()
+$canFullInvoiceAccess = $auth->isAdmin()
     || $auth->hasPermission('view_invoicing')
     || $auth->hasPermission('view_bill_detail');
+$canRegistrationProformaAccess = $auth->isAdmin() || $auth->hasPermission('manage_registration_proformas');
+$canAdminDownloadInvoice = $canFullInvoiceAccess || $canRegistrationProformaAccess;
 
 $billService = new Bill($db);
-$bill = $canAdminDownloadInvoice
+$bill = $isPublicProformaRequest
     ? $billService->getById($bill_id, null)
-    : $billService->getById($bill_id, (int)$_SESSION['user_id']);
+    : ($canAdminDownloadInvoice
+    ? $billService->getById($bill_id, null)
+    : $billService->getById($bill_id, (int)$_SESSION['user_id']));
 if (!$bill) {
     header("Location: " . ($canAdminDownloadInvoice ? "/admin/payments" : "/bills"));
+    exit;
+}
+$isRegistrationBill = $billService->isRegistrationFeeBill($bill);
+if ($isPublicProformaRequest && !$isRegistrationBill) {
+    header('Location: /');
+    exit;
+}
+if (!$canFullInvoiceAccess && $canRegistrationProformaAccess && !$isRegistrationBill) {
+    header('Location: /admin/registration-proformas');
     exit;
 }
 $billLineItems = $billService->getBillLineItems((int)$bill_id);
@@ -51,6 +67,25 @@ if (!$user) {
     header("Location: " . ($canAdminDownloadInvoice ? "/admin/payments" : "/bills"));
     exit;
 }
+$isCompanyCustomer = strtolower(trim((string)($user['customer_type'] ?? 'individual'))) === 'company';
+$companyCustomerName = trim((string)($user['company_name'] ?? ''));
+$contactPersonName = trim((string)($user['contact_person_name'] ?? ''));
+$companyRegistrationNumber = trim((string)($user['company_registration_number'] ?? ''));
+$displayCustomerName = $isCompanyCustomer && $companyCustomerName !== ''
+    ? $companyCustomerName
+    : trim((string)($user['full_name'] ?? 'Customer'));
+$clientProfileRowsHtml = '<tr><td>Client Type</td><td>' . htmlspecialchars($isCompanyCustomer ? 'Company / Organization' : 'Individual / Personal') . '</td></tr>'
+    . ($isCompanyCustomer
+        ? '<tr><td>Company Name</td><td>' . htmlspecialchars($displayCustomerName) . '</td></tr>'
+            . ($contactPersonName !== '' ? '<tr><td>Contact Person</td><td>' . htmlspecialchars($contactPersonName) . '</td></tr>' : '')
+            . ($companyRegistrationNumber !== '' ? '<tr><td>Company Registration No.</td><td>' . htmlspecialchars($companyRegistrationNumber) . '</td></tr>' : '')
+        : '<tr><td>Customer Name</td><td>' . htmlspecialchars($displayCustomerName) . '</td></tr>')
+    . (!empty($user['id_number']) ? '<tr><td>' . htmlspecialchars($isCompanyCustomer ? 'Contact Person ID' : 'ID Number') . '</td><td>' . htmlspecialchars((string)$user['id_number']) . '</td></tr>' : '')
+    . (!empty($user['phone_number']) ? '<tr><td>Phone</td><td>' . htmlspecialchars((string)$user['phone_number']) . '</td></tr>' : '')
+    . (!empty($user['email']) ? '<tr><td>Email</td><td>' . htmlspecialchars((string)$user['email']) . '</td></tr>' : '')
+    . (!empty($user['address']) ? '<tr><td>Address</td><td>' . htmlspecialchars((string)$user['address']) . '</td></tr>' : '')
+    . (!empty($user['location_label']) ? '<tr><td>Location / Landmark</td><td>' . htmlspecialchars((string)$user['location_label']) . '</td></tr>' : '')
+    . (!empty($user['tax_pin']) ? '<tr><td>KRA PIN</td><td>' . htmlspecialchars((string)$user['tax_pin']) . '</td></tr>' : '');
 
 // Load completed payments for this bill, including latest eTIMS metadata.
 $payment = null;
@@ -85,7 +120,7 @@ $currency = $settings['currency_code'] ?? 'KES';
 
 use Dompdf\Dompdf;
 
-$filename = 'invoice_' . ($user['account_number'] ?? 'account') . '_' . $bill_id . '.pdf';
+$requestedRegistrationProforma = !empty($_GET['proforma']) && $isRegistrationBill;
 
 $statusColor = '#dc2626'; // default red
 if ($bill['status'] === 'paid') {
@@ -102,6 +137,12 @@ $paymentService = new Payment($db);
 $balanceAmount = $paymentService->getBillOutstandingAmount((int)$bill_id);
 $paidAmount = max(0.0, round($totalAmount - $balanceAmount, 2));
 $isFullyPaid = $balanceAmount <= 0.01;
+$isRegistrationProforma = $requestedRegistrationProforma && !$isFullyPaid;
+$isCompactRegistrationInvoice = $isRegistrationBill;
+$filenamePrefix = $isRegistrationProforma ? 'registration_proforma_' : 'invoice_';
+$documentTitle = $isRegistrationProforma ? 'Registration Proforma Invoice' : 'Invoice';
+$documentCodePrefix = $isRegistrationProforma ? 'PRO-' : 'INV-';
+$filename = $filenamePrefix . ($user['account_number'] ?? 'account') . '_' . $bill_id . '.pdf';
 $paymentRowsHtml = '';
 foreach ($paymentRows as $paymentRow) {
     $code = trim((string)($paymentRow['mpesa_receipt'] ?? ''));
@@ -136,42 +177,134 @@ if (empty($billLineItems)) {
     }
 }
 
+$billedToTableHtml = $isCompactRegistrationInvoice
+    ? '<table style="margin-top:0;">'
+        . '<thead><tr>'
+        . '<th style="color:#e11d48; border-bottom-color:#e11d48;">Billed To</th>'
+        . '<th style="color:#ea580c; border-bottom-color:#ea580c;">Account</th>'
+        . '<th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Balance (' . htmlspecialchars($currency) . ')</th>'
+        . '<th style="color:#0284c7; border-bottom-color:#0284c7;">Due Date</th>'
+        . '</tr></thead>'
+        . '<tbody><tr>'
+        . '<td><strong>' . htmlspecialchars($displayCustomerName) . '</strong>'
+        . ($isCompanyCustomer && $contactPersonName !== '' ? '<br><span class="label">Contact: <span class="value">' . htmlspecialchars($contactPersonName) . '</span></span>' : '')
+        . ($isCompanyCustomer && $companyRegistrationNumber !== '' ? '<br><span class="label">Reg. No: <span class="value">' . htmlspecialchars($companyRegistrationNumber) . '</span></span>' : '')
+        . (!empty($user['phone_number']) ? '<br><span class="label">Phone: <span class="value">' . htmlspecialchars((string)$user['phone_number']) . '</span></span>' : '')
+        . (!empty($user['email']) ? '<br><span class="label">Email: <span class="value">' . htmlspecialchars((string)$user['email']) . '</span></span>' : '')
+        . '</td>'
+        . '<td>' . htmlspecialchars($user['account_number'] ?? '') . '</td>'
+        . '<td class="text-right"><strong>' . number_format($balanceAmount, 2) . '</strong></td>'
+        . '<td>' . htmlspecialchars(date('d-m-Y', strtotime($bill['due_date']))) . '</td>'
+        . '</tr></tbody></table>'
+    : '<table style="margin-top:0;">'
+        . '<thead>'
+        . '<tr>'
+        . '<th style="color:#e11d48; border-bottom-color:#e11d48;">Billed To</th>'
+        . '<th style="color:#ea580c; border-bottom-color:#ea580c;">Account</th>'
+        . '<th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Balance Due (' . htmlspecialchars($currency) . ')</th>'
+        . '<th style="color:#0284c7; border-bottom-color:#0284c7;">Due Date</th>'
+        . '<th class="text-right" style="color:#7c3aed; border-bottom-color:#7c3aed;">Prev (m³)</th>'
+        . '<th class="text-right" style="color:#7c3aed; border-bottom-color:#7c3aed;">Current (m³)</th>'
+        . '<th class="text-right" style="color:#db2777; border-bottom-color:#db2777;">Consumption (m³)</th>'
+        . '</tr>'
+        . '</thead>'
+        . '<tbody>'
+        . '<tr>'
+        . '<td><strong>' . htmlspecialchars($displayCustomerName) . '</strong>'
+            . ($isCompanyCustomer && $contactPersonName !== '' ? '<br><span class="label">Contact: <span class="value">' . htmlspecialchars($contactPersonName) . '</span></span>' : '')
+            . ($isCompanyCustomer && $companyRegistrationNumber !== '' ? '<br><span class="label">Reg. No: <span class="value">' . htmlspecialchars($companyRegistrationNumber) . '</span></span>' : '')
+        . '</td>'
+        . '<td>' . htmlspecialchars($user['account_number'] ?? '') . '</td>'
+        . '<td class="text-right"><strong>' . number_format($balanceAmount, 2) . '</strong></td>'
+        . '<td>' . htmlspecialchars(date('d-m-Y', strtotime($bill['due_date']))) . '</td>'
+        . '<td class="text-right">' . number_format($bill['previous_reading'], 2) . '</td>'
+        . '<td class="text-right">' . number_format($bill['current_reading'], 2) . '</td>'
+        . '<td class="text-right">' . number_format($bill['consumption'], 2) . '</td>'
+        . '</tr>'
+        . '</tbody>'
+        . '</table>';
+
+$clientProfileSectionHtml = $isCompactRegistrationInvoice ? '' : '
+            <div class="section">
+                <div class="section-title">Client Profile</div>
+                <table>
+                    <tbody>' . $clientProfileRowsHtml . '</tbody>
+                </table>
+            </div>';
+
+$paymentSectionHtml = !empty($paymentRowsHtml)
+    ? '
+            <div class="section">
+                <div class="section-title">Payment Information</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Paid On</th>
+                            <th>Method</th>
+                            <th>MPesa Receipt</th>
+                            <th class="text-right">Amount (' . htmlspecialchars($currency) . ')</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ' . $paymentRowsHtml . '
+                    </tbody>
+                </table>
+            </div>
+            ' : '';
+
+$etimsSectionHtml = ($payment && (!empty($payment['etims_qr_svg_url']) || !empty($payment['etims_invoice_id'])))
+    ? '
+            <div class="section">
+                <div class="section-title">eTIMS QR</div>
+                <table style="width:100%; border:none; border-collapse:collapse;">
+                    <tr>
+                        <td style="width:210px; border:none; vertical-align:top;">
+                            <img src="' . htmlspecialchars($payment['etims_qr_svg_url'] ?: ('https://etims.bremac.co.ke/qr/' . (int)$payment['etims_invoice_id'] . '.svg')) . '" width="160" height="160" alt="eTIMS QR" />
+                        </td>
+                        <td style="border:none; vertical-align:top; font-size:10px; color:#6b7280;">
+                            <div>Scan to verify receipt on KRA portal.</div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            ' : '';
+
 $html = '<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Invoice #' . (int)$bill_id . '</title>
+    <title>' . htmlspecialchars($documentTitle) . ' #' . (int)$bill_id . '</title>
     <style>
         body { font-family: DejaVu Sans, Arial, sans-serif; color: #1e293b; background: #ffffff; }
-        .wrapper { padding: 24px 0; }
-        .container { max-width: 860px; margin: 0 auto; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0 0 28px 0; overflow: hidden; }
-        .header-band { background: #ffffff; color: #1e293b; padding: 22px 28px 16px 28px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 0; border-bottom: 3px solid #1e40af; }
-        .header-band .muted { color: #64748b; font-size: 12px; }
-        .header-band .label { color: #64748b; font-size: 12px; }
-        .header-band .value { font-weight: 600; font-size: 13px; color: #1e293b; }
-        .body-pad { padding: 0 28px; }
+        .wrapper { padding: ' . ($isCompactRegistrationInvoice ? '12px' : '24px') . ' 0; }
+        .container { max-width: 860px; margin: 0 auto; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0 0 ' . ($isCompactRegistrationInvoice ? '18px' : '28px') . ' 0; overflow: hidden; }
+        .header-band { background: #ffffff; color: #1e293b; padding: ' . ($isCompactRegistrationInvoice ? '16px 20px 12px 20px' : '22px 28px 16px 28px') . '; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 0; border-bottom: 3px solid #1e40af; }
+        .header-band .muted { color: #64748b; font-size: ' . ($isCompactRegistrationInvoice ? '11px' : '12px') . '; }
+        .header-band .label { color: #64748b; font-size: ' . ($isCompactRegistrationInvoice ? '11px' : '12px') . '; }
+        .header-band .value { font-weight: 600; font-size: ' . ($isCompactRegistrationInvoice ? '12px' : '13px') . '; color: #1e293b; }
+        .body-pad { padding: 0 ' . ($isCompactRegistrationInvoice ? '20px' : '28px') . '; }
         .tag { font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: #1e40af; margin-bottom: 4px; }
         .title { font-size: 24px; font-weight: 700; letter-spacing: 0.05em; color: #1e40af; }
-        .section { margin-bottom: 20px; }
-        .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.10em; color: #1e40af; margin-bottom: 6px; border-left: 3px solid #1e40af; padding-left: 7px; }
-        .box { border: 1px solid #cbd5e1; border-radius: 4px; padding: 10px 12px; background: #ffffff; font-size: 13px; }
-        .label { color: #64748b; font-size: 12px; }
-        .value { font-weight: 600; font-size: 13px; color: #1e293b; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
-        th { background: #ffffff; text-transform: uppercase; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; padding: 7px 8px; border-bottom: 2px solid #cbd5e1; border-top: 1px solid #cbd5e1; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; }
-        td { border: 1px solid #cbd5e1; padding: 6px 8px; background: #ffffff; color: #1e293b; }
+        .section { margin-bottom: ' . ($isCompactRegistrationInvoice ? '12px' : '20px') . '; }
+        .section-title { font-size: ' . ($isCompactRegistrationInvoice ? '10px' : '11px') . '; font-weight: 700; text-transform: uppercase; letter-spacing: 0.10em; color: #1e40af; margin-bottom: 6px; border-left: 3px solid #1e40af; padding-left: 7px; }
+        .box { border: 1px solid #cbd5e1; border-radius: 4px; padding: ' . ($isCompactRegistrationInvoice ? '8px 10px' : '10px 12px') . '; background: #ffffff; font-size: ' . ($isCompactRegistrationInvoice ? '12px' : '13px') . '; }
+        .label { color: #64748b; font-size: ' . ($isCompactRegistrationInvoice ? '11px' : '12px') . '; }
+        .value { font-weight: 600; font-size: ' . ($isCompactRegistrationInvoice ? '12px' : '13px') . '; color: #1e293b; }
+        table { width: 100%; border-collapse: collapse; margin-top: ' . ($isCompactRegistrationInvoice ? '6px' : '10px') . '; font-size: ' . ($isCompactRegistrationInvoice ? '11px' : '12px') . '; }
+        th { background: #ffffff; text-transform: uppercase; font-size: ' . ($isCompactRegistrationInvoice ? '10px' : '11px') . '; font-weight: 700; letter-spacing: 0.06em; padding: ' . ($isCompactRegistrationInvoice ? '5px 6px' : '7px 8px') . '; border-bottom: 2px solid #cbd5e1; border-top: 1px solid #cbd5e1; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; }
+        td { border: 1px solid #cbd5e1; padding: ' . ($isCompactRegistrationInvoice ? '4px 6px' : '6px 8px') . '; background: #ffffff; color: #1e293b; }
         tr:nth-child(even) td { background: #f8fafc; }
         .text-right { text-align: right; }
-        .summary-table { width: 260px; font-size: 12px; }
+        .summary-table { width: ' . ($isCompactRegistrationInvoice ? '240px' : '260px') . '; font-size: ' . ($isCompactRegistrationInvoice ? '11px' : '12px') . '; }
         .summary-table td { border: none; padding: 3px 0; background: transparent; }
         .summary-label { color: #64748b; padding-right: 12px; }
         .summary-value { font-weight: 600; color: #1e293b; }
         .summary-total-label { font-weight: 700; color: #1e40af; border-top: 2px solid #1e40af; padding-top: 6px; }
         .summary-total-value { font-weight: 700; color: #1e40af; border-top: 2px solid #1e40af; padding-top: 6px; }
         .status-pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #ffffff; }
-        .paid-stamp { display: inline-block; margin-top: 10px; border: 3px solid #16a34a; color: #16a34a; font-size: 20px; font-weight: 800; letter-spacing: 0.10em; padding: 8px 18px; text-transform: uppercase; transform: rotate(-4deg); }
-        .footer-note { margin-top: 26px; font-size: 10px; color: #64748b; text-align: center; border-top: 1px solid #cbd5e1; padding-top: 12px; }
-        .right-meta { text-align: right; font-size: 12px; }
+        .paid-stamp { display: inline-block; margin-top: ' . ($isCompactRegistrationInvoice ? '6px' : '10px') . '; border: 3px solid #16a34a; color: #16a34a; font-size: ' . ($isCompactRegistrationInvoice ? '16px' : '20px') . '; font-weight: 800; letter-spacing: 0.10em; padding: ' . ($isCompactRegistrationInvoice ? '6px 14px' : '8px 18px') . '; text-transform: uppercase; transform: rotate(-4deg); }
+        .footer-note { margin-top: ' . ($isCompactRegistrationInvoice ? '14px' : '26px') . '; font-size: 10px; color: #64748b; text-align: center; border-top: 1px solid #cbd5e1; padding-top: ' . ($isCompactRegistrationInvoice ? '8px' : '12px') . '; }
+        .right-meta { text-align: right; font-size: ' . ($isCompactRegistrationInvoice ? '11px' : '12px') . '; }
     </style>
 </head>
 <body>
@@ -180,9 +313,11 @@ $html = '<!DOCTYPE html>
             <div class="header-band">
                 <div class="title-block">
                     <div style="font-size:28px; font-weight:700; letter-spacing:0.12em; margin-bottom:8px; line-height:1.2;">
-                        <span style="color:#e11d48;">I</span><span style="color:#ea580c;">N</span><span style="color:#ca8a04;">V</span><span style="color:#16a34a;">O</span><span style="color:#0284c7;">I</span><span style="color:#7c3aed;">C</span><span style="color:#db2777;">E</span>
+                        ' . ($isRegistrationProforma
+                            ? '<span style="color:#e11d48;">P</span><span style="color:#ea580c;">R</span><span style="color:#ca8a04;">O</span><span style="color:#16a34a;">F</span><span style="color:#0284c7;">O</span><span style="color:#7c3aed;">R</span><span style="color:#db2777;">M</span><span style="color:#0891b2;">A</span>'
+                            : '<span style="color:#e11d48;">I</span><span style="color:#ea580c;">N</span><span style="color:#ca8a04;">V</span><span style="color:#16a34a;">O</span><span style="color:#0284c7;">I</span><span style="color:#7c3aed;">C</span><span style="color:#db2777;">E</span>') . '
                     </div>
-                    <div class="muted" style="margin-top:6px;">Invoice #: <strong style="color:#1e293b;">INV-' . (int)$bill_id . '</strong></div>
+                    <div class="muted" style="margin-top:6px;">' . htmlspecialchars($documentTitle) . ' #: <strong style="color:#1e293b;">' . htmlspecialchars($documentCodePrefix) . (int)$bill_id . '</strong></div>
                     <div class="muted">Billing Month: ' . htmlspecialchars(date('M Y', strtotime($bill['billing_month']))) . '</div>
                     <div class="muted">Due Date: ' . htmlspecialchars(date('d-m-Y', strtotime($bill['due_date']))) . '</div>
                 </div>
@@ -202,34 +337,13 @@ $html = '<!DOCTYPE html>
 
             <div class="body-pad">
             <div class="section">
-                <table style="margin-top:0;">
-                    <thead>
-                        <tr>
-                            <th style="color:#e11d48; border-bottom-color:#e11d48;">Billed To</th>
-                            <th style="color:#ea580c; border-bottom-color:#ea580c;">Account</th>
-                            <th class="text-right" style="color:#16a34a; border-bottom-color:#16a34a;">Balance Due (' . htmlspecialchars($currency) . ')</th>
-                            <th style="color:#0284c7; border-bottom-color:#0284c7;">Due Date</th>
-                            <th class="text-right" style="color:#7c3aed; border-bottom-color:#7c3aed;">Prev (m³)</th>
-                            <th class="text-right" style="color:#7c3aed; border-bottom-color:#7c3aed;">Current (m³)</th>
-                            <th class="text-right" style="color:#db2777; border-bottom-color:#db2777;">Consumption (m³)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><strong>' . htmlspecialchars($user['full_name'] ?? 'Customer') . '</strong></td>
-                            <td>' . htmlspecialchars($user['account_number'] ?? '') . '</td>
-                            <td class="text-right"><strong>' . number_format($balanceAmount, 2) . '</strong></td>
-                            <td>' . htmlspecialchars(date('d-m-Y', strtotime($bill['due_date']))) . '</td>
-                            <td class="text-right">' . number_format($bill['previous_reading'], 2) . '</td>
-                            <td class="text-right">' . number_format($bill['current_reading'], 2) . '</td>
-                            <td class="text-right">' . number_format($bill['consumption'], 2) . '</td>
-                        </tr>
-                    </tbody>
-                </table>
+                ' . $billedToTableHtml . '
             </div>
 
+            ' . $clientProfileSectionHtml . '
+
             <div class="section">
-                <div class="section-title">Invoice Details</div>
+                <div class="section-title">' . htmlspecialchars($isRegistrationProforma ? 'Proforma Details' : 'Invoice Details') . '</div>
                 <table>
                     <thead>
                         <tr>
@@ -274,42 +388,11 @@ $html = '<!DOCTYPE html>
                 </div>
             </div>
 
-            ' . (!empty($paymentRowsHtml) ? '
-            <div class="section">
-                <div class="section-title">Payment Information</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Paid On</th>
-                            <th>Method</th>
-                            <th>MPesa Receipt</th>
-                            <th class="text-right">Amount (' . htmlspecialchars($currency) . ')</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ' . $paymentRowsHtml . '
-                    </tbody>
-                </table>
-            </div>
-            ' : '' ) . '
+            ' . $paymentSectionHtml . '
 
-            ' . ($payment && (!empty($payment['etims_qr_svg_url']) || !empty($payment['etims_invoice_id'])) ? '
-            <div class="section">
-                <div class="section-title">eTIMS QR</div>
-                <table style="width:100%; border:none; border-collapse:collapse;">
-                    <tr>
-                        <td style="width:210px; border:none; vertical-align:top;">
-                            <img src="' . htmlspecialchars($payment['etims_qr_svg_url'] ?: ('https://etims.bremac.co.ke/qr/' . (int)$payment['etims_invoice_id'] . '.svg')) . '" width="160" height="160" alt="eTIMS QR" />
-                        </td>
-                        <td style="border:none; vertical-align:top; font-size:10px; color:#6b7280;">
-                            <div>Scan to verify receipt on KRA portal.</div>
-                        </td>
-                    </tr>
-                </table>
-            </div>
-            ' : '' ) . '
+            ' . $etimsSectionHtml . '
 
-            <div class="footer-note">This is a system-generated invoice for water services and does not require a signature.</div>
+            <div class="footer-note">' . htmlspecialchars($isRegistrationProforma ? 'This is a system-generated registration proforma. The client account remains inactive until the registration fee is fully paid.' : 'This is a system-generated invoice for water services and does not require a signature.') . '</div>
             </div><!-- /body-pad -->
         </div>
     </div>

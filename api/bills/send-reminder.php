@@ -6,7 +6,6 @@ require_once __DIR__ . '/../../includes/Bill.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/Email.php';
 require_once __DIR__ . '/../../includes/PaymentLink.php';
-require_once __DIR__ . '/../../includes/ShortUrl.php';
 require_once __DIR__ . '/../../includes/ActivityLog.php';
 
 header('Content-Type: application/json');
@@ -79,10 +78,8 @@ try {
 	$paymentLink = '';
 	$shortPaymentLink = '';
 	try {
-		$fullPaymentLink = PaymentLink::generateLink((int)$bill_id);
-		$shortUrl = new ShortUrl($db);
-		$shortPaymentLink = $shortUrl->shortenUrl($fullPaymentLink, (int)$bill_id);
-		$paymentLink = $shortPaymentLink; // Use short link for SMS
+		$shortPaymentLink = PaymentLink::generateLink((int)$bill_id);
+		$paymentLink = $shortPaymentLink;
 	} catch (\Throwable $e) {
 		// If payment link generation fails, continue without it
 		error_log('Payment link generation failed: ' . $e->getMessage());

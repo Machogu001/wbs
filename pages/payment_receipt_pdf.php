@@ -56,7 +56,14 @@ if (!$userRow) {
 
 $receiptNumber = $paymentRow['mpesa_receipt'] ?? 'N/A';
 $accountNumber = $billRow['account_number'];
-$customerName = $userRow['full_name'];
+$isCompanyCustomer = strtolower(trim((string)($userRow['customer_type'] ?? 'individual'))) === 'company';
+$companyCustomerName = trim((string)($userRow['company_name'] ?? ''));
+$contactPersonName = trim((string)($userRow['contact_person_name'] ?? ''));
+$companyRegistrationNumber = trim((string)($userRow['company_registration_number'] ?? ''));
+$customerName = $isCompanyCustomer && $companyCustomerName !== ''
+    ? $companyCustomerName
+    : trim((string)($userRow['full_name'] ?? 'Customer'));
+$customerTypeLabel = $isCompanyCustomer ? 'Company / Organization' : 'Individual / Personal';
 $billingMonth = date('F Y', strtotime($billRow['billing_month']));
 $amountPaid = number_format((float)$paymentRow['amount'], 2);
 $remainingBalanceValue = $payment->getBillOutstandingAmount((int)$billId);
@@ -122,7 +129,10 @@ body { font-family: DejaVu Sans, Arial, sans-serif; font-size: 10px; color: #0f1
     <table class='table'>
         <tr><td class='label'>Receipt Number</td><td class='value'>" . htmlspecialchars($receiptNumber) . "</td></tr>
         <tr><td class='label'>Account Number</td><td class='value'>" . htmlspecialchars($accountNumber) . "</td></tr>
-        <tr><td class='label'>Customer Name</td><td class='value'>" . htmlspecialchars($customerName) . "</td></tr>
+        <tr><td class='label'>Client Type</td><td class='value'>" . htmlspecialchars($customerTypeLabel) . "</td></tr>
+        <tr><td class='label'>" . htmlspecialchars($isCompanyCustomer ? 'Company Name' : 'Customer Name') . "</td><td class='value'>" . htmlspecialchars($customerName) . "</td></tr>
+        " . ($isCompanyCustomer && $contactPersonName !== '' ? "<tr><td class='label'>Contact Person</td><td class='value'>" . htmlspecialchars($contactPersonName) . "</td></tr>" : "") . "
+        " . ($isCompanyCustomer && $companyRegistrationNumber !== '' ? "<tr><td class='label'>Reg. Number</td><td class='value'>" . htmlspecialchars($companyRegistrationNumber) . "</td></tr>" : "") . "
         <tr><td class='label'>Billing Month</td><td class='value'>" . htmlspecialchars($billingMonth) . "</td></tr>
         <tr><td class='label'>Amount Paid</td><td class='value'>KES " . htmlspecialchars($amountPaid) . "</td></tr>
         <tr><td class='label'>Remaining Balance</td><td class='value'>KES " . htmlspecialchars($remainingBalance) . "</td></tr>

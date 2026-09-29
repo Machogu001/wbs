@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/mpesa_config.php';
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/ShortUrl.php';
 
 class PaymentLink
 {
@@ -44,8 +46,36 @@ class PaymentLink
 
     public static function generateLink(int $billId): string
     {
+        return self::generateShortPathLink('/pay-link', $billId, 'INV-' . $billId);
+    }
+
+    public static function generateRegistrationProformaLink(int $billId): string
+    {
+        return self::generateShortPathLink('/registration-proforma', $billId, 'PRO-' . $billId);
+    }
+
+    private static function generatePathLink(string $path, int $billId): string
+    {
         $token = self::generateToken($billId);
-        return rtrim(self::BASE_URL, '/') . '/pay-link?t=' . rawurlencode($token);
+        return rtrim(self::BASE_URL, '/') . $path . '?t=' . rawurlencode($token);
+    }
+
+    private static function generateShortPathLink(string $path, int $billId, string $customCode): string
+    {
+        $fullUrl = self::generatePathLink($path, $billId);
+
+        try {
+            $database = new Database();
+            $db = $database->getConnection();
+            if ($db) {
+                $shortUrl = new ShortUrl($db);
+                return $shortUrl->shortenUrl($fullUrl, $billId, $customCode);
+            }
+        } catch (Throwable $e) {
+            error_log('Registration proforma short URL generation failed: ' . $e->getMessage());
+        }
+
+        return $fullUrl;
     }
 
     private static function base64UrlEncode(string $data): string

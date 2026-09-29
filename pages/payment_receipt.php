@@ -78,6 +78,16 @@ if (!empty($paymentRow['received_by_user_id'])) {
         $receiverLabel = $receiverRow['full_name'];
     }
 }
+$isCompanyCustomer = strtolower(trim((string)($userRow['customer_type'] ?? 'individual'))) === 'company';
+$displayCustomerName = trim((string)($userRow['company_name'] ?? ''));
+if ($displayCustomerName === '') {
+    $displayCustomerName = trim((string)($userRow['full_name'] ?? ''));
+}
+$contactPersonName = trim((string)($userRow['contact_person_name'] ?? ''));
+if ($contactPersonName === '') {
+    $contactPersonName = trim((string)($userRow['full_name'] ?? ''));
+}
+$companyRegistrationNumber = trim((string)($userRow['company_registration_number'] ?? ''));
 ?>
 
 <div class="container mt-4 payment-receipt-page">
@@ -144,8 +154,20 @@ if (!empty($paymentRow['received_by_user_id'])) {
                             <dt class="col-sm-4">Account Number</dt>
                             <dd class="col-sm-8 text-break"><?php echo htmlspecialchars($billRow['account_number']); ?></dd>
 
-                            <dt class="col-sm-4">Customer Name</dt>
-                            <dd class="col-sm-8"><?php echo htmlspecialchars($userRow['full_name']); ?></dd>
+                            <dt class="col-sm-4">Client Type</dt>
+                            <dd class="col-sm-8"><?php echo $isCompanyCustomer ? 'Company / Organization' : 'Individual / Personal'; ?></dd>
+
+                            <dt class="col-sm-4"><?php echo $isCompanyCustomer ? 'Company Name' : 'Customer Name'; ?></dt>
+                            <dd class="col-sm-8"><?php echo htmlspecialchars($displayCustomerName); ?></dd>
+
+                            <?php if ($isCompanyCustomer): ?>
+                                <dt class="col-sm-4">Contact Person</dt>
+                                <dd class="col-sm-8"><?php echo htmlspecialchars($contactPersonName); ?></dd>
+                                <?php if ($companyRegistrationNumber !== ''): ?>
+                                    <dt class="col-sm-4">Reg. Number</dt>
+                                    <dd class="col-sm-8"><?php echo htmlspecialchars($companyRegistrationNumber); ?></dd>
+                                <?php endif; ?>
+                            <?php endif; ?>
 
                             <dt class="col-sm-4">Billing Month</dt>
                             <dd class="col-sm-8"><?php echo htmlspecialchars(date('F Y', strtotime($billRow['billing_month']))); ?></dd>

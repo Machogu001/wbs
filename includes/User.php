@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/ClientMeter.php';
+
 class User {
     private $conn;
     private $table = "users";
@@ -7,6 +9,10 @@ class User {
     public $account_number;
     public $username;
     public $full_name;
+    public $customer_type;
+    public $company_name;
+    public $contact_person_name;
+    public $company_registration_number;
     public $phone_number;
     public $email;
     public $id_number;
@@ -29,6 +35,7 @@ class User {
         $this->ensureTaxPinColumn();
         $this->ensureMustChangePasswordColumn();
         $this->ensureLocationColumns();
+        $this->ensureCustomerProfileColumns();
         $this->ensureTwoFactorColumns();
         $this->ensureMeterNumberNullable();
         $this->ensureUnitRateColumn();
@@ -42,6 +49,10 @@ class User {
                 SET account_number = :account_number,
                     username = :username,
                     full_name = :full_name,
+                    customer_type = :customer_type,
+                    company_name = :company_name,
+                    contact_person_name = :contact_person_name,
+                    company_registration_number = :company_registration_number,
                     phone_number = :phone_number,
                     email = :email,
                     id_number = :id_number,
@@ -67,6 +78,14 @@ class User {
         $username = $this->username !== null && $this->username !== '' ? $this->username : null;
         $stmt->bindParam(":username", $username);
         $stmt->bindParam(":full_name", $this->full_name);
+        $customerType = $this->customer_type !== null && $this->customer_type !== '' ? $this->customer_type : 'individual';
+        $companyName = $this->company_name !== null && $this->company_name !== '' ? $this->company_name : null;
+        $contactPersonName = $this->contact_person_name !== null && $this->contact_person_name !== '' ? $this->contact_person_name : null;
+        $companyRegistrationNumber = $this->company_registration_number !== null && $this->company_registration_number !== '' ? $this->company_registration_number : null;
+        $stmt->bindParam(":customer_type", $customerType);
+        $stmt->bindParam(":company_name", $companyName);
+        $stmt->bindParam(":contact_person_name", $contactPersonName);
+        $stmt->bindParam(":company_registration_number", $companyRegistrationNumber);
         $stmt->bindParam(":phone_number", $this->phone_number);
         $stmt->bindParam(":email", $this->email);
         $stmt->bindParam(":id_number", $this->id_number);
@@ -89,6 +108,12 @@ class User {
         
         if($stmt->execute()) {
             $this->id = $this->conn->lastInsertId();
+            try {
+                $clientMeterService = new ClientMeter($this->conn);
+                $clientMeterService->syncPrimaryMeter((int)$this->id, (string)$this->meter_number);
+            } catch (Throwable $e) {
+                error_log('Primary meter sync failed for user #' . (int)$this->id . ': ' . $e->getMessage());
+            }
             return true;
         }
         
@@ -105,15 +130,8 @@ class User {
     
     // Check if phone exists
     public function meterNumberExists(string $meterNumber, int $excludeId = 0): bool {
-        $query = "SELECT id FROM " . $this->table . "
-                 WHERE meter_number = :meter_number
-                 AND id <> :exclude_id
-                 LIMIT 1";
-        $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(":meter_number", $meterNumber);
-        $stmt->bindParam(":exclude_id", $excludeId, PDO::PARAM_INT);
-        $stmt->execute();
-        return $stmt->rowCount() > 0;
+        $clientMeterService = new ClientMeter($this->conn);
+        return $clientMeterService->meterExistsForAnotherUser($meterNumber, $excludeId);
     }
 
     public function phoneExists($phone) {
@@ -216,7 +234,14 @@ class User {
 
     // Get user by account number
     public function getByAccountNumber($account_number) {
-        $query = "SELECT * FROM " . $this->table . " WHERE account_number = :account_number LIMIT 1";
+        $query = "SELECT u.*,
+                    COALESCE((SELECT GROUP_CONCAT(DISTINCT um.meter_number ORDER BY um.is_primary DESC, um.created_at ASC, um.id ASC SEPARATOR ',')
+                        FROM user_meters um
+                        WHERE um.user_id = u.id AND um.status = 'active'), u.meter_number) AS meter_numbers,
+                    COALESCE((SELECT GROUP_CONCAT(CONCAT(um.meter_number, '::', COALESCE(um.meter_label, '')) ORDER BY um.is_primary DESC, um.created_at ASC, um.id ASC SEPARATOR '||')
+                        FROM user_meters um
+                        WHERE um.user_id = u.id AND um.status = 'active'), CONCAT(COALESCE(u.meter_number, ''), '::')) AS meter_details
+                  FROM " . $this->table . " u WHERE u.account_number = :account_number LIMIT 1";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":account_number", $account_number);
         $stmt->execute();
@@ -225,31 +250,53 @@ class User {
 
     // Get user by meter number
     public function getByMeterNumber($meter_number) {
-        $query = "SELECT * FROM " . $this->table . " WHERE meter_number = :meter_number LIMIT 1";
-        $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(":meter_number", $meter_number);
-        $stmt->execute();
-        return $stmt->fetch(PDO::FETCH_ASSOC);
+        $clientMeterService = new ClientMeter($this->conn);
+        return $clientMeterService->findUserByMeter((string)$meter_number);
     }
 
     // Search by name or account/meter (supports partial matches for typeahead)
     public function searchByNameOrAccount($term, $limit = 10) {
         $like = '%' . $term . '%';
-        $query = "SELECT * FROM " . $this->table . "
-                  WHERE account_number LIKE :like
-                     OR meter_number LIKE :like
-                     OR full_name LIKE :like
-                  ORDER BY full_name ASC
-                  LIMIT :limit";
+          $query = "SELECT u.*,
+                          COALESCE((SELECT GROUP_CONCAT(DISTINCT um.meter_number ORDER BY um.is_primary DESC, um.created_at ASC, um.id ASC SEPARATOR ',')
+                                FROM user_meters um
+                                WHERE um.user_id = u.id AND um.status = 'active'), u.meter_number) AS meter_numbers,
+                          COALESCE((SELECT GROUP_CONCAT(CONCAT(um.meter_number, '::', COALESCE(um.meter_label, '')) ORDER BY um.is_primary DESC, um.created_at ASC, um.id ASC SEPARATOR '||')
+                                FROM user_meters um
+                                WHERE um.user_id = u.id AND um.status = 'active'), CONCAT(COALESCE(u.meter_number, ''), '::')) AS meter_details
+                        FROM " . $this->table . " u
+                        WHERE u.account_number LIKE :like
+                            OR u.meter_number LIKE :like
+                            OR u.full_name LIKE :like
+                            OR EXISTS (
+                                SELECT 1 FROM user_meters um2
+                                WHERE um2.user_id = u.id AND um2.status = 'active' AND um2.meter_number LIKE :meter_like
+                            )
+                            OR EXISTS (
+                                SELECT 1 FROM user_meters um3
+                                WHERE um3.user_id = u.id AND um3.status = 'active' AND COALESCE(um3.meter_label, '') LIKE :meter_label_like
+                            )
+                        ORDER BY u.full_name ASC
+                        LIMIT :limit";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":like", $like);
+          $stmt->bindParam(":meter_like", $like);
+        $stmt->bindParam(":meter_label_like", $like);
         $stmt->bindValue(":limit", (int)$limit, PDO::PARAM_INT);
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function listAll() {
-        $query = "SELECT id, account_number, full_name, phone_number, meter_number, status FROM " . $this->table . " ORDER BY full_name ASC";
+          $query = "SELECT u.id, u.account_number, u.full_name, u.phone_number, u.meter_number, u.status,
+                          COALESCE((SELECT GROUP_CONCAT(DISTINCT um.meter_number ORDER BY um.is_primary DESC, um.created_at ASC, um.id ASC SEPARATOR ',')
+                                FROM user_meters um
+                                WHERE um.user_id = u.id AND um.status = 'active'), u.meter_number) AS meter_numbers,
+                          COALESCE((SELECT GROUP_CONCAT(CONCAT(um.meter_number, '::', COALESCE(um.meter_label, '')) ORDER BY um.is_primary DESC, um.created_at ASC, um.id ASC SEPARATOR '||')
+                                FROM user_meters um
+                                WHERE um.user_id = u.id AND um.status = 'active'), CONCAT(COALESCE(u.meter_number, ''), '::')) AS meter_details
+                        FROM " . $this->table . " u
+                        ORDER BY u.full_name ASC";
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -301,6 +348,37 @@ class User {
             }
         } catch (\PDOException $e) {
             // Ignore schema errors; core auth/registration can continue without GPS.
+        }
+    }
+
+    private function ensureCustomerProfileColumns() {
+        try {
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'customer_type'");
+            $existsCustomerType = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'company_name'");
+            $existsCompanyName = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'contact_person_name'");
+            $existsContactPersonName = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'company_registration_number'");
+            $existsCompanyRegistrationNumber = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$existsCustomerType) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN customer_type VARCHAR(20) NOT NULL DEFAULT 'individual' AFTER full_name");
+            }
+            if (!$existsCompanyName) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN company_name VARCHAR(191) NULL AFTER customer_type");
+            }
+            if (!$existsContactPersonName) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN contact_person_name VARCHAR(191) NULL AFTER company_name");
+            }
+            if (!$existsCompanyRegistrationNumber) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN company_registration_number VARCHAR(100) NULL AFTER contact_person_name");
+            }
+        } catch (\PDOException $e) {
+            // Ignore schema errors; registration can continue without company profile fields.
         }
     }
 

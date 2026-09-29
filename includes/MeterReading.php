@@ -42,7 +42,12 @@ class MeterReading {
     }
 
     public function listPending() {
-        $query = "SELECT * FROM " . $this->table . " WHERE status = 'pending' ORDER BY created_at DESC";
+        $query = "SELECT mr.*, um.meter_label, u.full_name
+            FROM " . $this->table . " mr
+            LEFT JOIN user_meters um ON um.user_id = mr.user_id AND um.meter_number = mr.meter_number
+            LEFT JOIN users u ON u.id = mr.user_id
+            WHERE mr.status = 'pending'
+            ORDER BY mr.created_at DESC";
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC);

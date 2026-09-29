@@ -10,6 +10,8 @@ return [
     'change-password' => 'pages/change_password.php',
     'forgot-password' => 'pages/forgot_password.php',
     'registration-payment' => 'pages/registration_payment.php',
+    'registration-proforma' => 'pages/registration_proforma.php',
+    'registration-account-setup' => 'pages/registration_account_setup.php',
     'dashboard' => 'pages/dashboard.php',
     'bills' => 'pages/bills.php',
     'pay' => 'pages/pay_bill.php',
@@ -26,12 +28,15 @@ return [
     'logout' => 'pages/logout.php',
     // Admin dashboard (System Setting)
     'settings' => 'pages/admin/index.php',
+    'admin/terms-conditions' => 'pages/admin/terms_conditions.php',
     // Legacy admin route kept for compatibility
     'admin' => 'pages/admin/index.php',
     'admin/payments' => 'pages/admin/payments.php',
     'admin/payment-transactions' => 'pages/admin/payment_transactions.php',
     'admin/bill-detail' => 'pages/admin/bill_detail.php',
     'admin/users' => 'pages/admin/users.php',
+    'admin/registration-proformas' => 'pages/admin/registration_proformas.php',
+    'admin/onboarding-tracker' => 'pages/admin/onboarding_tracker.php',
     'admin/staff-users' => 'pages/admin/staff_users.php',
     // Role permissions management (admin-only)
     'admin/role-permissions' => 'pages/admin/role_permissions.php',

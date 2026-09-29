@@ -84,28 +84,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 		}
 	}
 	if (isset($_POST['action']) && $_POST['action'] === 'update_settings') {
-		$rate = (float)$_POST['rate_per_unit'];
-		$service = (float)$_POST['service_charge'];
-		$company_pin = isset($_POST['company_pin']) ? trim($_POST['company_pin']) : null;
-		$etims_integration_url = isset($_POST['etims_integration_url']) ? trim($_POST['etims_integration_url']) : null;
-		$etims_api_key = isset($_POST['etims_api_key']) ? trim($_POST['etims_api_key']) : null;
-		$company_name = isset($_POST['company_name']) ? trim($_POST['company_name']) : null;
-		$support_phone = isset($_POST['support_phone']) ? trim($_POST['support_phone']) : null;
-		$support_email = isset($_POST['support_email']) ? trim($_POST['support_email']) : null;
-		$currency_code = isset($_POST['currency_code']) ? strtoupper(trim($_POST['currency_code'])) : null;
-		$locale_code = isset($_POST['locale_code']) ? trim($_POST['locale_code']) : null;
-		$timezone_name = isset($_POST['timezone_name']) ? trim($_POST['timezone_name']) : null;
-		$financial_year_start_month = isset($_POST['financial_year_start_month']) ? (int)$_POST['financial_year_start_month'] : null;
-		$vat_rate = isset($_POST['vat_rate']) ? $_POST['vat_rate'] : null;
-		$etims_taxation_type_code = isset($_POST['etims_taxation_type_code']) ? $_POST['etims_taxation_type_code'] : null;
-		$registration_fee = isset($_POST['registration_fee']) ? $_POST['registration_fee'] : null;
-		$enforce_location_accuracy = isset($_POST['enforce_location_accuracy']) ? 1 : 0;
+		$currentSettings = $settingsService->getSettings();
+		$rate = isset($_POST['rate_per_unit']) ? (float)$_POST['rate_per_unit'] : (float)($currentSettings['rate_per_unit'] ?? 0);
+		$service = isset($_POST['service_charge']) ? (float)$_POST['service_charge'] : (float)($currentSettings['service_charge'] ?? 0);
+		$company_pin = isset($_POST['company_pin']) ? trim($_POST['company_pin']) : ($currentSettings['company_pin'] ?? null);
+		$etims_integration_url = isset($_POST['etims_integration_url']) ? trim($_POST['etims_integration_url']) : ($currentSettings['etims_integration_url'] ?? null);
+		$etims_api_key = isset($_POST['etims_api_key']) ? trim($_POST['etims_api_key']) : ($currentSettings['etims_api_key'] ?? null);
+		$company_name = isset($_POST['company_name']) ? trim($_POST['company_name']) : ($currentSettings['company_name'] ?? null);
+		$support_phone = isset($_POST['support_phone']) ? trim($_POST['support_phone']) : ($currentSettings['support_phone'] ?? null);
+		$support_email = isset($_POST['support_email']) ? trim($_POST['support_email']) : ($currentSettings['support_email'] ?? null);
+		$currency_code = isset($_POST['currency_code']) ? strtoupper(trim($_POST['currency_code'])) : ($currentSettings['currency_code'] ?? null);
+		$locale_code = isset($_POST['locale_code']) ? trim($_POST['locale_code']) : ($currentSettings['locale_code'] ?? null);
+		$timezone_name = isset($_POST['timezone_name']) ? trim($_POST['timezone_name']) : ($currentSettings['timezone_name'] ?? null);
+		$financial_year_start_month = isset($_POST['financial_year_start_month']) ? (int)$_POST['financial_year_start_month'] : (int)($currentSettings['financial_year_start_month'] ?? 1);
+		$vat_rate = isset($_POST['vat_rate']) ? $_POST['vat_rate'] : ($currentSettings['vat_rate'] ?? null);
+		$etims_taxation_type_code = isset($_POST['etims_taxation_type_code']) ? $_POST['etims_taxation_type_code'] : ($currentSettings['etims_taxation_type_code'] ?? null);
+		$registration_fee = isset($_POST['registration_fee']) ? $_POST['registration_fee'] : ($currentSettings['registration_fee'] ?? null);
+		$enforce_location_accuracy = isset($_POST['enforce_location_accuracy']) ? 1 : (int)($currentSettings['enforce_location_accuracy'] ?? 0);
+		$mobile_api_key_required = isset($_POST['mobile_api_key_required']) ? 1 : 0;
 
 		if ($rate <= 0) {
 			$message = "Rate per m³ must be greater than 0.";
 			$message_type = "danger";
 		} else {
-			if ($settingsService->updateSettings($rate, $service, $company_pin, $etims_integration_url, $etims_api_key, $company_name, $support_phone, $support_email, $currency_code, $financial_year_start_month, $vat_rate, $etims_taxation_type_code, $registration_fee, $locale_code, $timezone_name, $enforce_location_accuracy)) {
+			if ($settingsService->updateSettings($rate, $service, $company_pin, $etims_integration_url, $etims_api_key, $company_name, $support_phone, $support_email, $currency_code, $financial_year_start_month, $vat_rate, $etims_taxation_type_code, $registration_fee, $locale_code, $timezone_name, $enforce_location_accuracy, null, $mobile_api_key_required)) {
 				// Log activity
 				try {
 					$logger = new ActivityLog($db);
@@ -805,11 +807,16 @@ foreach ($months as $num => $label): ?>
 <div class="ssp-section-hd"><i class="bi bi-phone-fill"></i> Mobile API Key (.env)</div>
 <div class="ssp-section-body">
 <div class="input-group mb-2">
-<input type="text" id="mobileApiKeyValue" class="form-control font-monospace" value="<?php echo htmlspecialchars((string)($settings['mobile_api_key'] ?? '') !== '' ? (string)$settings['mobile_api_key'] : MpesaConfig::getMobileApiKey()); ?>" readonly>
+<input type="password" id="mobileApiKeyValue" class="form-control font-monospace" value="<?php echo htmlspecialchars((string)($settings['mobile_api_key'] ?? '') !== '' ? (string)$settings['mobile_api_key'] : MpesaConfig::getMobileApiKey()); ?>" readonly autocomplete="off" spellcheck="false">
+<button type="button" class="btn btn-outline-dark" id="btnToggleMobileApiKeyVisibility">Show</button>
 <button type="button" class="btn btn-outline-primary" id="btnGenerateMobileApiKey">Generate</button>
 <button type="button" class="btn btn-outline-secondary" id="btnCopyMobileApiKey">Copy</button>
 </div>
-<div class="form-text">Every mobile API request must include <code>X-API-Key</code>. Generate a key here and give it only to trusted mobile applications. If <code>.env</code> is not writable, the key is saved in system settings and used automatically as a fallback.</div>
+<div class="form-check form-switch mb-2">
+<input class="form-check-input" type="checkbox" role="switch" id="mobileApiKeyRequired" name="mobile_api_key_required" value="1" <?php echo !empty($settings['mobile_api_key_required']) ? 'checked' : ''; ?>>
+<label class="form-check-label" for="mobileApiKeyRequired">Require <code>X-API-Key</code> for the mobile API</label>
+</div>
+<div class="form-text">When enabled, the mobile app must send <code>X-API-Key</code> on every request. When disabled, the mobile API stays open without the app key. If <code>.env</code> is not writable, the generated key is saved in system settings and used automatically as a fallback.</div>
 </div>
 </div>
 
@@ -1439,8 +1446,31 @@ formnovalidate
 	const btnGenerateSecret = document.getElementById('btnGeneratePaymentLinkSecret');
 	const btnCopySecret = document.getElementById('btnCopyPaymentLinkSecret');
 	const mobileApiKeyInput = document.getElementById('mobileApiKeyValue');
+	const btnToggleMobileApiKeyVisibility = document.getElementById('btnToggleMobileApiKeyVisibility');
 	const btnGenerateMobileApiKey = document.getElementById('btnGenerateMobileApiKey');
 	const btnCopyMobileApiKey = document.getElementById('btnCopyMobileApiKey');
+
+	function hideMobileApiKey() {
+		if (!mobileApiKeyInput) {
+			return;
+		}
+
+		mobileApiKeyInput.setAttribute('type', 'password');
+		if (btnToggleMobileApiKeyVisibility) {
+			btnToggleMobileApiKeyVisibility.textContent = 'Show';
+		}
+	}
+
+	function showMobileApiKey() {
+		if (!mobileApiKeyInput) {
+			return;
+		}
+
+		mobileApiKeyInput.setAttribute('type', 'text');
+		if (btnToggleMobileApiKeyVisibility) {
+			btnToggleMobileApiKeyVisibility.textContent = 'Hide';
+		}
+	}
 
 	function copySecretText(text) {
 		if (navigator.clipboard && window.isSecureContext) {
@@ -1577,6 +1607,7 @@ formnovalidate
 
 	if (btnGenerateMobileApiKey && mobileApiKeyInput) {
 		btnGenerateMobileApiKey.addEventListener('click', function() {
+			hideMobileApiKey();
 			btnGenerateMobileApiKey.disabled = true;
 			const oldText = btnGenerateMobileApiKey.textContent;
 			btnGenerateMobileApiKey.textContent = 'Generating...';
@@ -1603,6 +1634,17 @@ formnovalidate
 		});
 	}
 
+	if (btnToggleMobileApiKeyVisibility && mobileApiKeyInput) {
+		btnToggleMobileApiKeyVisibility.addEventListener('click', function() {
+			if (mobileApiKeyInput.getAttribute('type') === 'password') {
+				showMobileApiKey();
+				return;
+			}
+
+			hideMobileApiKey();
+		});
+	}
+
 	if (btnCopyMobileApiKey && mobileApiKeyInput) {
 		btnCopyMobileApiKey.addEventListener('click', function() {
 			const value = String(mobileApiKeyInput.value || '').trim();
@@ -1617,6 +1659,9 @@ formnovalidate
 				})
 				.catch(function() {
 					if (window.showToast) showToast('Unable to copy automatically. Select and copy manually.', 'warning');
+				})
+				.finally(function() {
+					hideMobileApiKey();
 				});
 		});
 	}

@@ -29,6 +29,7 @@ class Payment {
 		$this->ensureManualReceiptColumns();
 		$this->ensureEtimsReceiptColumns();
 		$this->ensureAdjustmentTable();
+		$this->ensureRegistrationProformaTable();
 	}
 
 	public function getById($id) {
@@ -85,11 +86,20 @@ class Payment {
 		if ($stmt->execute()) {
 			$this->id = $this->conn->lastInsertId();
 			if ((string)$this->status === 'completed') {
-				$this->handleCompletedPayment((int)$this->id);
+				$this->finalizeCompletedPayment((int)$this->id);
 			}
 			return true;
 		}
 		return false;
+	}
+
+	public function finalizeCompletedPayment(int $paymentId, bool $sendNotifications = true): void {
+		$paymentRow = $this->getById($paymentId);
+		if (!$paymentRow || (string)($paymentRow['status'] ?? '') !== 'completed') {
+			return;
+		}
+
+		$this->handleCompletedPayment($paymentId, $sendNotifications);
 	}
 
 	private function ensureRegistrationColumn() {
@@ -149,6 +159,110 @@ class Payment {
 			INDEX idx_user_created (user_id, created_at),
 			INDEX idx_type_status (adjustment_type, status)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+	}
+
+	private function ensureRegistrationProformaTable(): void {
+		$this->conn->exec("CREATE TABLE IF NOT EXISTS registration_proformas (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			user_id INT NOT NULL,
+			bill_id INT NOT NULL,
+			created_by_user_id INT NULL,
+			notes TEXT NULL,
+			account_setup_token VARCHAR(96) NULL,
+			account_setup_expires_at DATETIME NULL,
+			account_setup_completed_at DATETIME NULL,
+			account_setup_sent_at DATETIME NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+			UNIQUE KEY uniq_registration_proforma_user (user_id),
+			UNIQUE KEY uniq_registration_proforma_bill (bill_id),
+			KEY idx_registration_proforma_created_by (created_by_user_id),
+			KEY idx_registration_proforma_setup_token (account_setup_token)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+		$columns = [
+			'account_setup_token' => "ALTER TABLE registration_proformas ADD COLUMN account_setup_token VARCHAR(96) NULL AFTER notes",
+			'account_setup_expires_at' => "ALTER TABLE registration_proformas ADD COLUMN account_setup_expires_at DATETIME NULL AFTER account_setup_token",
+			'account_setup_completed_at' => "ALTER TABLE registration_proformas ADD COLUMN account_setup_completed_at DATETIME NULL AFTER account_setup_expires_at",
+			'account_setup_sent_at' => "ALTER TABLE registration_proformas ADD COLUMN account_setup_sent_at DATETIME NULL AFTER account_setup_completed_at",
+		];
+
+		foreach ($columns as $columnName => $sql) {
+			try {
+				$check = $this->conn->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'registration_proformas' AND column_name = :column_name");
+				$check->execute([':column_name' => $columnName]);
+				if ((int)$check->fetchColumn() === 0) {
+					$this->conn->exec($sql);
+				}
+			} catch (\Throwable $e) {
+				// Keep runtime resilient on older installs.
+			}
+		}
+	}
+
+	private function getRegistrationProformaRow(int $userId, ?int $billId = null): ?array {
+		if ($userId <= 0 && (!$billId || $billId <= 0)) {
+			return null;
+		}
+
+		$query = "SELECT * FROM registration_proformas WHERE ";
+		$params = [];
+		if ($billId && $billId > 0) {
+			$query .= 'bill_id = :bill_id';
+			$params[':bill_id'] = $billId;
+		} else {
+			$query .= 'user_id = :user_id';
+			$params[':user_id'] = $userId;
+		}
+		$query .= ' LIMIT 1';
+
+		$stmt = $this->conn->prepare($query);
+		$stmt->execute($params);
+
+		return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+	}
+
+	private function issueRegistrationAccountSetupToken(int $userId, ?int $billId = null): ?string {
+		$proforma = $this->getRegistrationProformaRow($userId, $billId);
+		if (!$proforma) {
+			return null;
+		}
+
+		$token = bin2hex(random_bytes(24));
+		$expiresAt = date('Y-m-d H:i:s', strtotime('+7 days'));
+		$stmt = $this->conn->prepare("UPDATE registration_proformas
+			SET account_setup_token = :token,
+				account_setup_expires_at = :expires_at,
+				account_setup_sent_at = NOW(),
+				account_setup_completed_at = NULL
+			WHERE id = :id");
+		$stmt->execute([
+			':token' => $token,
+			':expires_at' => $expiresAt,
+			':id' => (int)$proforma['id'],
+		]);
+
+		return $token;
+	}
+
+	public function reissueRegistrationAccountSetupToken(int $userId, ?int $billId = null): ?array {
+		$token = $this->issueRegistrationAccountSetupToken($userId, $billId);
+		if (!$token) {
+			return null;
+		}
+
+		$proforma = $this->getRegistrationProformaRow($userId, $billId);
+		if (!$proforma) {
+			return null;
+		}
+
+		return [
+			'token' => $token,
+			'expires_at' => (string)($proforma['account_setup_expires_at'] ?? ''),
+			'proforma_id' => (int)($proforma['id'] ?? 0),
+			'bill_id' => (int)($proforma['bill_id'] ?? 0),
+			'user_id' => (int)($proforma['user_id'] ?? 0),
+		];
 	}
 
 	public function getByCheckoutRequestId($checkoutRequestId) {
@@ -438,13 +552,13 @@ class Payment {
 		}
 
 		if ($isTransitionToCompleted) {
-			$this->handleCompletedPayment((int)$id);
+			$this->finalizeCompletedPayment((int)$id);
 		}
 
 		return true;
 	}
 
-	private function handleCompletedPayment(int $paymentId): void {
+	private function handleCompletedPayment(int $paymentId, bool $sendNotifications = true): void {
 		$paymentRow = $this->getById($paymentId);
 		if (!$paymentRow) {
 			return;
@@ -514,10 +628,12 @@ class Payment {
 			);
 		}
 
-		try {
-			$this->sendCompletedPaymentNotification($paymentId);
-		} catch (\Throwable $e) {
-			error_log('Payment confirmation notification failed for payment #' . $paymentId . ': ' . $e->getMessage());
+		if ($sendNotifications) {
+			try {
+				$this->sendCompletedPaymentNotification($paymentId);
+			} catch (\Throwable $e) {
+				error_log('Payment confirmation notification failed for payment #' . $paymentId . ': ' . $e->getMessage());
+			}
 		}
 	}
 
@@ -612,12 +728,29 @@ class Payment {
 
 		if ($registrationFullyPaid) {
 			$supportPhone = !empty($settings['support_phone']) ? $settings['support_phone'] : '254724400202';
-			$messageText = "Dear {$customerName}, your water supply account has been successfully registered.\n\n"
-				. "Account No.: {$accountNumber}\n"
-				. "Customer Name: {$customerName}\n"
-				. "Meter No.: " . ($user['meter_number'] ?? '') . "\n"
-				. "Connection Address: " . ($user['address'] ?? '') . "\n\n"
-				. "Thank you for choosing {$companyName}. For inquiries, contact {$supportPhone}.";
+			$setupToken = $this->issueRegistrationAccountSetupToken($userId, !empty($paymentRow['bill_id']) ? (int)$paymentRow['bill_id'] : null);
+			$setupLink = $setupToken ? 'https://wbs.bremac.co.ke/registration-account-setup?token=' . rawurlencode($setupToken) : '';
+			$proformaRow = $this->getRegistrationProformaRow($userId, !empty($paymentRow['bill_id']) ? (int)$paymentRow['bill_id'] : null);
+
+			if ($proformaRow) {
+				$messageText = "Dear {$customerName}, your registration fee has been received in full.\n\n"
+					. "Account No.: {$accountNumber}\n"
+					. "Customer Name: {$customerName}\n"
+					. "Meter No.: " . ($user['meter_number'] ?? '') . "\n"
+					. "Connection Address: " . ($user['address'] ?? '') . "\n\n"
+					. ($setupLink !== ''
+						? "Set your portal password here: {$setupLink}\nUse the link within 7 days to activate your online access.\n\n"
+						: "Your account is now active. Use Forgot Password if you need to set a portal password.\n\n")
+					. "Thank you for choosing {$companyName}. For inquiries, contact {$supportPhone}.";
+			} else {
+				$messageText = "Dear {$customerName}, your water supply account has been successfully registered.\n\n"
+					. "Account No.: {$accountNumber}\n"
+					. "Customer Name: {$customerName}\n"
+					. "Meter No.: " . ($user['meter_number'] ?? '') . "\n"
+					. "Connection Address: " . ($user['address'] ?? '') . "\n"
+					. "Login: use your account number, phone number or email with the password set during registration.\n\n"
+					. "Thank you for choosing {$companyName}. For inquiries, contact {$supportPhone}.";
+			}
 		} elseif ($isRegistrationPayment) {
 			$messageText = "Dear {$customerName},\n"
 				. "We have received KES " . number_format($amount, 2)

@@ -93,23 +93,50 @@ require_once __DIR__ . '/../templates/header.php';
                             <div class="form-text">Clients get meter/account setup and registration payment flow. Office staff get a staff account without a meter number and must choose a unique username.</div>
                         </div>
 
+                        <div class="row client-only-field">
+                            <div class="col-md-6 col-lg-4">
+                                <div class="mb-3">
+                                    <label for="customer_type" class="form-label">Client Type *</label>
+                                    <select class="form-select" id="customer_type" name="customer_type">
+                                        <option value="individual" selected>Individual / Personal</option>
+                                        <option value="company">Company / Organization</option>
+                                    </select>
+                                    <div class="form-text">Choose company when the account belongs to a business or organization.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4 company-client-field d-none">
+                                <div class="mb-3">
+                                    <label for="company_name" class="form-label">Company Name *</label>
+                                    <input type="text" class="form-control" id="company_name" name="company_name" autocomplete="organization">
+                                    <div class="invalid-feedback">Please enter the company name.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 col-lg-4 company-client-field d-none">
+                                <div class="mb-3">
+                                    <label for="company_registration_number" class="form-label">Company Registration Number *</label>
+                                    <input type="text" class="form-control" id="company_registration_number" name="company_registration_number" autocomplete="off">
+                                    <div class="invalid-feedback">Please enter the company registration number.</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="row">
                             <div class="col-md-6 col-lg-4">
                                 <div class="mb-3">
-                                    <label for="first_name" class="form-label">First Name *</label>
+                                    <label for="first_name" class="form-label" id="first_name_label">First Name *</label>
                                     <input type="text" class="form-control" id="first_name" name="first_name" autocomplete="given-name" required>
                                     <div class="invalid-feedback">Please enter your first name.</div>
                                 </div>
                             </div>
                             <div class="col-md-6 col-lg-4">
                                 <div class="mb-3">
-                                    <label for="middle_name" class="form-label">Middle Name (optional)</label>
+                                    <label for="middle_name" class="form-label" id="middle_name_label">Middle Name (optional)</label>
                                     <input type="text" class="form-control" id="middle_name" name="middle_name" autocomplete="additional-name">
                                 </div>
                             </div>
                             <div class="col-md-6 col-lg-4">
                                 <div class="mb-3">
-                                    <label for="last_name" class="form-label">Last Name *</label>
+                                    <label for="last_name" class="form-label" id="last_name_label">Last Name *</label>
                                     <input type="text" class="form-control" id="last_name" name="last_name" autocomplete="family-name" required>
                                     <div class="invalid-feedback">Please enter your last name.</div>
                                 </div>
@@ -154,7 +181,7 @@ require_once __DIR__ . '/../templates/header.php';
                             </div>
                                                     <div class="col-md-6 col-lg-4">
                                 <div class="mb-3">
-                                    <label for="id_number" class="form-label">ID Number *</label>
+                                                            <label for="id_number" class="form-label" id="id_number_label">ID Number *</label>
                                     <input type="text" class="form-control" id="id_number" name="id_number" autocomplete="off" required>
                                     <div class="invalid-feedback">Please enter your ID number.</div>
                                 </div>
@@ -296,6 +323,10 @@ $(document).ready(function() {
         return $('#registration_type').val() === 'client';
     }
 
+    function isCompanyClient() {
+        return isClientRegistration() && $('#customer_type').val() === 'company';
+    }
+
     function isStaffRegistration() {
         return $('#registration_type').val() === 'staff';
     }
@@ -303,13 +334,22 @@ $(document).ready(function() {
     function toggleRegistrationModeUI() {
         var isClient = isClientRegistration();
         var isStaff = isStaffRegistration();
+        var isCompany = isCompanyClient();
         var enforceLocation = !!window.ENFORCE_LOCATION_ACCURACY;
         $('.client-only-field').toggleClass('d-none', !isClient);
         $('.staff-only-field').toggleClass('d-none', !isStaff);
+        $('.company-client-field').toggleClass('d-none', !isClient || !isCompany);
 
-        $('#email, #id_number, #address, #connection_type, #password, #confirm_password').prop('required', isClient);
+        $('#email, #address, #connection_type, #password, #confirm_password').prop('required', isClient);
+        $('#id_number').prop('required', isClient && !isCompany);
+        $('#company_name, #company_registration_number').prop('required', isClient && isCompany);
         $('#location_label').prop('required', isClient && enforceLocation);
         $('#username').prop('required', isStaff);
+
+        $('#first_name_label').text(isCompany ? 'Contact Person First Name *' : 'First Name *');
+        $('#middle_name_label').text(isCompany ? 'Contact Person Middle Name (optional)' : 'Middle Name (optional)');
+        $('#last_name_label').text(isCompany ? 'Contact Person Last Name *' : 'Last Name *');
+        $('#id_number_label').text(isCompany ? 'Contact Person ID Number (optional)' : 'ID Number *');
 
         $('#location_label_label').text(enforceLocation ? 'Location *' : 'Location (optional)');
         $('#location_label_help').text(
@@ -319,8 +359,11 @@ $(document).ready(function() {
         );
 
         if (!isClient) {
-            $('#email, #id_number, #address, #tax_pin, #location_label, #password, #confirm_password').removeClass('is-invalid');
+            $('#email, #id_number, #address, #tax_pin, #location_label, #password, #confirm_password, #company_name, #company_registration_number').removeClass('is-invalid');
             $('#password, #confirm_password').val('');
+        }
+        if (!isCompany) {
+            $('#company_name, #company_registration_number').removeClass('is-invalid').val('');
         }
         if (!isStaff) {
             $('#username').removeClass('is-invalid').val('');
@@ -410,7 +453,7 @@ $(document).ready(function() {
         });
     }
 
-    $('#registration_type').on('change', toggleRegistrationModeUI);
+    $('#registration_type, #customer_type').on('change', toggleRegistrationModeUI);
     $('#location_label').on('input change', clearRegisterLocationInvalidState);
     $('#useGpsBtn').on('click', detectCurrentRegistrationLocation);
     toggleRegistrationModeUI();
@@ -437,6 +480,7 @@ $(document).ready(function() {
 		
         const isClient = isClientRegistration();
         const isStaff = isStaffRegistration();
+        const isCompany = isCompanyClient();
         const password = $('#password').val();
         const confirmPassword = $('#confirm_password').val();
         const username = $('#username').val().trim();
@@ -471,10 +515,11 @@ $(document).ready(function() {
         // Prepare shared data
         const formData = {
             registration_type: $('#registration_type').val(),
+            customer_type: $('#customer_type').val(),
             first_name: $('#first_name').val(),
             middle_name: $('#middle_name').val(),
             last_name: $('#last_name').val(),
-            full_name: ($('#first_name').val() + ' ' + $('#middle_name').val() + ' ' + $('#last_name').val()).trim(),
+            full_name: isCompany ? $('#company_name').val() : ($('#first_name').val() + ' ' + $('#middle_name').val() + ' ' + $('#last_name').val()).trim(),
             phone_country_code: $('#phone_country_code').val(),
             phone_number_local: $('#phone_number_local').val(),
             phone_number: buildNormalizedPhone(),
@@ -496,6 +541,8 @@ $(document).ready(function() {
             formData.connection_type = $('#connection_type').val();
             formData.password = password;
             formData.tax_pin = $('#tax_pin').val();
+            formData.company_name = $('#company_name').val();
+            formData.company_registration_number = $('#company_registration_number').val();
         }
 		
         // Show loading

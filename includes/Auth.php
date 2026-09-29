@@ -194,7 +194,7 @@ class Auth {
         $map = [
             'customer' => ['view_own_bills', 'submit_own_reading'],
             'reader'   => ['view_invoicing', 'send_messages'],
-            'finance'  => ['view_customers', 'view_accounting', 'view_reports', 'view_payments', 'view_invoicing', 'view_bill_detail', 'manage_demand_notices', 'manage_approvals', 'send_messages'],
+            'finance'  => ['view_customers', 'view_accounting', 'view_reports', 'view_payments', 'view_invoicing', 'view_bill_detail', 'manage_demand_notices', 'manage_approvals', 'manage_registration_proformas', 'send_messages'],
             'support'  => ['handle_support', 'view_customers', 'view_bill_detail', 'send_messages'],
         ];
 

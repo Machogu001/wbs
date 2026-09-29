@@ -134,9 +134,24 @@ function mobileApiGetConfiguredAppKey(PDO $db): string
     return '';
 }
 
+function mobileApiIsAppKeyRequired(PDO $db): bool
+{
+    try {
+        $settings = (new BillingSettings($db))->getSettings();
+        return !empty($settings['mobile_api_key_required']);
+    } catch (Throwable $e) {
+        return true;
+    }
+}
+
 function mobileApiRequireAppKey(): void
 {
-    $configuredKey = mobileApiGetConfiguredAppKey(mobileApiGetDatabase());
+    $db = mobileApiGetDatabase();
+    if (!mobileApiIsAppKeyRequired($db)) {
+        return;
+    }
+
+    $configuredKey = mobileApiGetConfiguredAppKey($db);
     if ($configuredKey === '') {
         mobileApiJson(503, 'error', 'Mobile API access key is not configured. Ask an administrator to generate MOBILE_API_KEY in system settings or save it in billing settings.');
     }

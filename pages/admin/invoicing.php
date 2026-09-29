@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../config/mpesa_config.php';
 require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/User.php';
+require_once __DIR__ . '/../../includes/ClientMeter.php';
 require_once __DIR__ . '/../../includes/Bill.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
 require_once __DIR__ . '/../../includes/MeterReading.php';
@@ -189,13 +190,6 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 	$account = $user['account_number'];
 	$paybill = MpesaConfig::getShortCode();
 	$payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
-	try {
-		$shortUrl = new ShortUrl($db);
-		$payUrl = $shortUrl->shortenUrl($payUrl, (int)$billResult['bill_id']);
-	} catch (\Throwable $e) {
-		// Keep the full payment link if shortening fails.
-		error_log('Invoice payment link shortening failed: ' . $e->getMessage());
-	}
 
 	$messageText = "AC: {$account}\n" .
 		"BillDate: {$billDate}\n" .
@@ -221,7 +215,7 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 	$readingId = $readingService->createReading(
 		$user['id'],
 		$user['account_number'],
-		$user['meter_number'],
+		$user['matched_meter_number'] ?? $user['meter_number'],
 		$currentReading,
 		$billingMonth,
 		$dueDate,
@@ -540,14 +534,6 @@ if (isset($_SESSION['flash_message'])) {
 								</div>
 							</div>
 							<div class="col-12">
-								<datalist id="clientList">
-								<?php foreach($client_list as $client): ?>
-									<option value="<?php echo htmlspecialchars($client['account_number']); ?>">
-										<?php echo htmlspecialchars($client['full_name'] . ' - ' . $client['account_number']); ?>
-									</option>
-									<option value="<?php echo htmlspecialchars($client['full_name']); ?>"></option>
-								<?php endforeach; ?>
-							</datalist>
 								<div class="invoicing-reading-list" id="readingRows">
 									<div class="invoicing-reading-row" data-row-index="0">
 										<div class="invoicing-reading-row-head">
@@ -557,8 +543,9 @@ if (isset($_SESSION['flash_message'])) {
 										<div class="row g-3">
 											<div class="col-lg-5">
 												<label class="form-label fw-semibold">Search Client (Account / Meter / Name)</label>
-												<input type="text" name="account_or_meter[]" class="form-control client-search-input" list="clientList" placeholder="Start typing account, meter or name" required>
-												<small class="text-muted">Type to search; select from suggestions.</small>
+												<input type="text" name="account_or_meter[]" class="form-control client-search-input js-client-autocomplete" placeholder="Start typing account, meter or name" autocomplete="off" required>
+												<small class="text-muted">Type to search; if the client has multiple properties, select the exact meter number.</small>
+												<div class="small text-muted mt-1 js-client-selection-summary">Choose an account or meter to confirm the property being billed.</div>
 											</div>
 											<div class="col-lg-3 col-md-6">
 												<label class="form-label fw-semibold">Current Reading (m³)</label>
@@ -674,13 +661,69 @@ if (isset($_SESSION['flash_message'])) {
 	</div>
 </div>
 
+<script src="/public/js/admin-client-autocomplete.js"></script>
 <script>
 (function() {
-	const dataList = document.getElementById('clientList');
 	const filterSelect = document.getElementById('billingFilter');
 	const tableRows = document.querySelectorAll('table tbody tr[data-unpaid]');
 	const readingRows = document.getElementById('readingRows');
 	const addReadingRowBtn = document.getElementById('addReadingRowBtn');
+	const clientLookup = new Map();
+
+	function normalizeLookupKey(value) {
+		return (value || '').trim().toUpperCase();
+	}
+
+	function summarizeMeters(meters) {
+		return (meters || []).map(function(meter) {
+			return meter.number + (meter.label ? ' (' + meter.label + ')' : '');
+		}).join(', ');
+	}
+
+	function setLookupItem(item) {
+		if (!item) return;
+		const accountKey = normalizeLookupKey(item.account_number || '');
+		if (accountKey) {
+			clientLookup.set(accountKey, { item: item, selectedMeter: null });
+		}
+		(item.meters || []).forEach(function(meter) {
+			const meterKey = normalizeLookupKey(meter.number || '');
+			if (meterKey) {
+				clientLookup.set(meterKey, { item: item, selectedMeter: meter });
+			}
+		});
+	}
+
+	function updateSelectionSummary(input) {
+		const row = input ? input.closest('.invoicing-reading-row') : null;
+		if (!row) return;
+		const summaryEl = row.querySelector('.js-client-selection-summary');
+		if (!summaryEl) return;
+
+		const match = clientLookup.get(normalizeLookupKey(input.value || ''));
+		if (!match) {
+			summaryEl.textContent = 'Choose an account or meter to confirm the property being billed.';
+			return;
+		}
+
+		if (match.selectedMeter) {
+			summaryEl.textContent = 'Billing meter ' + match.selectedMeter.number + (match.selectedMeter.label ? ' for ' + match.selectedMeter.label : '') + ' under account ' + match.item.account_number + '.';
+			return;
+		}
+
+		const meters = match.item.meters || [];
+		if (meters.length > 1) {
+			summaryEl.textContent = 'Account ' + match.item.account_number + ' has ' + meters.length + ' meters: ' + summarizeMeters(meters) + '. Choose a specific meter number for property-level billing.';
+			return;
+		}
+
+		if (meters.length === 1) {
+			summaryEl.textContent = 'Billing primary meter ' + meters[0].number + (meters[0].label ? ' for ' + meters[0].label : '') + ' under account ' + match.item.account_number + '.';
+			return;
+		}
+
+		summaryEl.textContent = 'Billing account ' + match.item.account_number + '.';
+	}
 
 	function refreshReadingRowState() {
 		if (!readingRows) return;
@@ -708,7 +751,18 @@ if (isset($_SESSION['flash_message'])) {
 					input.value = '';
 				}
 			});
+			const summary = clone.querySelector('.js-client-selection-summary');
+			if (summary) {
+				summary.textContent = 'Choose an account or meter to confirm the property being billed.';
+			}
 			readingRows.appendChild(clone);
+			if (window.WbsClientAutocomplete) {
+				window.WbsClientAutocomplete.init('.js-client-autocomplete', {
+					endpoint: '/api/admin/search_clients',
+					minChars: 2,
+					debounceMs: 250
+				});
+			}
 			refreshReadingRowState();
 		});
 
@@ -724,33 +778,40 @@ if (isset($_SESSION['flash_message'])) {
 		refreshReadingRowState();
 	}
 
-	if (dataList) {
-		let debounceTimer = null;
-		document.addEventListener('input', function(event) {
-			const searchInput = event.target.closest('.client-search-input');
-			if (!searchInput) return;
-			clearTimeout(debounceTimer);
-			const q = searchInput.value.trim();
-			if (q.length < 2) {
-				return;
-			}
-			debounceTimer = setTimeout(() => {
-				fetch('/api/admin/search_clients?q=' + encodeURIComponent(q))
-					.then(res => res.json())
-					.then(data => {
-						if (!data || data.status !== 'success') return;
-						while (dataList.firstChild) dataList.removeChild(dataList.firstChild);
-						data.data.forEach(item => {
-							const opt1 = document.createElement('option');
-							opt1.value = item.account_number;
-							opt1.textContent = item.full_name + ' - ' + item.account_number;
-							dataList.appendChild(opt1);
-							const opt2 = document.createElement('option');
-							opt2.value = item.full_name;
-							dataList.appendChild(opt2);
-						});
-					});
-			}, 300);
+	document.addEventListener('change', function(event) {
+		const searchInput = event.target.closest('.client-search-input');
+		if (!searchInput) return;
+		updateSelectionSummary(searchInput);
+	});
+
+	document.addEventListener('input', function(event) {
+		const searchInput = event.target.closest('.client-search-input');
+		if (!searchInput) return;
+		updateSelectionSummary(searchInput);
+	});
+
+	document.addEventListener('wbs:client-results', function(event) {
+		const searchInput = event.target.closest('.client-search-input');
+		if (!searchInput) return;
+		clientLookup.clear();
+		(event.detail.items || []).forEach(function(item) {
+			setLookupItem(item);
+		});
+		updateSelectionSummary(searchInput);
+	});
+
+	document.addEventListener('wbs:client-selected', function(event) {
+		const searchInput = event.target.closest('.client-search-input');
+		if (!searchInput) return;
+		setLookupItem(event.detail.item);
+		updateSelectionSummary(searchInput);
+	});
+
+	if (window.WbsClientAutocomplete) {
+		window.WbsClientAutocomplete.init('.js-client-autocomplete', {
+			endpoint: '/api/admin/search_clients',
+			minChars: 2,
+			debounceMs: 250
 		});
 	}
 

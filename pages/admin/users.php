@@ -3,11 +3,14 @@ session_start();
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/User.php';
+require_once __DIR__ . '/../../includes/ClientMeter.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
 require_once __DIR__ . '/../../includes/Mpesa.php';
 require_once __DIR__ . '/../../includes/Payment.php';
 require_once __DIR__ . '/../../includes/Bill.php';
 require_once __DIR__ . '/../../includes/SMS.php';
+require_once __DIR__ . '/../../includes/Email.php';
+require_once __DIR__ . '/../../includes/PaymentLink.php';
 require_once __DIR__ . '/../../includes/CountryDialCode.php';
 
 $database = new Database();
@@ -135,6 +138,38 @@ function normalizeCurrencyAmountInput($amount)
 	return round((float)$normalized, 2);
 }
 
+function parseMeterDetails(?string $meterDetailsRaw, ?string $fallbackMeterNumber = null): array
+{
+	$meters = [];
+	$segments = $meterDetailsRaw !== null && $meterDetailsRaw !== ''
+		? array_values(array_filter(explode('||', $meterDetailsRaw)))
+		: [];
+
+	foreach ($segments as $index => $segment) {
+		$parts = explode('::', (string)$segment, 2);
+		$meterNumber = trim((string)($parts[0] ?? ''));
+		$meterLabel = trim((string)($parts[1] ?? ''));
+		if ($meterNumber === '') {
+			continue;
+		}
+		$meters[] = [
+			'number' => $meterNumber,
+			'label' => $meterLabel,
+			'is_primary' => $index === 0,
+		];
+	}
+
+	if (empty($meters) && $fallbackMeterNumber !== null && trim($fallbackMeterNumber) !== '') {
+		$meters[] = [
+			'number' => trim($fallbackMeterNumber),
+			'label' => '',
+			'is_primary' => true,
+		];
+	}
+
+	return $meters;
+}
+
 function buildUsersPageUrl(array $params = [])
 {
 	$query = [];
@@ -252,6 +287,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		} catch (Exception $e) {
 			$errorMessage = $e->getMessage();
 		}
+	} elseif ($formType === 'add_client_meter') {
+		try {
+			$userId = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
+			if ($userId <= 0) {
+				throw new Exception('Invalid customer selected.');
+			}
+
+			$meterNumber = normalizeMeterNumberInput($_POST['additional_meter_number'] ?? '');
+			$meterLabel = trim((string)($_POST['additional_meter_label'] ?? ''));
+			if ($meterNumber === '') {
+				throw new Exception('Meter number is required.');
+			}
+
+			$userModel = new User($db);
+			$targetUser = $userModel->getById($userId);
+			if (!$targetUser || strtolower((string)($targetUser['role'] ?? 'customer')) !== 'customer') {
+				throw new Exception('Customer not found.');
+			}
+
+			$primaryMeterNumber = normalizeMeterNumberInput((string)($targetUser['meter_number'] ?? ''));
+			if ($primaryMeterNumber !== '' && $primaryMeterNumber === $meterNumber) {
+				throw new Exception('That meter number is already the primary meter on this account.');
+			}
+
+			$clientMeterService = new ClientMeter($db);
+			if ($clientMeterService->meterExists($meterNumber)) {
+				throw new Exception('That meter number is already assigned to another account or meter record.');
+			}
+
+			$billId = null;
+			$db->beginTransaction();
+
+			if ($registrationFee > 0) {
+				$billService = new Bill($db);
+				$dueDate = date('Y-m-d', strtotime('+14 days'));
+				$billId = $billService->createRegistrationFeeBill(
+					(int)$targetUser['id'],
+					(string)$targetUser['account_number'],
+					$registrationFee,
+					$dueDate,
+					'pending'
+				);
+				if (!$billId) {
+					throw new Exception('Failed to create the additional meter registration bill.');
+				}
+			}
+
+			$clientMeterService->addMeter((int)$targetUser['id'], $meterNumber, $meterLabel !== '' ? $meterLabel : null, $billId ? (int)$billId : null, (int)($_SESSION['user_id'] ?? 0) ?: null);
+			$db->commit();
+
+			$paymentLink = $billId ? PaymentLink::generateLink((int)$billId) : '';
+			$amountText = $registrationFee > 0 ? ' A registration fee of KES ' . number_format($registrationFee, 2) . ' has been billed.' : '';
+			$labelText = $meterLabel !== '' ? ' (' . $meterLabel . ')' : '';
+			$messageText = 'Dear ' . (string)$targetUser['full_name'] . ', additional meter ' . $meterNumber
+				. $labelText . ' has been linked to Account ' . (string)$targetUser['account_number'] . '.' . $amountText
+				. ($paymentLink !== '' ? ' Pay here: ' . $paymentLink : '');
+
+			if (!empty($targetUser['phone_number'])) {
+				try {
+					$sms = new SMS($db);
+					$sms->sendWithFallback((string)$targetUser['phone_number'], $messageText, 'additional_meter');
+				} catch (Throwable $e) {
+					error_log('Additional meter SMS failed: ' . $e->getMessage());
+				}
+			}
+
+			if (!empty($targetUser['email'])) {
+				try {
+					$emailService = new Email();
+					$emailService->queue((string)$targetUser['email'], 'Additional meter added to your account', $messageText, 'additional_meter');
+				} catch (Throwable $e) {
+					error_log('Additional meter email failed: ' . $e->getMessage());
+				}
+			}
+
+			$_SESSION['flash_message'] = $billId
+				? 'Additional meter added and registration fee bill created on the same account.'
+				: 'Additional meter added successfully.';
+			$_SESSION['flash_type'] = 'success';
+			header('Location: ' . buildUsersPageUrl([
+				'page' => $currentPage,
+				'customer_search' => $customerSearch,
+				'edit_id' => $userId,
+			]));
+			exit;
+		} catch (Exception $e) {
+			if ($db && $db->inTransaction()) {
+				$db->rollBack();
+			}
+			$errorMessage = $e->getMessage();
+		}
 	} elseif ($formType === 'edit_user_save') {
 		try {
 			$userId = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
@@ -287,8 +413,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				throw new Exception('Client unit rate cannot be negative.');
 			}
 
+			$existingUser = (new User($db))->getById($userId);
 			if ($meter_number === '') {
-				$existingUser = (new User($db))->getById($userId);
 				$meter_number = normalizeMeterNumberInput((string)($existingUser['meter_number'] ?? $existingUser['account_number'] ?? ''));
 			}
 
@@ -302,7 +428,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			}
 
 			$editUserModel = new User($db);
-			if ($editUserModel->meterNumberExists($meter_number, $userId)) {
+			$clientMeterService = new ClientMeter($db);
+			$existingPrimaryMeter = normalizeMeterNumberInput((string)($existingUser['meter_number'] ?? ''));
+			if ($meter_number !== $existingPrimaryMeter && $clientMeterService->meterExists($meter_number)) {
 				throw new Exception('The meter number is already assigned to another user.');
 			}
 
@@ -342,6 +470,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			$stmt->bindParam(':id', $userId, PDO::PARAM_INT);
 
 			if ($stmt->execute()) {
+				$clientMeterService->syncPrimaryMeter($userId, $meter_number);
 				$_SESSION['flash_message'] = 'User updated successfully.';
 				$_SESSION['flash_type'] = 'success';
 				header('Location: ' . buildUsersPageUrl([
@@ -687,8 +816,10 @@ if ($db) {
 		$queryParams = [];
 
 		if ($customerSearch !== '') {
-			$whereClause .= " AND (account_number LIKE :customer_search OR full_name LIKE :customer_search OR meter_number LIKE :customer_search OR phone_number LIKE :customer_search)";
+			$whereClause .= " AND (account_number LIKE :customer_search OR full_name LIKE :customer_search OR meter_number LIKE :customer_search OR phone_number LIKE :customer_search OR EXISTS (SELECT 1 FROM user_meters um WHERE um.user_id = users.id AND (um.meter_number LIKE :customer_search_meter OR COALESCE(um.meter_label, '') LIKE :customer_search_label)))";
 			$queryParams[':customer_search'] = '%' . $customerSearch . '%';
+			$queryParams[':customer_search_meter'] = '%' . $customerSearch . '%';
+			$queryParams[':customer_search_label'] = '%' . $customerSearch . '%';
 		}
 
 		$stmtCount = $db->prepare("SELECT COUNT(*) AS total FROM users WHERE $whereClause");
@@ -704,7 +835,10 @@ if ($db) {
 		}
 		$offset = ($currentPage - 1) * $perPage;
 
-		$stmtUsers = $db->prepare("SELECT id, account_number, full_name, phone_number, meter_number, status, role FROM users WHERE $whereClause ORDER BY full_name ASC LIMIT :limit OFFSET :offset");
+		$stmtUsers = $db->prepare("SELECT id, account_number, full_name, phone_number, meter_number, status, role,
+			COALESCE((SELECT GROUP_CONCAT(DISTINCT um.meter_number ORDER BY um.is_primary DESC, um.created_at ASC, um.id ASC SEPARATOR ',') FROM user_meters um WHERE um.user_id = users.id AND um.status = 'active'), meter_number) AS meter_numbers,
+			COALESCE((SELECT GROUP_CONCAT(CONCAT(um.meter_number, '::', COALESCE(um.meter_label, '')) ORDER BY um.is_primary DESC, um.created_at ASC, um.id ASC SEPARATOR '||') FROM user_meters um WHERE um.user_id = users.id AND um.status = 'active'), CONCAT(COALESCE(meter_number, ''), '::')) AS meter_details
+			FROM users WHERE $whereClause ORDER BY full_name ASC LIMIT :limit OFFSET :offset");
 		foreach ($queryParams as $param => $value) {
 			$stmtUsers->bindValue($param, $value, PDO::PARAM_STR);
 		}
@@ -723,19 +857,25 @@ if ($db) {
 
 $editUser = null;
 $isEditMode = false;
+$editUserMeters = [];
 if ($db && isset($_GET['edit_id'])) {
 	$editId = (int)$_GET['edit_id'];
 	if ($editId > 0) {
 		try {
 			$userRepo = new User($db);
+			$clientMeterRepo = new ClientMeter($db);
 			$editUser = $userRepo->getById($editId);
 			if ($editUser && strtolower((string)($editUser['role'] ?? '')) !== 'customer') {
 				$editUser = null;
 			}
 			$isEditMode = (bool)$editUser;
+			if ($isEditMode) {
+				$editUserMeters = $clientMeterRepo->listByUserId((int)$editUser['id']);
+			}
 		} catch (Exception $e) {
 			$editUser = null;
 			$isEditMode = false;
+			$editUserMeters = [];
 		}
 	}
 }
@@ -832,11 +972,21 @@ require_once __DIR__ . '/../../templates/header.php';
 								</thead>
 								<tbody>
 									<?php foreach ($usersList as $u): ?>
+										<?php $meterItems = parseMeterDetails((string)($u['meter_details'] ?? ''), (string)($u['meter_number'] ?? '')); ?>
+										<?php $primaryMeterItem = $meterItems[0] ?? ['number' => (string)($u['meter_number'] ?? ''), 'label' => '']; ?>
 										<tr>
 											<td><?php echo htmlspecialchars($u['account_number'] ?? ''); ?></td>
 											<td><?php echo htmlspecialchars($u['full_name'] ?? ''); ?></td>
 											<td><?php echo htmlspecialchars($u['phone_number'] ?? ''); ?></td>
-											<td><?php echo htmlspecialchars($u['meter_number'] ?? ''); ?></td>
+											<td>
+												<div class="fw-semibold"><?php echo htmlspecialchars((string)($primaryMeterItem['number'] ?? '')); ?></div>
+												<?php if (!empty($primaryMeterItem['label'])): ?>
+													<div class="small text-muted"><?php echo htmlspecialchars((string)$primaryMeterItem['label']); ?></div>
+												<?php endif; ?>
+												<?php if (count($meterItems) > 1): ?>
+													<div class="small mt-1"><span class="badge bg-info-subtle text-info border border-info-subtle"><?php echo count($meterItems); ?> meters</span></div>
+												<?php endif; ?>
+											</td>
 											<td>
 												<span class="badge bg-<?php echo ($u['status'] === 'active') ? 'success' : (($u['status'] === 'inactive') ? 'secondary' : 'warning'); ?>">
 													<?php echo htmlspecialchars(ucfirst($u['status'] ?? '')); ?>
@@ -1000,6 +1150,7 @@ require_once __DIR__ . '/../../templates/header.php';
 				<div class="card-body">
 				<?php if ($isAdminUser): ?>
 					<form method="post" action="">
+						<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($usersCsrfToken); ?>">
 						<input type="hidden" name="form_type" value="<?php echo $isEditMode ? 'edit_user_save' : 'create_user'; ?>">
 						<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
 						<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
@@ -1160,10 +1311,80 @@ require_once __DIR__ . '/../../templates/header.php';
 			</div>
 		</div>
 	</div>
+
+	<?php if ($isEditMode && $isAdminUser && !empty($editUser['id'])): ?>
+		<div class="row mt-4">
+			<div class="col-12">
+				<div class="card">
+					<div class="card-header d-flex justify-content-between align-items-center">
+						<h5 class="mb-0">Account Meters</h5>
+						<span class="text-muted small">Account No: <?php echo htmlspecialchars((string)$editUser['account_number']); ?></span>
+					</div>
+					<div class="card-body">
+						<p class="text-muted mb-3">Add more meters to this customer without changing the payment account number.<?php echo $registrationFee > 0 ? ' Each additional meter will create a registration-fee bill of KES ' . number_format($registrationFee, 2) . '.' : ''; ?></p>
+						<form method="post" action="" class="row g-3 align-items-end">
+							<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($usersCsrfToken); ?>">
+							<input type="hidden" name="form_type" value="add_client_meter">
+							<input type="hidden" name="user_id" value="<?php echo (int)$editUser['id']; ?>">
+							<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
+							<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
+							<input type="hidden" name="edit_id" value="<?php echo (int)$editUser['id']; ?>">
+							<div class="col-md-6 col-lg-5">
+								<label for="additional_meter_number" class="form-label">New Meter No</label>
+								<input type="text" class="form-control" id="additional_meter_number" name="additional_meter_number" autocomplete="off" required>
+							</div>
+							<div class="col-md-6 col-lg-4">
+								<label for="additional_meter_label" class="form-label">Property / Meter Label</label>
+								<input type="text" class="form-control" id="additional_meter_label" name="additional_meter_label" autocomplete="off" placeholder="e.g. Plot B rental house">
+							</div>
+							<div class="col-md-6 col-lg-4">
+								<button type="submit" class="btn btn-outline-primary w-100"><?php echo $registrationFee > 0 ? 'Add Meter & Charge Fee' : 'Add Meter'; ?></button>
+							</div>
+						</form>
+
+						<div class="table-responsive mt-4">
+							<table class="table table-sm align-middle mb-0">
+								<thead>
+									<tr>
+										<th>Meter No</th>
+										<th>Property / Label</th>
+										<th>Type</th>
+										<th>Status</th>
+										<th>Fee Bill</th>
+									</tr>
+								</thead>
+								<tbody>
+									<?php foreach ($editUserMeters as $meterRow): ?>
+										<tr>
+											<td><?php echo htmlspecialchars((string)$meterRow['meter_number']); ?></td>
+											<td><?php echo htmlspecialchars((string)($meterRow['meter_label'] ?? '')); ?></td>
+											<td>
+												<span class="badge bg-<?php echo !empty($meterRow['is_primary']) ? 'dark' : 'info'; ?>">
+													<?php echo !empty($meterRow['is_primary']) ? 'Primary' : 'Additional'; ?>
+												</span>
+											</td>
+											<td><?php echo htmlspecialchars(ucfirst((string)($meterRow['status'] ?? 'active'))); ?></td>
+											<td>
+												<?php if (!empty($meterRow['registration_bill_id'])): ?>
+													<a class="btn btn-sm btn-outline-secondary" href="/admin/bill-detail?bill_id=<?php echo (int)$meterRow['registration_bill_id']; ?>">Bill #<?php echo (int)$meterRow['registration_bill_id']; ?></a>
+												<?php else: ?>
+													<span class="text-muted">None</span>
+												<?php endif; ?>
+											</td>
+										</tr>
+									<?php endforeach; ?>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	<?php endif; ?>
 </div>
 
 <?php
-$googleMapsApiKey = getenv('GOOGLE_MAPS_API_KEY') ?: '';
+$googleMapsApiKey = Database::env('GOOGLE_MAPS_API_KEY', '');
 
 if ($googleMapsApiKey) {
 	$custom_scripts = <<<JS

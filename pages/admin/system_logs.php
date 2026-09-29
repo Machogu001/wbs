@@ -410,7 +410,7 @@ include __DIR__ . '/../../templates/header.php';
                                             <td><?php echo (int)($item['id'] ?? 0); ?></td>
                                             <td><?php echo htmlspecialchars($item['phone'] ?? ''); ?></td>
                                             <td><span class="badge bg-secondary"><?php echo htmlspecialchars($item['type'] ?? 'general'); ?></span></td>
-                                            <td><small><?php echo htmlspecialchars(substr((string)($item['message'] ?? ''), 0, 120)); ?></small></td>
+                                            <td><small class="view-sms-message" style="cursor: pointer; text-decoration: underline;" title="Click to view full message" data-full-message="<?php echo htmlspecialchars($item['message'] ?? ''); ?>"><?php echo htmlspecialchars(substr((string)($item['message'] ?? ''), 0, 120)); ?></small></td>
                                             <td><?php echo (int)($item['retry_count'] ?? 0); ?></td>
                                             <td><small><?php echo !empty($item['created_at']) ? htmlspecialchars(date('d-m-Y H:i', strtotime((string)$item['created_at']))) : '-'; ?></small></td>
                                             <td><small><?php echo !empty($item['last_attempt']) ? htmlspecialchars(date('d-m-Y H:i', strtotime((string)$item['last_attempt']))) : '-'; ?></small></td>
@@ -531,7 +531,7 @@ include __DIR__ . '/../../templates/header.php';
                                             <td><?php echo (int)($item['id'] ?? 0); ?></td>
                                             <td><?php echo htmlspecialchars($item['phone'] ?? ''); ?></td>
                                             <td><span class="badge bg-secondary"><?php echo htmlspecialchars($item['type'] ?? 'general'); ?></span></td>
-                                            <td><small><?php echo htmlspecialchars(substr((string)($item['message'] ?? ''), 0, 120)); ?></small></td>
+                                            <td><small class="view-sms-message" style="cursor: pointer; text-decoration: underline;" title="Click to view full message" data-full-message="<?php echo htmlspecialchars($item['message'] ?? ''); ?>"><?php echo htmlspecialchars(substr((string)($item['message'] ?? ''), 0, 120)); ?></small></td>
                                             <td><?php echo (int)($item['retry_count'] ?? 0); ?></td>
                                             <td><small><?php echo !empty($item['last_attempt']) ? htmlspecialchars(date('d-m-Y H:i', strtotime((string)$item['last_attempt']))) : '-'; ?></small></td>
                                             <td><small class="text-danger"><?php echo !empty($item['last_error']) ? htmlspecialchars(substr((string)$item['last_error'], 0, 100)) : '-'; ?></small></td>
@@ -655,6 +655,7 @@ include __DIR__ . '/../../templates/header.php';
                 </div>
                 <div class="modal-body">
                     <p id="smsMessageContent" style="word-wrap: break-word; white-space: pre-wrap;"></p>
+                    <div id="smsMessageLinks" class="d-none mb-3"></div>
                     <button type="button" class="btn btn-sm btn-secondary" id="copySmsMessageBtn" title="Copy to clipboard">
                         <i class="bi bi-clipboard"></i> Copy Message
                     </button>
@@ -715,7 +716,55 @@ include __DIR__ . '/../../templates/header.php';
         document.querySelectorAll('.view-sms-message').forEach(function(element) {
             element.addEventListener('click', function() {
                 var fullMessage = this.getAttribute('data-full-message');
-                document.getElementById('smsMessageContent').textContent = fullMessage;
+                var messageContent = document.getElementById('smsMessageContent');
+                var linksWrap = document.getElementById('smsMessageLinks');
+                messageContent.textContent = fullMessage;
+
+                var matches = fullMessage ? fullMessage.match(/https?:\/\/[^\s]+/g) : null;
+                linksWrap.innerHTML = '';
+                if (matches && matches.length) {
+                    linksWrap.classList.remove('d-none');
+                    var heading = document.createElement('div');
+                    heading.className = 'small text-muted mb-2';
+                    heading.textContent = 'Detected link' + (matches.length > 1 ? 's' : '');
+                    linksWrap.appendChild(heading);
+
+                    matches.forEach(function(link) {
+                        var row = document.createElement('div');
+                        row.className = 'd-flex flex-wrap gap-2 align-items-center mb-2';
+
+                        var openLink = document.createElement('a');
+                        openLink.className = 'btn btn-sm btn-outline-primary';
+                        openLink.href = link;
+                        openLink.target = '_blank';
+                        openLink.rel = 'noopener';
+                        openLink.textContent = 'Open Link';
+
+                        var copyLink = document.createElement('button');
+                        copyLink.type = 'button';
+                        copyLink.className = 'btn btn-sm btn-outline-secondary';
+                        copyLink.textContent = 'Copy Link';
+                        copyLink.addEventListener('click', function() {
+                            navigator.clipboard.writeText(link).then(function() {
+                                alert('Link copied to clipboard!');
+                            }).catch(function() {
+                                alert('Failed to copy link');
+                            });
+                        });
+
+                        var linkText = document.createElement('code');
+                        linkText.className = 'small';
+                        linkText.style.whiteSpace = 'normal';
+                        linkText.textContent = link;
+
+                        row.appendChild(openLink);
+                        row.appendChild(copyLink);
+                        row.appendChild(linkText);
+                        linksWrap.appendChild(row);
+                    });
+                } else {
+                    linksWrap.classList.add('d-none');
+                }
                 var modal = new bootstrap.Modal(document.getElementById('smsChatModal'));
                 modal.show();
             });

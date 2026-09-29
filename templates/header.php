@@ -108,7 +108,7 @@ $showGlobalPageHero = false;
         $navUserRole    = strtolower((string)($_SESSION['user_data']['role'] ?? 'customer'));
         $navIsStaff     = in_array($navUserRole, ['admin', 'reader', 'finance', 'support'], true);
         $navCanManageSettings = in_array($navUserRole, ['admin', 'finance'], true);
-                                $navAdminPaths  = ['/admin/users','/admin/staff-users','/reports','/accounting','/admin/accounting','/admin/payments','/admin/payment-transactions',
+                                $navAdminPaths  = ['/admin/users','/admin/staff-users','/admin/registration-proformas','/admin/onboarding-tracker','/reports','/accounting','/admin/accounting','/admin/payments','/admin/payment-transactions',
                            '/admin/demand-notices','/admin/approvals','/admin/integration-health',
                            '/admin/messaging','/activity_log','/system-logs','/chat','/internal-chat',
                            '/invoicing','/settings'];
@@ -118,6 +118,8 @@ $showGlobalPageHero = false;
         $navOperationsPaths = [
             '/admin/users',
             '/admin/staff-users',
+            '/admin/registration-proformas',
+            '/admin/onboarding-tracker',
             '/admin/role-permissions',
             '/invoicing',
             '/admin/invoicing',
@@ -214,6 +216,8 @@ $showGlobalPageHero = false;
                             <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarOperations">
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/users' ? ' active' : ''; ?>" href="/admin/users"><i class="bi bi-people"></i> Customers</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/staff-users' ? ' active' : ''; ?>" href="/admin/staff-users"><i class="bi bi-person-badge"></i> Staff Users</a></li>
+                                <li><a class="dropdown-item<?php echo $currentPath === '/admin/registration-proformas' ? ' active' : ''; ?>" href="/admin/registration-proformas"><i class="bi bi-file-earmark-medical"></i> Registration Proformas</a></li>
+                                <li><a class="dropdown-item<?php echo $currentPath === '/admin/onboarding-tracker' ? ' active' : ''; ?>" href="/admin/onboarding-tracker"><i class="bi bi-diagram-3"></i> Onboarding Tracker</a></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/admin/role-permissions' ? ' active' : ''; ?>" href="/admin/role-permissions"><i class="bi bi-shield-lock"></i> Role Permissions</a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item<?php echo $currentPath === '/invoicing' ? ' active' : ''; ?>" href="/invoicing"><i class="bi bi-file-earmark-text"></i> Invoicing</a></li>
@@ -254,6 +258,7 @@ $showGlobalPageHero = false;
                                 if (!$navIsAdmin && isset($auth)) {
                                     $permNavItems = [
                                         'view_customers'        => ['/admin/users',           'bi-people',                  'Customers'],
+                                        'manage_registration_proformas' => ['/admin/registration-proformas', 'bi-file-earmark-medical', 'Registration Proformas'],
                                         'view_invoicing'        => ['/invoicing',              'bi-file-earmark-text',       'Invoicing'],
                                         'view_accounting'       => ['/accounting',             'bi-journal-text',            'Accounting'],
                                         'view_reports'          => ['/reports',                'bi-bar-chart',               'Reports'],
@@ -269,6 +274,11 @@ $showGlobalPageHero = false;
                                             echo "<li><a class=\"dropdown-item{$isActive}\" href=\"{$href}\"><i class=\"bi {$icon}\"></i> {$label}</a></li>\n";
                                             $shownCount++;
                                         }
+                                    }
+                                    if ($auth->hasPermission('manage_registration_proformas') || $auth->hasPermission('view_customers')) {
+                                        $isActive = ($currentPath === '/admin/onboarding-tracker') ? ' active' : '';
+                                        echo "<li><a class=\"dropdown-item{$isActive}\" href=\"/admin/onboarding-tracker\"><i class=\"bi bi-diagram-3\"></i> Onboarding Tracker</a></li>\n";
+                                        $shownCount++;
                                     }
                                     if ($shownCount > 0) {
                                         echo '<li><hr class="dropdown-divider"></li>';

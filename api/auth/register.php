@@ -84,10 +84,17 @@ try {
     if (!in_array($registrationType, ['client', 'customer', 'staff'], true)) {
         $registrationType = 'client';
     }
+    $customerType = strtolower(trim((string)($data->customer_type ?? 'individual')));
+    if (!in_array($customerType, ['individual', 'company'], true)) {
+        $customerType = 'individual';
+    }
 
     $firstName = trim((string)($data->first_name ?? ''));
     $middleName = trim((string)($data->middle_name ?? ''));
     $lastName = trim((string)($data->last_name ?? ''));
+    $companyName = trim((string)($data->company_name ?? ''));
+    $companyRegistrationNumber = trim((string)($data->company_registration_number ?? ''));
+    $contactPersonName = trim(preg_replace('/\s+/', ' ', $firstName . ' ' . $middleName . ' ' . $lastName));
 
     $fullNameFromParts = trim(preg_replace('/\s+/', ' ', $firstName . ' ' . $middleName . ' ' . $lastName));
     $fullName = trim((string)($data->full_name ?? $fullNameFromParts));
@@ -187,7 +194,12 @@ try {
         exit;
     }
 
-    if ($idNumber === '') {
+    if ($customerType === 'company') {
+        if ($companyName === '' || $companyRegistrationNumber === '') {
+            throw new Exception("Company name and company registration number are required for company registration");
+        }
+        $fullName = $companyName;
+    } elseif ($idNumber === '') {
         throw new Exception("ID number is required for client registration");
     }
 
@@ -207,6 +219,23 @@ try {
         if ($value === '') {
             throw new Exception("Missing required field for client registration: $field");
         }
+    }
+
+    $conflictSql = 'SELECT id FROM users WHERE email = :email';
+    $conflictParams = [':email' => $email];
+    if ($customerType === 'company') {
+        $conflictSql .= ' OR company_registration_number = :company_registration_number';
+        $conflictParams[':company_registration_number'] = $companyRegistrationNumber;
+    } else {
+        $conflictSql .= ' OR id_number = :id_number';
+        $conflictParams[':id_number'] = $idNumber;
+    }
+    $stmtConflict = $db->prepare($conflictSql . ' LIMIT 1');
+    $stmtConflict->execute($conflictParams);
+    if ($stmtConflict->fetch(PDO::FETCH_ASSOC)) {
+        throw new Exception($customerType === 'company'
+            ? 'A user with the same email address or company registration number already exists.'
+            : 'A user with the same email address or ID number already exists.');
     }
 
     // Enforce GPS accuracy BEFORE any account is created or STK push is sent
@@ -238,9 +267,13 @@ try {
     $user->account_number = $accountNumber;
     $user->username = null;
     $user->full_name = $fullName;
+    $user->customer_type = $customerType;
+    $user->company_name = $customerType === 'company' ? $companyName : null;
+    $user->contact_person_name = $customerType === 'company' ? $contactPersonName : null;
+    $user->company_registration_number = $customerType === 'company' ? $companyRegistrationNumber : null;
     $user->phone_number = $phoneNumber;
     $user->email = $email;
-    $user->id_number = $idNumber;
+    $user->id_number = $customerType === 'company' ? ($idNumber !== '' ? $idNumber : null) : $idNumber;
     $user->address = $address;
     $user->tax_pin = isset($data->tax_pin) ? trim((string)$data->tax_pin) : null;
     $user->meter_number = $accountNumber;

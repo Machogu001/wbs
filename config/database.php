@@ -8,6 +8,7 @@ class Database {
     private $username = '';
     private $password = '';
     private $conn;
+    private static $envCache = null;
 
     public function __construct() {
         $this->loadEnvConfig();
@@ -37,12 +38,30 @@ class Database {
         return $db->getConnection() !== null;
     }
 
-    /**
-     * Load database configuration from environment variables or .env file.
-     * Falls back to the default values above if no env values are set.
-     */
-    private function loadEnvConfig(): void {
-        // Try to load from a .env file at the project root if not already loaded
+    public static function env(string $name, $default = null) {
+        $direct = getenv($name);
+        if ($direct !== false && $direct !== null && $direct !== '') {
+            return $direct;
+        }
+
+        $envValues = self::loadEnvValues();
+        if (array_key_exists($name, $envValues) && $envValues[$name] !== '') {
+            return $envValues[$name];
+        }
+
+        if (isset($_ENV[$name]) && $_ENV[$name] !== '') {
+            return $_ENV[$name];
+        }
+
+        return $default;
+    }
+
+    private static function loadEnvValues(): array {
+        if (self::$envCache !== null) {
+            return self::$envCache;
+        }
+
+        $values = [];
         $projectRoot = dirname(__DIR__);
         $envFile = $projectRoot . '/.env';
 
@@ -51,39 +70,47 @@ class Database {
             if ($lines !== false) {
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    // Skip comments
                     if ($line === '' || $line[0] === '#' || $line[0] === ';') {
                         continue;
                     }
 
-                    // Split KEY=VALUE
                     $parts = explode('=', $line, 2);
                     if (count($parts) !== 2) {
                         continue;
                     }
 
-                    $name = trim($parts[0]);
+                    $key = trim($parts[0]);
                     $value = trim($parts[1]);
-
-                    // Remove surrounding single or double quotes if present
                     $len = strlen($value);
                     if ($len >= 2) {
                         $firstChar = $value[0];
                         $lastChar = $value[$len - 1];
-                        if (($firstChar === '"' && $lastChar === '"') ||
-                            ($firstChar === "'" && $lastChar === "'")) {
+                        if (($firstChar === '"' && $lastChar === '"') || ($firstChar === "'" && $lastChar === "'")) {
                             $value = substr($value, 1, -1);
                         }
                     }
 
-                    if ($name !== '') {
-                        if (getenv($name) === false) {
-                            // Do not override any server-provided env var
-                            $_ENV[$name] = $value;
-                            putenv($name . '=' . $value);
-                        }
+                    if ($key !== '') {
+                        $values[$key] = $value;
                     }
                 }
+            }
+        }
+
+        self::$envCache = $values;
+        return self::$envCache;
+    }
+
+    /**
+     * Load database configuration from environment variables or .env file.
+     * Falls back to the default values above if no env values are set.
+     */
+    private function loadEnvConfig(): void {
+        $envValues = self::loadEnvValues();
+        foreach ($envValues as $name => $value) {
+            if (getenv($name) === false) {
+                $_ENV[$name] = $value;
+                putenv($name . '=' . $value);
             }
         }
 

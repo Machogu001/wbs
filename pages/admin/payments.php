@@ -271,49 +271,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 						$allocReference .= '-P' . ($idx + 1);
 					}
 
-					$stmt = $db->prepare("INSERT INTO payments (bill_id, user_id, phone_number, payment_method, amount, mpesa_receipt, status, transaction_date, received_by_user_id, created_at) VALUES (:bill_id, :user_id, :phone, :payment_method, :amount, :receipt, 'completed', :tx_date, :received_by_user_id, :created_at)");
-					$stmt->bindParam(':bill_id', $allocBillId, PDO::PARAM_INT);
-					$stmt->bindParam(':user_id', $currentUser['id'], PDO::PARAM_INT);
-					$stmt->bindParam(':phone', $phone);
-					$stmt->bindParam(':payment_method', $paymentMethod);
-					$stmt->bindParam(':amount', $allocAmount);
-					$stmt->bindParam(':receipt', $allocReference);
-					$stmt->bindParam(':tx_date', $paidDateTime);
-					$stmt->bindValue(':received_by_user_id', $receivedByUserId > 0 ? $receivedByUserId : null, $receivedByUserId > 0 ? PDO::PARAM_INT : PDO::PARAM_NULL);
-					$now = date('Y-m-d H:i:s');
-					$stmt->bindParam(':created_at', $now);
-					$stmt->execute();
-					$paymentId = (int)$db->lastInsertId();
+						$isRegistrationBill = $billService->isRegistrationFeeBill($allocBill);
+						$stmt = $db->prepare("INSERT INTO payments (bill_id, user_id, phone_number, payment_method, amount, mpesa_receipt, status, registration_id, transaction_date, received_by_user_id, created_at) VALUES (:bill_id, :user_id, :phone, :payment_method, :amount, :receipt, 'completed', :registration_id, :tx_date, :received_by_user_id, :created_at)");
+						$stmt->bindParam(':bill_id', $allocBillId, PDO::PARAM_INT);
+						$stmt->bindParam(':user_id', $currentUser['id'], PDO::PARAM_INT);
+						$stmt->bindParam(':phone', $phone);
+						$stmt->bindParam(':payment_method', $paymentMethod);
+						$stmt->bindParam(':amount', $allocAmount);
+						$stmt->bindParam(':receipt', $allocReference);
+						$stmt->bindValue(':registration_id', $isRegistrationBill ? (int)$currentUser['id'] : null, $isRegistrationBill ? PDO::PARAM_INT : PDO::PARAM_NULL);
+						$stmt->bindParam(':tx_date', $paidDateTime);
+						$stmt->bindValue(':received_by_user_id', $receivedByUserId > 0 ? $receivedByUserId : null, $receivedByUserId > 0 ? PDO::PARAM_INT : PDO::PARAM_NULL);
+						$now = date('Y-m-d H:i:s');
+						$stmt->bindParam(':created_at', $now);
+						$stmt->execute();
+						$paymentId = (int)$db->lastInsertId();
 					$recordedPaymentIds[] = $paymentId;
 
-					try {
-						$accounting = new Accounting($db);
-						$paymentRow = [
-							'id' => $paymentId,
-							'amount' => $allocAmount,
-							'transaction_date' => $paidDateTime,
-							'bill_id' => $allocBillId,
-							'payment_method' => $paymentMethod,
-						];
-						$memo = 'Manual payment received via ' . strtoupper($paymentMethod);
-						if ($paymentNote !== '') {
-							$memo .= ' - ' . $paymentNote;
-						}
-						$accounting->postPaymentReceived($paymentId, $paymentRow, $allocBill, $memo, (int)($_SESSION['user_id'] ?? 0));
-					} catch (Throwable $e) {
-						error_log('Manual payment accounting posting failed for payment #' . $paymentId . ': ' . $e->getMessage());
-					}
-
-					try {
-						$installmentPlanner->allocatePayment($paymentId);
-					} catch (Throwable $e) {
-						error_log('Manual payment installment allocation failed for payment #' . $paymentId . ': ' . $e->getMessage());
-					}
-
-					$updatedOutstanding = $getOutstanding($db, $allocBillId, (float)$allocBill['amount']);
-					if ($updatedOutstanding <= 0.01) {
-						$billService->updateStatus($allocBillId, 'paid');
-					}
+						$paymentService->finalizeCompletedPayment($paymentId, false);
 
 					try {
 						$logger = new ActivityLog($db);
@@ -665,22 +640,7 @@ include __DIR__ . '/../../templates/header.php';
 						<input type="hidden" name="action" value="search_account">
 						<div class="mb-3">
 							<label class="form-label">Account / Meter / Name</label>
-							<input type="text" name="account_number" id="account-search-input" class="form-control" list="clientList" placeholder="Start typing account, meter or name" value="<?php echo htmlspecialchars($_POST['account_number'] ?? ($currentUser['account_number'] ?? '')); ?>" required>
-							<datalist id="clientList">
-								<?php foreach ($client_list as $client): ?>
-									<option value="<?php echo htmlspecialchars($client['account_number']); ?>">
-										<?php echo htmlspecialchars($client['full_name'] . ' - ' . $client['account_number'] . ($client['meter_number'] ? ' (MTR: ' . $client['meter_number'] . ')' : '')); ?>
-									</option>
-									<?php if (!empty($client['meter_number'])): ?>
-										<option value="<?php echo htmlspecialchars($client['meter_number']); ?>">
-											<?php echo htmlspecialchars($client['full_name'] . ' - ' . $client['account_number'] . ' (Meter: ' . $client['meter_number'] . ')'); ?>
-										</option>
-									<?php endif; ?>
-									<?php if (!empty($client['full_name'])): ?>
-										<option value="<?php echo htmlspecialchars($client['full_name']); ?>"></option>
-									<?php endif; ?>
-								<?php endforeach; ?>
-							</datalist>
+							<input type="text" name="account_number" id="account-search-input" class="form-control js-client-autocomplete" placeholder="Start typing account, meter or name" value="<?php echo htmlspecialchars($_POST['account_number'] ?? ($currentUser['account_number'] ?? '')); ?>" autocomplete="off" required>
 							<small class="text-muted">Type to search; select from suggestions.</small>
 						</div>
 						<button type="submit" class="btn btn-primary w-100"><i class="bi bi-search me-1"></i> Load Account</button>
@@ -688,7 +648,18 @@ include __DIR__ . '/../../templates/header.php';
 					<?php if ($currentUser): ?>
 						<hr>
 						<p class="mb-1"><strong><?php echo htmlspecialchars($currentUser['full_name']); ?></strong></p>
-						<p class="mb-0 text-muted">Meter: <?php echo htmlspecialchars($currentUser['meter_number'] ?? ''); ?></p>
+						<?php $currentUserMeters = !empty($currentUser['meter_details']) ? array_values(array_filter(explode('||', (string)$currentUser['meter_details']))) : []; ?>
+						<p class="mb-0 text-muted">Meters: <?php
+							$meterLabels = [];
+							foreach ($currentUserMeters as $segment) {
+								$parts = explode('::', (string)$segment, 2);
+								$number = trim((string)($parts[0] ?? ''));
+								$label = trim((string)($parts[1] ?? ''));
+								if ($number === '') { continue; }
+								$meterLabels[] = $number . ($label !== '' ? ' (' . $label . ')' : '');
+							}
+							echo htmlspecialchars(!empty($meterLabels) ? implode(', ', $meterLabels) : (string)($currentUser['meter_number'] ?? '')); ?>
+						</p>
 						<?php
 							$walletBalance = $wallet->getBalance((int)$currentUser['id']);
 						?>
@@ -999,13 +970,23 @@ include __DIR__ . '/../../templates/header.php';
 		</div>
 	</div>
 </div>
+<script src="/public/js/admin-client-autocomplete.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+	var accountSearchInput = document.getElementById('account-search-input');
 	var methodEl = document.getElementById('manualPaymentMethod');
 	var targetEl = document.getElementById('manualPaymentTarget');
 	var refEl = document.getElementById('manualPaymentReference');
 	var refLabelEl = document.getElementById('manualReferenceLabel');
 	var billEl = document.getElementById('manualBillSelect');
+
+	if (accountSearchInput && window.WbsClientAutocomplete) {
+		window.WbsClientAutocomplete.init('.js-client-autocomplete', {
+			endpoint: '/api/admin/search_clients',
+			minChars: 2,
+			debounceMs: 250
+		});
+	}
 
 	function syncManualPaymentFields() {
 		if (methodEl && refEl && refLabelEl) {

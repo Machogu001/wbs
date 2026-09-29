@@ -60,10 +60,19 @@ class ShortUrl
             // Use custom code or generate from bill ID
             $shortCode = $customCode ?? ($billId > 0 ? 'INV-' . $billId : $this->generateUniqueShortCode());
 
-            // Check if this code already exists for this bill
+            if ($customCode !== null && $customCode !== '') {
+                $stmt = $this->db->prepare('SELECT short_code, full_url FROM short_urls WHERE short_code = ? LIMIT 1');
+                $stmt->execute([$customCode]);
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($result && (string)$result['full_url'] === $fullUrl) {
+                    return rtrim(self::BASE_URL, '/') . '/s/' . $result['short_code'];
+                }
+            }
+
+            // Reuse an existing short link only when it points to the same destination.
             if ($billId !== null && $billId > 0) {
-                $stmt = $this->db->prepare('SELECT short_code FROM short_urls WHERE bill_id = ? LIMIT 1');
-                $stmt->execute([$billId]);
+                $stmt = $this->db->prepare('SELECT short_code FROM short_urls WHERE bill_id = ? AND full_url = ? LIMIT 1');
+                $stmt->execute([$billId, $fullUrl]);
                 $result = $stmt->fetch(PDO::FETCH_ASSOC);
                 if ($result) {
                     return rtrim(self::BASE_URL, '/') . '/s/' . $result['short_code'];
@@ -77,8 +86,15 @@ class ShortUrl
                 );
                 $stmt->execute([$shortCode, $fullUrl, $billId]);
             } catch (Exception $e) {
-                // If this code already exists, generate a unique one
+                // If this code already exists for the same URL, reuse it. Otherwise generate a unique one.
                 if (strpos($e->getMessage(), 'Duplicate') !== false || strpos($e->getMessage(), 'UNIQUE') !== false) {
+                    $stmt = $this->db->prepare('SELECT short_code, full_url FROM short_urls WHERE short_code = ? LIMIT 1');
+                    $stmt->execute([$shortCode]);
+                    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                    if ($result && (string)$result['full_url'] === $fullUrl) {
+                        return rtrim(self::BASE_URL, '/') . '/s/' . $result['short_code'];
+                    }
+
                     $shortCode = $this->generateUniqueShortCode();
                     $stmt = $this->db->prepare(
                         'INSERT INTO short_urls (short_code, full_url, bill_id) VALUES (?, ?, ?)'

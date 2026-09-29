@@ -9,7 +9,6 @@
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/PaymentLink.php';
-require_once __DIR__ . '/../../includes/ShortUrl.php';
 
 set_time_limit(900);
 
@@ -59,7 +58,6 @@ try {
     $stmt = $db->query($query);
     $bills = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
     $sms = new SMS($db);
-    $shortUrl = new ShortUrl($db);
     $sent = 0;
 
     foreach ($bills as $bill) {
@@ -68,10 +66,7 @@ try {
         $billingMonth = date('M Y', strtotime((string)$bill['billing_month']));
         $amountDue = number_format(max(0, (float)$bill['amount'] - (float)$bill['paid_amount']), 2);
         $dueDate = date('d/m/Y', strtotime((string)$bill['due_date']));
-        $paymentLink = $shortUrl->shortenUrl(
-            PaymentLink::generateLink((int)$bill['id']),
-            (int)$bill['id']
-        );
+        $paymentLink = PaymentLink::generateLink((int)$bill['id']);
 
         if ($reminderType === 'due_tomorrow') {
             $message = "Dear {$clientName}, your {$billingMonth} water bill for Account {$bill['account_number']} amounting to KES {$amountDue} is due tomorrow ({$dueDate}). Kindly pay on time to avoid service interruption. Pay here: {$paymentLink}";
