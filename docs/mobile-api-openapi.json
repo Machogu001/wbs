@@ -72,6 +72,55 @@
         }
       }
     },
+    "/api/mobile/register.php": {
+      "get": {
+        "summary": "Load public mobile registration form metadata",
+        "security": [{ "apiKeyAuth": [] }],
+        "responses": {
+          "200": { "description": "Registration metadata" }
+        }
+      },
+      "post": {
+        "summary": "Submit a public mobile registration",
+        "security": [{ "apiKeyAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "registration_type": { "type": "string", "enum": ["client", "staff"] },
+                  "customer_type": { "type": "string", "enum": ["individual", "company"] },
+                  "first_name": { "type": "string" },
+                  "middle_name": { "type": "string" },
+                  "last_name": { "type": "string" },
+                  "phone_country_code": { "type": "string" },
+                  "phone_number_local": { "type": "string" },
+                  "username": { "type": "string" },
+                  "email": { "type": "string" },
+                  "id_number": { "type": "string" },
+                  "tax_pin": { "type": "string" },
+                  "address": { "type": "string" },
+                  "location_label": { "type": "string" },
+                  "latitude": { "type": "number" },
+                  "longitude": { "type": "number" },
+                  "gps_accuracy": { "type": "number" },
+                  "connection_type": { "type": "string", "enum": ["domestic", "commercial", "industrial"] },
+                  "company_name": { "type": "string" },
+                  "company_registration_number": { "type": "string" },
+                  "password": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Registration accepted" },
+          "422": { "description": "Validation error" }
+        }
+      }
+    },
     "/api/mobile/verify_2fa.php": {
       "post": {
         "summary": "Verify a 2FA challenge and receive a bearer token",
@@ -142,6 +191,39 @@
         }
       }
     },
+    "/api/mobile/registration_payment.php": {
+      "get": {
+        "summary": "Get authenticated registration-payment follow-up status",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Registration payment status" },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "summary": "Initiate or resend an M-Pesa STK push for the authenticated user's registration fee",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": { "type": "string", "enum": ["initiate", "resend_stk"] },
+                  "phone": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Registration payment STK initiated" },
+          "401": { "description": "Unauthorized" },
+          "422": { "description": "Validation or business rule error" }
+        }
+      }
+    },
     "/api/mobile/profile_update.php": {
       "post": {
         "summary": "Update the authenticated customer profile",
@@ -209,6 +291,7 @@
         ],
         "responses": { "200": { "description": "Payments" } }
       }
+    },
     "/api/mobile/payment_status.php": {
       "get": {
         "summary": "Poll customer payment status for an STK attempt",
@@ -239,7 +322,6 @@
           "422": { "description": "Missing identifier" }
         }
       }
-    },
     },
     "/api/mobile/payment.php": {
       "get": {

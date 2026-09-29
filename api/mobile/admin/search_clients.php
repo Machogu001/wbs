@@ -10,12 +10,15 @@ try {
 
     $q = trim((string)($_GET['q'] ?? ''));
     if ($q === '') {
-        mobileApiJson(200, 'success', 'Clients loaded.', [
-            'clients' => [],
+        http_response_code(200);
+        echo json_encode([
+            'status' => 'success',
             'data' => [],
+            'clients' => [],
             'results' => [],
             'suggestions' => [],
         ]);
+        exit;
     }
 
     $userService = new User($db);
@@ -24,12 +27,15 @@ try {
         return mobileApiFormatClientSearchResult($row, $q);
     }, $results);
 
-    mobileApiJson(200, 'success', 'Clients loaded.', [
-        'clients' => $clients,
+    http_response_code(200);
+    echo json_encode([
+        'status' => 'success',
         'data' => $clients,
+        'clients' => $clients,
         'results' => $clients,
         'suggestions' => $clients,
     ]);
+    exit;
 } catch (Throwable $e) {
     error_log('Mobile API admin search clients failed: ' . $e->getMessage());
     mobileApiJson(500, 'error', 'Unable to search clients right now.');

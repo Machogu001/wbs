@@ -170,6 +170,8 @@ try {
         etims_api_key VARCHAR(255) NULL,
         etims_taxation_type_code VARCHAR(10) NULL,
         terms_conditions_content LONGTEXT NULL,
+        mobile_api_key VARCHAR(191) NULL,
+        mobile_api_key_required TINYINT(1) NOT NULL DEFAULT 1,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
@@ -784,6 +786,64 @@ try {
         KEY idx_registration_proforma_setup_token (account_setup_token)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    $conn->exec("CREATE TABLE IF NOT EXISTS meter_replacements (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        old_meter_id INT NOT NULL,
+        new_meter_id INT NOT NULL,
+        old_meter_number VARCHAR(50) NOT NULL,
+        new_meter_number VARCHAR(50) NOT NULL,
+        old_final_reading DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        new_opening_reading DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        reason TEXT NULL,
+        replaced_by_user_id INT NULL,
+        replaced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_user_id (user_id),
+        KEY idx_old_meter_id (old_meter_id),
+        KEY idx_new_meter_id (new_meter_id),
+        KEY idx_new_meter_number (new_meter_number),
+        KEY idx_replaced_by_user_id (replaced_by_user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS mobile_api_tokens (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        token_hash CHAR(64) NOT NULL,
+        token_prefix VARCHAR(24) NOT NULL,
+        device_name VARCHAR(120) NULL,
+        last_used_at DATETIME NULL,
+        expires_at DATETIME NULL,
+        revoked_at DATETIME NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_mobile_api_token_hash (token_hash),
+        KEY idx_mobile_api_token_user (user_id),
+        KEY idx_mobile_api_token_expiry (expires_at),
+        KEY idx_mobile_api_token_revoked (revoked_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS mobile_api_login_challenges (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        challenge_token VARCHAR(96) NOT NULL,
+        code_hash CHAR(64) NOT NULL,
+        method ENUM('sms', 'email') NOT NULL,
+        identifier VARCHAR(255) NOT NULL,
+        ip_address VARCHAR(45) NOT NULL,
+        available_methods_json TEXT NULL,
+        attempts INT NOT NULL DEFAULT 0,
+        expires_at DATETIME NOT NULL,
+        last_sent_at DATETIME NULL,
+        verified_at DATETIME NULL,
+        consumed_at DATETIME NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_mobile_api_challenge_token (challenge_token),
+        KEY idx_mobile_api_challenge_user (user_id),
+        KEY idx_mobile_api_challenge_expiry (expires_at),
+        KEY idx_mobile_api_challenge_consumed (consumed_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
     // IP geo-lookup cache table (used by activity log)
     $conn->exec("CREATE TABLE IF NOT EXISTS activity_ip_lookup (
         ip_address VARCHAR(45) PRIMARY KEY,
@@ -935,9 +995,13 @@ try {
 
     $featureReadinessChecks = [
         'Multi-meter registry ready' => installerTableExists($conn, 'user_meters'),
+        'Meter replacement audit ready' => installerTableExists($conn, 'meter_replacements'),
         'Primary meter seed applied' => (int)$conn->query("SELECT COUNT(*) FROM user_meters WHERE is_primary = 1")->fetchColumn() > 0,
         'Short payment/message links ready' => installerTableExists($conn, 'short_urls'),
         'Editable terms storage ready' => installerColumnExists($conn, 'billing_settings', 'terms_conditions_content'),
+        'Mobile API settings ready' => installerColumnExists($conn, 'billing_settings', 'mobile_api_key_required'),
+        'Mobile API token storage ready' => installerTableExists($conn, 'mobile_api_tokens'),
+        'Mobile API login challenges ready' => installerTableExists($conn, 'mobile_api_login_challenges'),
         'Dial-code selector ready' => (int)$conn->query("SELECT COUNT(*) FROM country_dial_codes")->fetchColumn() > 0,
     ];
 

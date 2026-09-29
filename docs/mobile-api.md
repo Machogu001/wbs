@@ -107,6 +107,104 @@ Successful response without 2FA:
 }
 ```
 
+### `GET /api/mobile/register.php`
+
+Load public registration form metadata for the mobile app. This lets the app build the same registration form behavior as the web page from system settings.
+
+Response data includes:
+
+- `registration_fee`
+- `enforce_location_accuracy`
+- `gps_accuracy_max_meters`
+- `country_code_options`
+- `registration_type_options`
+- `customer_type_options`
+- `connection_type_options`
+
+### `POST /api/mobile/register.php`
+
+Submit a public registration from the mobile app using the same business rules as the web registration page.
+
+Client registration example:
+
+```json
+{
+  "registration_type": "client",
+  "customer_type": "individual",
+  "first_name": "Andrew",
+  "middle_name": "",
+  "last_name": "Oyugi",
+  "phone_country_code": "254",
+  "phone_number_local": "729554759",
+  "email": "andrew@example.com",
+  "id_number": "12345678",
+  "tax_pin": "",
+  "address": "Plot 5, Nguluni",
+  "location_label": "P5PP+CJ, Nguluni",
+  "latitude": -1.2345,
+  "longitude": 37.2345,
+  "gps_accuracy": 8,
+  "connection_type": "domestic",
+  "password": "Secret123!"
+}
+```
+
+Staff registration example:
+
+```json
+{
+  "registration_type": "staff",
+  "first_name": "Jane",
+  "middle_name": "",
+  "last_name": "Reader",
+  "phone_country_code": "254",
+  "phone_number_local": "712345678",
+  "username": "jreader",
+  "id_number": "99887766"
+}
+```
+
+Notes:
+
+- When `registration_fee` is greater than `0`, client registration triggers an M-Pesa STK push and returns pending payment identifiers.
+- When GPS enforcement is enabled, the app must capture coordinates and `gps_accuracy` within the configured threshold before submission.
+- Public mobile registration still requires `X-API-Key` when the mobile API key toggle is enabled.
+
+### `GET /api/mobile/registration_payment.php`
+
+Return the authenticated user's registration-payment follow-up status.
+
+Response data includes:
+
+- `requires_registration_payment`
+- `registration_fee`
+- `registration_balance`
+- `bill_status`
+- `registration_fully_settled`
+- `latest_payment`
+- `registration_payment`
+
+Use this after login or registration when the account is not yet fully active.
+
+### `POST /api/mobile/registration_payment.php`
+
+Initiate or resend the authenticated user's registration-fee STK push.
+
+Request example:
+
+```json
+{
+  "action": "resend_stk",
+  "phone": "254712345678"
+}
+```
+
+Notes:
+
+- `action` accepts `initiate` or `resend_stk`; both trigger the same registration-payment STK flow.
+- `phone` is optional. When omitted, the API uses the authenticated user's saved phone number.
+- Use the returned `payment.checkout_request_id` with `GET /api/mobile/payment_status.php` to poll for completion.
+
 ### `POST /api/mobile/verify_2fa.php`
 
 Complete a 2FA login and receive an access token.
