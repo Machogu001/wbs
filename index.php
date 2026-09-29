@@ -54,10 +54,18 @@ if (isset($_GET['url']) && strpos($_GET['url'], 'api/') === 0) {
 }
 
 if ($apiRequest !== null) {
-    $api_file = BASE_PATH . '/' . $apiRequest . '.php';
-    if (file_exists($api_file)) {
-        require_once $api_file;
-        exit;
+    $apiCandidates = [];
+    $apiCandidates[] = BASE_PATH . '/' . $apiRequest;
+    if (substr($apiRequest, -4) !== '.php') {
+        $apiCandidates[] = BASE_PATH . '/' . $apiRequest . '.php';
+        $apiCandidates[] = BASE_PATH . '/' . trim($apiRequest, '/') . '/index.php';
+    }
+
+    foreach ($apiCandidates as $api_file) {
+        if (is_file($api_file)) {
+            require_once $api_file;
+            exit;
+        }
     }
 }
 

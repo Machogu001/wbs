@@ -1,0 +1,290 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Water Billing System Mobile API",
+    "version": "1.0.0",
+    "description": "Token-based API for customer mobile apps and staff mobile clients."
+  },
+  "servers": [
+    {
+      "url": "https://wbs.bremac.co.ke"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Token"
+      }
+    },
+    "schemas": {
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "message": { "type": "string" },
+          "data": { "type": "object", "additionalProperties": true }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/mobile/index.php": {
+      "get": {
+        "summary": "Mobile API index",
+        "responses": {
+          "200": {
+            "description": "API metadata"
+          }
+        }
+      }
+    },
+    "/api/mobile/login.php": {
+      "post": {
+        "summary": "Login and receive a bearer token or 2FA challenge",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["identifier", "password"],
+                "properties": {
+                  "identifier": { "type": "string" },
+                  "password": { "type": "string" },
+                  "device_name": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login success or 2FA challenge" },
+          "401": { "description": "Invalid credentials" },
+          "429": { "description": "Rate limited" }
+        }
+      }
+    },
+    "/api/mobile/verify_2fa.php": {
+      "post": {
+        "summary": "Verify a 2FA challenge and receive a bearer token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["challenge_token", "code"],
+                "properties": {
+                  "challenge_token": { "type": "string" },
+                  "code": { "type": "string" },
+                  "device_name": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Verification success" },
+          "400": { "description": "Invalid or expired code" }
+        }
+      }
+    },
+    "/api/mobile/resend_2fa.php": {
+      "post": {
+        "summary": "Resend a 2FA code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["challenge_token"],
+                "properties": {
+                  "challenge_token": { "type": "string" },
+                  "method": { "type": "string", "enum": ["sms", "email"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Code sent" },
+          "400": { "description": "Challenge invalid or cooldown active" }
+        }
+      }
+    },
+    "/api/mobile/logout.php": {
+      "post": {
+        "summary": "Revoke the current bearer token",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Logged out" }
+        }
+      }
+    },
+    "/api/mobile/me.php": {
+      "get": {
+        "summary": "Get the authenticated customer profile",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Profile" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/mobile/dashboard.php": {
+      "get": {
+        "summary": "Get customer dashboard data",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Dashboard" } }
+      }
+    },
+    "/api/mobile/meters.php": {
+      "get": {
+        "summary": "Get linked customer meters",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Meters" } }
+      }
+    },
+    "/api/mobile/bills.php": {
+      "get": {
+        "summary": "Get paginated customer bills",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Bills" } }
+      }
+    },
+    "/api/mobile/bill.php": {
+      "get": {
+        "summary": "Get one bill with line items and payments",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "query", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Bill detail" } }
+      }
+    },
+    "/api/mobile/payments.php": {
+      "get": {
+        "summary": "Get payment history",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Payments" } }
+      }
+    },
+    "/api/mobile/initiate_payment.php": {
+      "post": {
+        "summary": "Initiate an M-Pesa STK push for a bill",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["bill_id"],
+                "properties": {
+                  "bill_id": { "type": "integer" },
+                  "phone": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "STK initiated" } }
+      }
+    },
+    "/api/mobile/meter_readings.php": {
+      "get": {
+        "summary": "Get recent meter-reading submissions",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "meter_number", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Meter readings" } }
+      }
+    },
+    "/api/mobile/submit_reading.php": {
+      "post": {
+        "summary": "Submit a meter reading with photo",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["current_reading", "meter_photo"],
+                "properties": {
+                  "current_reading": { "type": "number" },
+                  "billing_month": { "type": "string", "format": "date" },
+                  "due_date": { "type": "string", "format": "date" },
+                  "meter_number": { "type": "string" },
+                  "meter_photo": { "type": "string", "format": "binary" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Reading submitted" } }
+      }
+    },
+    "/api/mobile/admin/search_clients.php": {
+      "get": {
+        "summary": "Search clients for staff/admin mobile apps",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Client search results" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/api/mobile/admin/collections.php": {
+      "get": {
+        "summary": "Get staff/admin collections summary and recent payments",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "days", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Collections data" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/api/mobile/admin/onboarding_tracker.php": {
+      "get": {
+        "summary": "Get onboarding tracker records for staff/admin mobile apps",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "type", "in": "query", "schema": { "type": "string", "enum": ["all", "proforma", "meter"] } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["all", "attention", "pending_payment", "pending_setup", "complete"] } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "assignee", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Onboarding tracker" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    }
+  }
+}

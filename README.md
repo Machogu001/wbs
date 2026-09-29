@@ -7,13 +7,17 @@ A comprehensive water billing management system with M-Pesa payment integration 
 ### Core Features
 - User Registration & Authentication
 - Customer Account Management
+- Multi-meter support per client account
 - Water Bill Generation
+- Clean short public bill and proforma links
+- Mobile app API for customer self-service integration
 - M-Pesa Payment Integration
 - Accounting module with chart of accounts, journal entries, and trial balance
 - SMS Notifications
 - Admin Dashboard
 - Payment History Tracking
 - User Profile Management
+- Editable Terms & Conditions managed from admin settings
 
 ### Security & Verification
 - Two-step verification (2FA) via SMS or email on login
@@ -36,6 +40,8 @@ A comprehensive water billing management system with M-Pesa payment integration 
 6. Configure email (SMTP) credentials in `.env`
 7. Enable background jobs: `sudo bash scripts/install_background_jobs.sh`
 8. Remove the `install/` directory after installation
+
+The browser installer now also bootstraps the newer schema needed by current releases, including multi-meter registry data, editable terms storage, country dial codes, and short public-link support.
 
 ### Background Jobs
 
@@ -98,6 +104,16 @@ The app will automatically load `.env` via lightweight helpers in the `config` c
 
 ## Support
 For support and documentation, visit the project repository.
+
+## Mobile API
+
+Customer mobile-app endpoints are available under `/api/mobile`.
+
+Documentation:
+
+- `docs/mobile-api.md`
+- `docs/mobile-api-openapi.json`
+- `/api/mobile/index.php`
 
 ## License
 MIT License
