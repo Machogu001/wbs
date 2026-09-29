@@ -118,6 +118,7 @@
                             <li><a href="/login" class="footer-quick-link" data-bs-toggle="modal" data-bs-target="#loginModal">Login</a></li>
                         <?php endif; ?>
                         <li><a href="/dashboard" class="footer-quick-link">Dashboard</a></li>
+                        <li><a href="/privacy-policy" class="footer-quick-link">Privacy Policy</a></li>
                     </ul>
                 </div>
                 <div class="col-md-4">

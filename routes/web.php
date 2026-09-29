@@ -7,6 +7,7 @@ return [
     'home' => 'pages/index.php',
     'register' => 'pages/register.php',
     'login' => 'pages/login.php',
+    'privacy-policy' => 'pages/privacy_policy.php',
     'change-password' => 'pages/change_password.php',
     'forgot-password' => 'pages/forgot_password.php',
     'registration-payment' => 'pages/registration_payment.php',
