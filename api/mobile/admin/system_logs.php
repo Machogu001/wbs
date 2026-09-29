@@ -9,9 +9,7 @@ require_once __DIR__ . '/../../../config/sms_config.php';
 try {
     $db = mobileApiGetDatabase();
     $user = mobileApiRequireUser($db);
-    if (!mobileApiUserHasRole($user, 'admin')) {
-        mobileApiJson(403, 'error', 'Forbidden.');
-    }
+    mobileApiRequireStaffPermission($db, $user, ['manage_settings'], ['admin']);
 
     ErrorLog::ensureTable($db);
     SMSQueue::ensureTable($db);
