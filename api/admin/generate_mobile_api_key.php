@@ -3,6 +3,7 @@ header('Content-Type: application/json');
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/Auth.php';
+require_once __DIR__ . '/../../includes/BillingSettings.php';
 
 function mobileApiJsonError(string $message, int $status = 400): void {
     http_response_code($status);
@@ -78,8 +79,10 @@ try {
     }
 
     $apiKey = $providedKey !== '' ? $providedKey : rtrim(strtr(base64_encode(random_bytes(33)), '+/', '-_'), '=');
+    $settingsService = new BillingSettings($db);
 
     $savedToEnv = false;
+    $savedToDatabase = false;
     $saveWarning = '';
     if ($saveToEnv) {
         $envPath = dirname(__DIR__, 2) . '/.env';
@@ -88,17 +91,25 @@ try {
             $savedToEnv = true;
         } catch (RuntimeException $e) {
             $saveWarning = $e->getMessage();
+            $savedToDatabase = $settingsService->updateMobileApiKey($apiKey);
         }
+    } else {
+        $savedToDatabase = $settingsService->updateMobileApiKey($apiKey);
     }
 
     echo json_encode([
         'status' => 'success',
         'message' => $savedToEnv
             ? 'Mobile API key generated and saved to .env.'
-            : ($saveToEnv ? 'Mobile API key generated. Copy it into .env manually because the web user cannot write that file.' : 'Mobile API key generated successfully.'),
+            : ($savedToDatabase
+                ? ($saveToEnv
+                    ? 'Mobile API key generated and saved in system settings because the web user cannot write .env.'
+                    : 'Mobile API key generated and saved in system settings.')
+                : ($saveToEnv ? 'Mobile API key generated. Copy it into .env manually because the web user cannot write that file.' : 'Mobile API key generated successfully.')),
         'data' => [
             'api_key' => $apiKey,
             'saved_to_env' => $savedToEnv,
+            'saved_to_database' => $savedToDatabase,
             'save_warning' => $saveWarning,
         ],
     ]);

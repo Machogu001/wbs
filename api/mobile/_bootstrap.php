@@ -119,11 +119,26 @@ function mobileApiGetAppKey(): ?string
     return $header !== '' ? $header : null;
 }
 
+function mobileApiGetConfiguredAppKey(PDO $db): string
+{
+    $databaseKey = MpesaConfig::getMobileApiKeyFromDatabase($db);
+    if ($databaseKey !== '') {
+        return $databaseKey;
+    }
+
+    $configuredKey = MpesaConfig::getMobileApiKey();
+    if ($configuredKey !== '') {
+        return $configuredKey;
+    }
+
+    return '';
+}
+
 function mobileApiRequireAppKey(): void
 {
-    $configuredKey = MpesaConfig::getMobileApiKey();
+    $configuredKey = mobileApiGetConfiguredAppKey(mobileApiGetDatabase());
     if ($configuredKey === '') {
-        mobileApiJson(503, 'error', 'Mobile API access key is not configured. Ask an administrator to generate MOBILE_API_KEY in system settings.');
+        mobileApiJson(503, 'error', 'Mobile API access key is not configured. Ask an administrator to generate MOBILE_API_KEY in system settings or save it in billing settings.');
     }
 
     $providedKey = mobileApiGetAppKey();

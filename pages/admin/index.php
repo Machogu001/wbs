@@ -805,11 +805,11 @@ foreach ($months as $num => $label): ?>
 <div class="ssp-section-hd"><i class="bi bi-phone-fill"></i> Mobile API Key (.env)</div>
 <div class="ssp-section-body">
 <div class="input-group mb-2">
-<input type="text" id="mobileApiKeyValue" class="form-control font-monospace" value="<?php echo htmlspecialchars(MpesaConfig::getMobileApiKey()); ?>" readonly>
+<input type="text" id="mobileApiKeyValue" class="form-control font-monospace" value="<?php echo htmlspecialchars((string)($settings['mobile_api_key'] ?? '') !== '' ? (string)$settings['mobile_api_key'] : MpesaConfig::getMobileApiKey()); ?>" readonly>
 <button type="button" class="btn btn-outline-primary" id="btnGenerateMobileApiKey">Generate</button>
 <button type="button" class="btn btn-outline-secondary" id="btnCopyMobileApiKey">Copy</button>
 </div>
-<div class="form-text">Every mobile API request must include <code>X-API-Key</code>. Generate a key here and give it only to trusted mobile applications. Rotating this key immediately blocks old app clients until they update.</div>
+<div class="form-text">Every mobile API request must include <code>X-API-Key</code>. Generate a key here and give it only to trusted mobile applications. If <code>.env</code> is not writable, the key is saved in system settings and used automatically as a fallback.</div>
 </div>
 </div>
 

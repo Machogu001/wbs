@@ -43,6 +43,17 @@ class MpesaConfig {
         return self::env('MOBILE_API_KEY');
     }
 
+    public static function getMobileApiKeyFromDatabase(PDO $db): string {
+        try {
+            $stmt = $db->prepare('SELECT mobile_api_key FROM billing_settings WHERE id = 1 LIMIT 1');
+            $stmt->execute();
+            $value = $stmt->fetchColumn();
+            return is_string($value) ? trim($value) : '';
+        } catch (Throwable $e) {
+            return '';
+        }
+    }
+
     public static function isProduction() {
         $mode = strtolower(self::env('MPESA_ENV', 'sandbox'));
         return in_array($mode, ['production', 'prod', 'live'], true);

@@ -29,6 +29,8 @@ Authorization: Bearer YOUR_ACCESS_TOKEN
 
 Generate or rotate the mobile API key from System Settings. Only admins or users with `manage_settings` can do that.
 
+If `.env` is not writable by the web server user, the generated mobile API key is stored in `billing_settings.mobile_api_key`. When a database-stored key exists, the mobile API runtime uses it as the active key ahead of the `.env` value.
+
 ## Common Response Format
 
 ```json

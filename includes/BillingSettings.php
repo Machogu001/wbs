@@ -9,7 +9,7 @@ class BillingSettings {
     }
 
     public function getSettings() {
-        $query = "SELECT rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, updated_at FROM " . $this->table . " WHERE id = 1 LIMIT 1";
+        $query = "SELECT rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, terms_conditions_content, mobile_api_key, updated_at FROM " . $this->table . " WHERE id = 1 LIMIT 1";
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
         $settings = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -62,11 +62,34 @@ class BillingSettings {
             $settings['enforce_location_accuracy'] = 0;
         }
         $settings['enforce_location_accuracy'] = (int)$settings['enforce_location_accuracy'];
+        if (!isset($settings['terms_conditions_content']) || trim((string)$settings['terms_conditions_content']) === '') {
+            $settings['terms_conditions_content'] = self::getDefaultTermsTemplate();
+        }
+        if (!isset($settings['mobile_api_key']) || $settings['mobile_api_key'] === null) {
+            $settings['mobile_api_key'] = '';
+        }
 
         return $settings;
     }
 
-    public function updateSettings($rate_per_unit, $service_charge, $company_pin = null, $etims_integration_url = null, $etims_api_key = null, $company_name = null, $support_phone = null, $support_email = null, $currency_code = null, $financial_year_start_month = null, $vat_rate = null, $etims_taxation_type_code = null, $registration_fee = null, $locale_code = null, $timezone_name = null, $enforce_location_accuracy = null) {
+    public function updateMobileApiKey(string $mobileApiKey): bool
+    {
+        $query = "UPDATE " . $this->table . "
+                  SET mobile_api_key = :mobile_api_key,
+                      updated_at = NOW()
+                  WHERE id = 1";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindValue(':mobile_api_key', trim($mobileApiKey));
+
+        if ($stmt->execute() && $stmt->rowCount() > 0) {
+            return true;
+        }
+
+        $this->createDefault();
+        return $stmt->execute();
+    }
+
+    public function updateSettings($rate_per_unit, $service_charge, $company_pin = null, $etims_integration_url = null, $etims_api_key = null, $company_name = null, $support_phone = null, $support_email = null, $currency_code = null, $financial_year_start_month = null, $vat_rate = null, $etims_taxation_type_code = null, $registration_fee = null, $locale_code = null, $timezone_name = null, $enforce_location_accuracy = null, $terms_conditions_content = null) {
         $query = "UPDATE " . $this->table . " 
                   SET rate_per_unit = :rate_per_unit,
                       service_charge = :service_charge,
@@ -83,6 +106,7 @@ class BillingSettings {
                       vat_rate = :vat_rate,
                       etims_taxation_type_code = :etims_taxation_type_code,
                       registration_fee = :registration_fee,
+                      terms_conditions_content = :terms_conditions_content,
                       enforce_location_accuracy = :enforce_location_accuracy,
                       updated_at = NOW()
                   WHERE id = 1";
@@ -118,6 +142,10 @@ class BillingSettings {
         $stmt->bindParam(":vat_rate", $vat_rate);
         $stmt->bindParam(":etims_taxation_type_code", $etims_taxation_type_code);
         $stmt->bindParam(":registration_fee", $registration_fee);
+        $termsConditionsContent = $terms_conditions_content === null
+            ? $this->getStoredTermsContent()
+            : $this->normalizeTermsContent($terms_conditions_content);
+        $stmt->bindParam(":terms_conditions_content", $termsConditionsContent);
         $enforce_location_accuracy = ($enforce_location_accuracy !== null) ? (int)$enforce_location_accuracy : 0;
         $stmt->bindParam(":enforce_location_accuracy", $enforce_location_accuracy, PDO::PARAM_INT);
         if ($stmt->execute() && $stmt->rowCount() > 0) {
@@ -127,6 +155,318 @@ class BillingSettings {
         // If no row exists, create default then update
         $this->createDefault();
         return $stmt->execute();
+    }
+
+    public function updateTermsContent(string $termsConditionsContent): bool
+    {
+        $query = "UPDATE " . $this->table . "
+                  SET terms_conditions_content = :terms_conditions_content,
+                      updated_at = NOW()
+                  WHERE id = 1";
+        $stmt = $this->conn->prepare($query);
+        $normalizedContent = $this->normalizeTermsContent($termsConditionsContent);
+        $stmt->bindParam(':terms_conditions_content', $normalizedContent);
+
+        if ($stmt->execute() && $stmt->rowCount() > 0) {
+            return true;
+        }
+
+        $this->createDefault();
+        return $stmt->execute();
+    }
+
+    public static function renderTermsContent(array $settings, string $baseUrl = 'https://wbs.bremac.co.ke/'): string
+    {
+        $template = trim((string)($settings['terms_conditions_content'] ?? ''));
+        if ($template === '') {
+            $template = self::getDefaultTermsTemplate();
+        }
+
+        $baseUrl = rtrim($baseUrl, '/') . '/';
+        $currencyCode = trim((string)($settings['currency_code'] ?? 'KES'));
+        $registrationFee = isset($settings['registration_fee']) ? number_format((float)$settings['registration_fee'], 2) : '0.00';
+        $companyName = trim((string)($settings['company_name'] ?? 'BreMac Consultant Ltd'));
+        $supportPhone = trim((string)($settings['support_phone'] ?? '254724400202'));
+        $supportEmail = trim((string)($settings['support_email'] ?? 'support@waterbilling.com'));
+
+        $replacements = [
+            '{{portal_url}}' => htmlspecialchars($baseUrl, ENT_QUOTES, 'UTF-8'),
+            '{{company_name}}' => htmlspecialchars($companyName, ENT_QUOTES, 'UTF-8'),
+            '{{currency_code}}' => htmlspecialchars($currencyCode, ENT_QUOTES, 'UTF-8'),
+            '{{registration_fee}}' => htmlspecialchars($registrationFee, ENT_QUOTES, 'UTF-8'),
+            '{{support_phone}}' => htmlspecialchars($supportPhone, ENT_QUOTES, 'UTF-8'),
+            '{{support_email}}' => htmlspecialchars($supportEmail, ENT_QUOTES, 'UTF-8'),
+        ];
+
+        return strtr($template, $replacements);
+    }
+
+    public static function getDefaultTermsTemplate(): string
+    {
+        return <<<'HTML'
+<p><strong>Community Water Supply Connection – {{company_name}}</strong></p>
+
+<h6>1. Registration and Membership</h6>
+<p>
+    All individuals, companies, and organizations wishing to receive a water connection must first register through the
+    official registration platform <a href="{{portal_url}}" target="_blank" rel="noopener noreferrer">BreMac Water Supply</a>.
+    Registration requires accurate customer details including the applicant or company name, contact person details,
+    phone number, service address, and location information.
+</p>
+
+<h6>2. Installation and Meter Registration Fees</h6>
+<p>
+    A one-time non-refundable installation fee of {{currency_code}} {{registration_fee}} is required for each approved new
+    household or property connection. The same registration fee applies to each additional meter added under an existing
+    customer account for extra properties, units, or service points.
+</p>
+
+<h6>3. Payment Method</h6>
+<p>
+    The preferred payment method is through the online registration system. Depending on the registration flow,
+    applicants may pay directly during self-registration or through a registration proforma link issued by an
+    authorized officer. The system may send an M-Pesa STK push to the registered phone number or to another phone
+    number chosen by the applicant for payment.
+</p>
+<p>
+    <strong>Alternative payment (for members unable to access the online platform):</strong><br>
+    M-Pesa Paybill Number: 4166503<br>
+    Business Name: {{company_name}}<br>
+    Account Number: Registered Customer Account Number
+</p>
+<p>Applicants must retain the M-Pesa confirmation message as proof of payment.</p>
+
+<h6>4. Installation Schedule</h6>
+<p>
+    Installation of household connections or additional approved meters will begin as soon as site conditions are suitable
+    for safe trenching, pipe laying, and meter installation. Scheduling may be adjusted due to weather, hard ground, or
+    other conditions that make excavation unsafe or impractical.
+</p>
+
+<h6>5. Connection Approval</h6>
+<p>A connection or additional meter will only be scheduled after:</p>
+<ul>
+    <li>Successful registration or issuance of an approved registration proforma</li>
+    <li>Full payment of the required registration or additional meter fee</li>
+    <li>Verification or confirmation of payment by the system or project administrators</li>
+</ul>
+
+<h6>6. Account Creation and Multi-Property Accounts</h6>
+<p>
+    Customer accounts may be created in an inactive state during registration or proforma issuance. Water service activation,
+    billing use, and portal access are only completed after the applicable registration fee is fully paid and confirmed.
+    One customer account may hold multiple approved meters for different properties or units, but each meter remains subject
+    to separate operational control, readings, and billing records.
+</p>
+<p>
+    Where the portal password is not collected during registration, the customer will receive a one-time secure link to set
+    their own password after payment confirmation. Account details and payment-related notifications may be sent to the
+    registered phone number or email address.
+</p>
+
+<h6>7. Water Usage Charges</h6>
+<p>
+    Water usage charges, tariffs, and billing procedures will be communicated to members separately once the supply system
+    becomes fully operational. Additional meters under the same customer account may be billed separately according to the
+    meter readings captured for each installed meter.
+</p>
+
+<h6>8. Access for Installation</h6>
+<p>
+    Members must allow reasonable access to their property for trenching, pipe installation, meter installation, meter
+    replacement, and maintenance work.
+</p>
+
+<h6>9. Responsibility for Internal Plumbing</h6>
+<p>
+    The project installation covers connection from the main distribution line to the designated connection point. Any
+    internal plumbing within the property is the responsibility of the property owner.
+</p>
+
+<h6>10. Damage or Interference</h6>
+<p>
+    Tampering with pipelines, meters, valves, or any part of the water infrastructure is strictly prohibited. Any damage
+    caused intentionally or through negligence will be repaired at the responsible member’s cost.
+</p>
+
+<h6>11. Service Interruptions</h6>
+<p>
+    While every effort will be made to ensure a reliable water supply, the project management shall not be liable for
+    temporary service interruptions caused by maintenance, repairs, weather conditions, or other unforeseen circumstances.
+</p>
+
+<h6>12. Refund Policy</h6>
+<p>
+    Registration fees and additional meter fees are non-refundable once registration and payment have been confirmed and
+    planning, procurement, or installation processes have commenced.
+</p>
+
+<h6>13. Changes to Terms</h6>
+<p>
+    {{company_name}} reserves the right to update or modify these terms and conditions when necessary. Members will be
+    notified of any significant changes through the portal, SMS, email, or other official communication channels.
+</p>
+
+<h6>14. Compliance</h6>
+<p>
+    All registered members agree to abide by these terms and conditions as part of participating in the community water
+    supply project.
+</p>
+
+<hr>
+
+<h6>Community Water Supply Rules</h6>
+<p><strong>{{company_name}}</strong></p>
+<p>
+    To ensure fair access, sustainability, and proper management of the community water supply system, all members are
+    required to observe the following rules:
+</p>
+
+<h6>1. Registered Members Only</h6>
+<p>
+    Only customers who have completed registration, or who have been issued an approved registration proforma, and who have
+    paid the required installation fee are eligible for a water connection. Additional meters under an existing account must
+    also be formally approved and paid for before activation.
+</p>
+
+<h6>2. Authorized Connections</h6>
+<p>
+    All water connections must be installed <strong>only by authorized technicians</strong> appointed by {{company_name}}.
+    Members are not allowed to install or modify connections themselves.
+</p>
+
+<h6>3. Prohibition of Illegal Connections</h6>
+<p>
+    Unauthorized tapping into the main pipeline, bypassing meters, sharing connections without approval, or connecting extra
+    properties without formal registration is strictly prohibited. Any illegal connection will lead to immediate
+    disconnection and penalties.
+</p>
+
+<h6>4. Protection of Water Infrastructure</h6>
+<p>
+    Members must help protect the water infrastructure including pipelines, valves, meters, and fittings. Any damage caused
+    intentionally or through negligence must be repaired at the responsible person’s cost.
+</p>
+
+<h6>5. Water Meter Integrity</h6>
+<p>
+    Water meters must not be tampered with, altered, bypassed, or interfered with in any way. Each registered meter under a
+    customer account is subject to inspection and operational verification.
+</p>
+
+<h6>6. Timely Payment of Bills</h6>
+<p>
+    All members must settle their water usage bills within the stipulated payment period. Persistent non-payment may result
+    in temporary suspension of water supply until outstanding balances are cleared.
+</p>
+
+<h6>7. Access for Maintenance</h6>
+<p>
+    Authorized personnel may need access to properties for meter reading, maintenance, inspection, meter replacement, or
+    repair. Members must cooperate and allow reasonable access when required.
+</p>
+
+<h6>8. Responsible Water Use</h6>
+<p>
+    Members are encouraged to use water responsibly and avoid wastage. Water should not be used for activities that may
+    strain the supply system or reduce availability for other members.
+</p>
+
+<h6>9. Leak Reporting</h6>
+<p>
+    Members should promptly report any leaks, pipe bursts, or system faults to help prevent water loss and infrastructure damage.
+</p>
+
+<h6>10. Connection Transfer</h6>
+<p>
+    Water connections and additional meters are linked to the registered property and customer account. Any transfer,
+    relocation, change of ownership, subdivision, or change of company/contact details must be communicated to the project
+    administration for proper records update.
+</p>
+
+<h6>11. Dispute Resolution</h6>
+<p>
+    Any concerns or disputes related to billing, connections, additional meters, or services should be reported to the
+    project administration team for review and resolution. For help, contact {{support_phone}} or {{support_email}}.
+</p>
+HTML;
+    }
+
+    public static function getTermsTemplateSamples(): array
+    {
+        return [
+            'community_standard' => [
+                'label' => 'Community Water Scheme',
+                'description' => 'Balanced full policy covering registration, extra meters, billing, and community rules.',
+                'content' => self::getDefaultTermsTemplate(),
+            ],
+            'plain_language' => [
+                'label' => 'Plain Language Terms',
+                'description' => 'Shorter, easier wording for public-facing schemes that want a friendlier tone.',
+                'content' => <<<'HTML'
+<p><strong>{{company_name}} Water Connection Terms</strong></p>
+
+<h6>1. Who can apply</h6>
+<p>Anyone who wants a water connection must register using <a href="{{portal_url}}" target="_blank" rel="noopener noreferrer">the official water portal</a> and provide correct contact and property details.</p>
+
+<h6>2. Registration fee</h6>
+<p>The registration fee is {{currency_code}} {{registration_fee}} for each new approved meter. If one customer account needs extra meters for more units or properties, the same fee is charged for each additional meter.</p>
+
+<h6>3. Payment process</h6>
+<p>Payment may be made through the online portal, through a registration proforma issued by staff, or through an M-Pesa prompt sent to the chosen phone number. Keep your payment confirmation message.</p>
+
+<h6>4. Activation</h6>
+<p>Your account or meter is only activated after payment is confirmed and the request has been approved.</p>
+
+<h6>5. Additional meters</h6>
+<p>One customer account may have several approved meters, but each meter is managed and billed using its own readings.</p>
+
+<h6>6. Customer responsibilities</h6>
+<ul>
+    <li>Allow access for installation, inspection, reading, and maintenance</li>
+    <li>Do not tamper with pipes, valves, or meters</li>
+    <li>Pay bills on time</li>
+    <li>Report leaks or faults quickly</li>
+</ul>
+
+<h6>7. Important notes</h6>
+<p>Registration and additional meter fees are non-refundable once approval, planning, or installation work has started. {{company_name}} may update these terms when needed.</p>
+
+<p>For help, contact {{support_phone}} or {{support_email}}.</p>
+HTML,
+            ],
+            'multi_property' => [
+                'label' => 'Landlord / Multi-Property Terms',
+                'description' => 'Focused wording for landlords, compounds, and company-managed properties with several meters under one account.',
+                'content' => <<<'HTML'
+<p><strong>{{company_name}} Multi-Property Water Service Terms</strong></p>
+
+<h6>1. Account structure</h6>
+<p>A customer account may be opened for an individual, landlord, business, institution, or property manager. The same account may hold more than one approved water meter for separate houses, blocks, shops, units, or compounds.</p>
+
+<h6>2. Registration and approval</h6>
+<p>Every first connection and every additional meter must be requested through the official portal at <a href="{{portal_url}}" target="_blank" rel="noopener noreferrer">{{portal_url}}</a> or through an approved registration proforma issued by authorized staff.</p>
+
+<h6>3. Charges</h6>
+<p>Each approved new meter attracts a registration fee of {{currency_code}} {{registration_fee}}. This applies both to the first meter and to every approved additional meter on the same customer account.</p>
+
+<h6>4. Billing</h6>
+<p>Even where several meters belong to one account, each meter may be read, tracked, and billed separately according to actual consumption, applicable tariffs, and service rules.</p>
+
+<h6>5. Access and maintenance</h6>
+<p>The customer must provide safe access to all linked properties or meter points for installation, reading, repair, replacement, and inspection.</p>
+
+<h6>6. Prohibited conduct</h6>
+<p>Customers must not share unauthorized supply lines, bypass any meter, reconnect disconnected lines without approval, or attach unregistered extra properties to an existing line.</p>
+
+<h6>7. Records updates</h6>
+<p>Any change in occupancy, meter label, property use, subdivision, ownership, or responsible contact person must be reported so that account records remain accurate.</p>
+
+<h6>8. Support</h6>
+<p>For questions, disputes, or service requests, contact {{support_phone}} or {{support_email}}.</p>
+HTML,
+            ],
+        ];
     }
 
     public function listTariffPlans(bool $activeOnly = false): array {
@@ -380,8 +720,10 @@ class BillingSettings {
           $default_fy_start = 1;
           $default_vat_rate = 0.0;
           $default_tax_code = '';
-          $query = "INSERT INTO " . $this->table . " (id, rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy) 
-              VALUES (1, :rate_per_unit, :service_charge, NULL, NULL, NULL, :company_name, :support_phone, :support_email, :currency_code, :locale_code, :timezone_name, :financial_year_start_month, :vat_rate, :etims_taxation_type_code, :registration_fee, 0)";
+          $default_terms = self::getDefaultTermsTemplate();
+          $default_mobile_api_key = '';
+          $query = "INSERT INTO " . $this->table . " (id, rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, terms_conditions_content, mobile_api_key) 
+              VALUES (1, :rate_per_unit, :service_charge, NULL, NULL, NULL, :company_name, :support_phone, :support_email, :currency_code, :locale_code, :timezone_name, :financial_year_start_month, :vat_rate, :etims_taxation_type_code, :registration_fee, 0, :terms_conditions_content, :mobile_api_key)";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":rate_per_unit", $default_rate);
         $stmt->bindParam(":service_charge", $default_service);
@@ -395,6 +737,8 @@ class BillingSettings {
         $stmt->bindParam(":vat_rate", $default_vat_rate);
         $stmt->bindParam(":etims_taxation_type_code", $default_tax_code);
         $stmt->bindParam(":registration_fee", $default_registration_fee);
+        $stmt->bindParam(":terms_conditions_content", $default_terms);
+        $stmt->bindParam(":mobile_api_key", $default_mobile_api_key);
         $stmt->execute();
     }
 
@@ -417,6 +761,8 @@ class BillingSettings {
             etims_taxation_type_code VARCHAR(10) NULL,
             registration_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             enforce_location_accuracy TINYINT(1) NOT NULL DEFAULT 0,
+            terms_conditions_content LONGTEXT NULL,
+            mobile_api_key VARCHAR(191) NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
         $this->conn->exec($sql);
@@ -501,8 +847,44 @@ class BillingSettings {
         } catch (\PDOException $e) {
             // Ignore if column already exists
         }
+        try {
+            $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN terms_conditions_content LONGTEXT NULL");
+        } catch (\PDOException $e) {
+            // Ignore if column already exists
+        }
+        try {
+            $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN mobile_api_key VARCHAR(191) NULL");
+        } catch (\PDOException $e) {
+            // Ignore if column already exists
+        }
 
         $this->ensureTariffTables();
+    }
+
+    private function normalizeTermsContent($termsConditionsContent): string
+    {
+        $content = trim((string)$termsConditionsContent);
+        if ($content === '') {
+            return self::getDefaultTermsTemplate();
+        }
+
+        return $content;
+    }
+
+    private function getStoredTermsContent(): string
+    {
+        try {
+            $stmt = $this->conn->prepare("SELECT terms_conditions_content FROM " . $this->table . " WHERE id = 1 LIMIT 1");
+            $stmt->execute();
+            $value = $stmt->fetchColumn();
+            if (is_string($value) && trim($value) !== '') {
+                return $value;
+            }
+        } catch (Throwable $e) {
+            // Fall back to default template if lookup fails.
+        }
+
+        return self::getDefaultTermsTemplate();
     }
 
     private function ensureTariffTables(): void {
