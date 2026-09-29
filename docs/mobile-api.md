@@ -150,6 +150,14 @@ Authorization: Bearer YOUR_ACCESS_TOKEN
 
 Return the current customer profile, including linked meters.
 
+### `POST /api/mobile/profile_update.php`
+
+Update the authenticated user's profile details and two-factor settings.
+
+### `POST /api/mobile/change_password.php`
+
+Change the authenticated user's password.
+
 ### `GET /api/mobile/dashboard.php`
 
 Return a mobile dashboard payload with:
@@ -163,6 +171,23 @@ Return a mobile dashboard payload with:
 ### `GET /api/mobile/meters.php`
 
 Return all meters linked to the authenticated customer account.
+
+### `GET /api/mobile/complaints.php`
+
+Return the authenticated customer's complaint history.
+
+### `POST /api/mobile/complaints.php`
+
+Create a new complaint.
+
+Request:
+
+```json
+{
+  "subject": "Low water pressure",
+  "message": "Pressure has been low for the last three days in Block B."
+}
+```
 
 ### `GET /api/mobile/bills.php`
 
@@ -191,9 +216,35 @@ Return one bill with:
 - public payment URL
 - printable document URL
 
+### `POST /api/mobile/request_bill_action.php`
+
+Submit a bill write-off, waiver, or installment-plan request for the authenticated customer.
+
+Request:
+
+```json
+{
+  "bill_id": 71,
+  "action": "installment",
+  "amount": 2500,
+  "installment_count": 3,
+  "frequency": "monthly",
+  "start_date": "2026-10-01",
+  "reason": "Requesting a payment plan"
+}
+```
+
 ### `GET /api/mobile/payments.php`
 
 Return paginated payment history.
+
+### `GET /api/mobile/payment.php?id={payment_id}`
+
+Return a single payment with receipt URLs.
+
+### `GET /api/mobile/statement.php`
+
+Return an authenticated statement view with filtered bills, filtered payments, and totals.
 
 Query parameters:
 
@@ -217,6 +268,42 @@ Notes:
 
 - `phone` is optional if the user profile already has a phone number.
 - The API charges the current outstanding amount, not the original bill amount.
+
+## Staff And Admin Endpoints
+
+All of the following routes require bearer authentication plus the matching staff/admin permission.
+
+### `GET /api/mobile/admin/customers.php`
+
+List or search customers for mobile staff clients.
+
+### `GET /api/mobile/admin/customer.php?id={customer_id}`
+
+Return customer profile, summary, recent bills, and recent payments.
+
+### `GET /api/mobile/admin/bill_detail.php?id={bill_id}`
+
+Return bill detail for staff users, including line items, payments, credit notes, and approval items.
+
+### `GET /api/mobile/admin/approvals.php`
+
+Return finance approval items and approval summary counts.
+
+### `POST /api/mobile/admin/approvals.php`
+
+Approve or reject a finance approval item.
+
+### `GET /api/mobile/admin/complaints.php`
+
+Return customer complaints for support/admin users.
+
+### `POST /api/mobile/admin/complaints.php`
+
+Update complaint status.
+
+### `POST /api/mobile/admin/manual_payment.php`
+
+Record a manual payment against one invoice or auto-allocate it across open invoices.
 
 ### `GET /api/mobile/meter_readings.php`
 

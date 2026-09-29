@@ -142,6 +142,20 @@
         }
       }
     },
+    "/api/mobile/profile_update.php": {
+      "post": {
+        "summary": "Update the authenticated customer profile",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Profile updated" } }
+      }
+    },
+    "/api/mobile/change_password.php": {
+      "post": {
+        "summary": "Change the authenticated customer password",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Password changed" } }
+      }
+    },
     "/api/mobile/dashboard.php": {
       "get": {
         "summary": "Get customer dashboard data",
@@ -178,6 +192,13 @@
         "responses": { "200": { "description": "Bill detail" } }
       }
     },
+    "/api/mobile/request_bill_action.php": {
+      "post": {
+        "summary": "Submit a write-off, waiver, or installment request",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Request submitted" } }
+      }
+    },
     "/api/mobile/payments.php": {
       "get": {
         "summary": "Get payment history",
@@ -187,6 +208,20 @@
           { "name": "limit", "in": "query", "schema": { "type": "integer" } }
         ],
         "responses": { "200": { "description": "Payments" } }
+      }
+    },
+    "/api/mobile/payment.php": {
+      "get": {
+        "summary": "Get a single payment with receipt links",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Payment detail" } }
+      }
+    },
+    "/api/mobile/statement.php": {
+      "get": {
+        "summary": "Get statement totals with filtered bills and payments",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Statement" } }
       }
     },
     "/api/mobile/initiate_payment.php": {
@@ -292,6 +327,58 @@
           "200": { "description": "Onboarding tracker" },
           "403": { "description": "Forbidden" }
         }
+      }
+    },
+    "/api/mobile/admin/customers.php": {
+      "get": {
+        "summary": "List or search customers for staff clients",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Customers" } }
+      }
+    },
+    "/api/mobile/admin/customer.php": {
+      "get": {
+        "summary": "Get one customer with recent activity",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Customer detail" } }
+      }
+    },
+    "/api/mobile/admin/bill_detail.php": {
+      "get": {
+        "summary": "Get bill detail for staff/admin clients",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Admin bill detail" } }
+      }
+    },
+    "/api/mobile/admin/approvals.php": {
+      "get": {
+        "summary": "List approval items",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Approvals" } }
+      },
+      "post": {
+        "summary": "Approve or reject an approval item",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Approval updated" } }
+      }
+    },
+    "/api/mobile/admin/complaints.php": {
+      "get": {
+        "summary": "List complaints for staff/admin clients",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Complaints" } }
+      },
+      "post": {
+        "summary": "Update complaint status",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Complaint updated" } }
+      }
+    },
+    "/api/mobile/admin/manual_payment.php": {
+      "post": {
+        "summary": "Record a manual payment",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": { "200": { "description": "Manual payment recorded" } }
       }
     }
   }
