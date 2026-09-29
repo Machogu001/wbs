@@ -37,6 +37,7 @@ class User {
         $this->ensureLocationColumns();
         $this->ensureCustomerProfileColumns();
         $this->ensureTwoFactorColumns();
+        $this->ensureThemePreferenceColumn();
         $this->ensureMeterNumberNullable();
         $this->ensureUnitRateColumn();
         $this->ensureUsernameColumn();
@@ -164,7 +165,7 @@ class User {
                  $query = "SELECT id, account_number, username, full_name, phone_number,
                     email, id_number, tax_pin, address, meter_number,
                     connection_type, password_hash, role, status, must_change_password,
-                    two_factor_enabled, two_factor_method
+                                        two_factor_enabled, two_factor_method, theme_preference
                 FROM " . $this->table . " 
                 WHERE status = 'active'
                   AND (phone_number = :identifier 
@@ -195,7 +196,7 @@ class User {
           $query = "SELECT id, account_number, username, full_name, phone_number,
                             email, id_number, tax_pin, address, meter_number,
                             connection_type, password_hash, role, status, must_change_password,
-                            two_factor_enabled, two_factor_method
+                            two_factor_enabled, two_factor_method, theme_preference
                  FROM " . $this->table . "
                  WHERE phone_number = :identifier
                      OR account_number = :identifier
@@ -398,6 +399,18 @@ class User {
             }
         } catch (\PDOException $e) {
             // Ignore schema errors; login/registration still works without 2FA settings.
+        }
+    }
+
+    private function ensureThemePreferenceColumn() {
+        try {
+            $stmt = $this->conn->query("SHOW COLUMNS FROM " . $this->table . " LIKE 'theme_preference'");
+            $exists = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if (!$exists) {
+                $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN theme_preference VARCHAR(10) NOT NULL DEFAULT 'system' AFTER two_factor_method");
+            }
+        } catch (\PDOException $e) {
+            // Ignore schema errors; the API can still fall back to the default theme preference.
         }
     }
 

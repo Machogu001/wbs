@@ -101,6 +101,7 @@ try {
         must_change_password TINYINT(1) NOT NULL DEFAULT 0,
         two_factor_enabled TINYINT(1) NOT NULL DEFAULT 0,
         two_factor_method VARCHAR(10) NOT NULL DEFAULT 'sms',
+        theme_preference VARCHAR(10) NOT NULL DEFAULT 'system',
         role ENUM('customer', 'admin', 'reader', 'finance', 'support') DEFAULT 'customer',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',

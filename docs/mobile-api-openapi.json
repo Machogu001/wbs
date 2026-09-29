@@ -228,7 +228,60 @@
       "post": {
         "summary": "Update the authenticated customer profile",
         "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "full_name": { "type": "string" },
+                  "phone_number": { "type": "string" },
+                  "email": { "type": "string" },
+                  "address": { "type": "string" },
+                  "tax_pin": { "type": "string" },
+                  "two_factor_enabled": { "type": "boolean" },
+                  "two_factor_method": { "type": "string", "enum": ["sms", "email"] },
+                  "theme_preference": { "type": "string", "enum": ["system", "light", "dark"] }
+                }
+              }
+            }
+          }
+        },
         "responses": { "200": { "description": "Profile updated" } }
+      }
+    },
+    "/api/mobile/theme.php": {
+      "get": {
+        "summary": "Get the authenticated user's saved app theme preference",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Theme preference" },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "summary": "Update the authenticated user's saved app theme preference",
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["theme_preference"],
+                "properties": {
+                  "theme_preference": { "type": "string", "enum": ["system", "light", "dark"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Theme preference updated" },
+          "401": { "description": "Unauthorized" },
+          "422": { "description": "Validation error" }
+        }
       }
     },
     "/api/mobile/change_password.php": {

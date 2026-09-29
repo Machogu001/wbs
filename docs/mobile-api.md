@@ -248,9 +248,43 @@ Authorization: Bearer YOUR_ACCESS_TOKEN
 
 Return the current customer profile, including linked meters.
 
+The `user` payload now also includes `theme_preference`, which can be `system`, `light`, or `dark`.
+
 ### `POST /api/mobile/profile_update.php`
 
 Update the authenticated user's profile details and two-factor settings.
+
+You can also send `theme_preference` here with one of: `system`, `light`, `dark`.
+
+### `GET /api/mobile/theme.php`
+
+Return the authenticated user's saved app theme preference.
+
+Response data includes:
+
+- `theme_preference`
+- `follow_device_theme`
+- `available_preferences`
+
+Use `theme_preference = system` to let the mobile app adopt the device theme automatically.
+
+### `POST /api/mobile/theme.php`
+
+Update the authenticated user's saved app theme preference.
+
+Request example:
+
+```json
+{
+  "theme_preference": "system"
+}
+```
+
+Allowed values:
+
+- `system`
+- `light`
+- `dark`
 
 ### `POST /api/mobile/change_password.php`
 

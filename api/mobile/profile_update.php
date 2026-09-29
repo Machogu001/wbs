@@ -15,6 +15,7 @@ try {
     $taxPin = trim((string)($data['tax_pin'] ?? ($user['tax_pin'] ?? '')));
     $twoFactorEnabled = !empty($data['two_factor_enabled']) ? 1 : 0;
     $twoFactorMethod = trim((string)($data['two_factor_method'] ?? ($user['two_factor_method'] ?? 'sms')));
+    $themePreference = mobileApiNormalizeThemePreference($data['theme_preference'] ?? ($user['theme_preference'] ?? 'system'));
     if ($twoFactorMethod !== 'email') {
         $twoFactorMethod = 'sms';
     }
@@ -60,7 +61,8 @@ try {
             address = :address,
             tax_pin = :tax_pin,
             two_factor_enabled = :two_factor_enabled,
-            two_factor_method = :two_factor_method
+            two_factor_method = :two_factor_method,
+            theme_preference = :theme_preference
         WHERE id = :id');
     $update->execute([
         ':full_name' => $fullName,
@@ -70,6 +72,7 @@ try {
         ':tax_pin' => $taxPin !== '' ? $taxPin : null,
         ':two_factor_enabled' => $twoFactorEnabled,
         ':two_factor_method' => $twoFactorMethod,
+        ':theme_preference' => $themePreference,
         ':id' => (int)$user['id'],
     ]);
 

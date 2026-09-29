@@ -421,6 +421,16 @@ function mobileApiGetRegistrationPaymentData(PDO $db, int $userId): ?array
     ];
 }
 
+function mobileApiNormalizeThemePreference($value): string
+{
+    $themePreference = strtolower(trim((string)$value));
+    if (!in_array($themePreference, ['system', 'light', 'dark'], true)) {
+        return 'system';
+    }
+
+    return $themePreference;
+}
+
 function mobileApiFormatMeter(array $meter): array
 {
     return [
@@ -455,6 +465,7 @@ function mobileApiFormatUser(PDO $db, array $user): array
         'role' => (string)($user['role'] ?? 'customer'),
         'must_change_password' => !empty($user['must_change_password']),
         'two_factor_enabled' => !empty($user['two_factor_enabled']),
+        'theme_preference' => mobileApiNormalizeThemePreference($user['theme_preference'] ?? 'system'),
         'meters' => $meters,
     ];
 }

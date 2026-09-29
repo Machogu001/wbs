@@ -16,6 +16,8 @@ mobileApiJson(200, 'success', 'Water Billing System mobile API is available.', [
         'GET /api/mobile/me.php',
         'POST /api/mobile/profile_update.php',
         'POST /api/mobile/change_password.php',
+        'GET /api/mobile/theme.php',
+        'POST /api/mobile/theme.php',
         'GET /api/mobile/registration_payment.php',
         'POST /api/mobile/registration_payment.php',
         'GET /api/mobile/dashboard.php',
