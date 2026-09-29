@@ -43,7 +43,8 @@ try {
             if (!$user) {
                 return ['success' => false, 'message' => 'Account, meter number, or name not found.'];
             }
-            $billResult = $billService->createBillForUser((int)$user['id'], (string)$user['account_number'], $currentReading, $billingMonth, $dueDate, $settings['rate_per_unit'], $settings['service_charge'], 'pending');
+            $meterNumber = (string)($user['matched_meter_number'] ?? $user['meter_number'] ?? '');
+            $billResult = $billService->createBillForUser((int)$user['id'], (string)$user['account_number'], $currentReading, $billingMonth, $dueDate, $settings['rate_per_unit'], $settings['service_charge'], 'pending', $meterNumber);
             if (empty($billResult['success'])) {
                 return ['success' => false, 'message' => $billResult['message'] ?? 'Failed to create pending bill.'];
             }
@@ -52,7 +53,7 @@ try {
                 (new SMS())->sendWithFallback((string)$user['phone_number'], $messageText, 'bill_notification');
             } catch (Throwable $e) {
             }
-            $readingId = $readingService->createReading((int)$user['id'], (string)$user['account_number'], (string)($user['matched_meter_number'] ?? $user['meter_number']), $currentReading, $billingMonth, $dueDate, null, (int)$actor['id'], (int)$billResult['bill_id'], 'approved', (int)$actor['id']);
+            $readingId = $readingService->createReading((int)$user['id'], (string)$user['account_number'], $meterNumber, $currentReading, $billingMonth, $dueDate, null, (int)$actor['id'], (int)$billResult['bill_id'], 'approved', (int)$actor['id']);
             return $readingId ? ['success' => true, 'account_number' => $user['account_number'], 'bill_id' => $billResult['bill_id']] : ['success' => false, 'message' => 'Failed to submit meter reading.'];
         };
 

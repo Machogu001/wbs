@@ -2,6 +2,7 @@
 require_once __DIR__ . '/Accounting.php';
 require_once __DIR__ . '/BillingSettings.php';
 require_once __DIR__ . '/CustomerCredit.php';
+require_once __DIR__ . '/ClientMeter.php';
 
 class Bill {
 	private $conn;
@@ -27,7 +28,35 @@ class Bill {
 		return $stmt->fetch(PDO::FETCH_ASSOC);
 	}
 
-	public function createBillForUser($user_id, $account_number, $current_reading, $billing_month, $due_date, $rate_per_unit, $service_charge, $status = 'pending') {
+	private function getLastReadingByMeter(int $userId, string $meterNumber): ?array {
+		$meterNumber = trim($meterNumber);
+		if ($userId <= 0 || $meterNumber === '') {
+			return null;
+		}
+
+		$query = "SELECT current_reading, billing_month, created_at
+			FROM meter_readings
+			WHERE user_id = :user_id AND meter_number = :meter_number
+			ORDER BY billing_month DESC, id DESC
+			LIMIT 1";
+		$stmt = $this->conn->prepare($query);
+		$stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+		$stmt->bindParam(':meter_number', $meterNumber);
+		$stmt->execute();
+
+		return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+	}
+
+	private function getReplacementOpeningReading(int $userId, string $meterNumber): ?float {
+		try {
+			$meterService = new ClientMeter($this->conn);
+			return $meterService->getReplacementOpeningReading($userId, $meterNumber);
+		} catch (\Throwable $e) {
+			return null;
+		}
+	}
+
+	public function createBillForUser($user_id, $account_number, $current_reading, $billing_month, $due_date, $rate_per_unit, $service_charge, $status = 'pending', ?string $meter_number = null) {
 		// Check credit before creating bill
 		$credit = new CustomerCredit($this->conn);
 		$creditProfile = $credit->getProfile($user_id);
@@ -40,7 +69,17 @@ class Bill {
 		}
 
 		$last_bill = $this->getLastBillByUser($user_id);
-		$previous_reading = $last_bill ? (float)$last_bill['current_reading'] : 0.00;
+		$meterNumber = trim((string)$meter_number);
+		if ($meterNumber !== '') {
+			$lastReading = $this->getLastReadingByMeter((int)$user_id, $meterNumber);
+			if ($lastReading) {
+				$previous_reading = (float)$lastReading['current_reading'];
+			} else {
+				$previous_reading = $this->getReplacementOpeningReading((int)$user_id, $meterNumber) ?? 0.00;
+			}
+		} else {
+			$previous_reading = $last_bill ? (float)$last_bill['current_reading'] : 0.00;
+		}
 		$consumption = max(0, (float)$current_reading - $previous_reading);
 		$connectionType = 'domestic';
 		try {

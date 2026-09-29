@@ -84,7 +84,8 @@ try {
         $dueDate,
         (float)($settings['rate_per_unit'] ?? 0),
         (float)($settings['service_charge'] ?? 0),
-        'pending'
+        'pending',
+        (string)$selectedMeter['meter_number']
     );
 
     if (empty($billResult['success'])) {

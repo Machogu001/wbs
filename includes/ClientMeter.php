@@ -4,11 +4,13 @@ class ClientMeter
 {
     private $conn;
     private $table = 'user_meters';
+    private $replacementTable = 'meter_replacements';
 
     public function __construct($db)
     {
         $this->conn = $db;
         $this->ensureTable();
+        $this->ensureReplacementTable();
         $this->seedPrimaryMeters();
     }
 
@@ -19,6 +21,20 @@ class ClientMeter
              FROM ' . $this->table . '
              WHERE user_id = :user_id
              ORDER BY is_primary DESC, created_at ASC, id ASC'
+        );
+        $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function listReplacementsByUserId(int $userId): array
+    {
+        $stmt = $this->conn->prepare(
+            'SELECT id, user_id, old_meter_id, new_meter_id, old_meter_number, new_meter_number,
+                    old_final_reading, new_opening_reading, reason, replaced_by_user_id, replaced_at
+             FROM ' . $this->replacementTable . '
+             WHERE user_id = :user_id
+             ORDER BY replaced_at DESC, id DESC'
         );
         $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
         $stmt->execute();
@@ -76,6 +92,135 @@ class ClientMeter
         $stmt->execute();
 
         return (int)$this->conn->lastInsertId();
+    }
+
+    public function replaceMeter(int $userId, int $oldMeterId, string $newMeterNumber, ?string $newMeterLabel = null, float $oldFinalReading = 0.0, float $newOpeningReading = 0.0, ?string $reason = null, ?int $replacedByUserId = null): array
+    {
+        $newMeterNumber = $this->normalizeMeterNumber($newMeterNumber);
+        $newLabel = $newMeterLabel !== null && trim($newMeterLabel) !== '' ? trim($newMeterLabel) : null;
+        $reason = $reason !== null && trim($reason) !== '' ? trim($reason) : null;
+        $oldFinalReading = round(max(0, $oldFinalReading), 2);
+        $newOpeningReading = round(max(0, $newOpeningReading), 2);
+
+        if ($userId <= 0 || $oldMeterId <= 0 || $newMeterNumber === '') {
+            throw new InvalidArgumentException('A valid customer, old meter, and new meter number are required.');
+        }
+
+        $oldMeter = $this->getMeterById($oldMeterId, $userId);
+        if (!$oldMeter) {
+            throw new RuntimeException('Selected meter was not found for this customer.');
+        }
+        if (($oldMeter['status'] ?? 'active') !== 'active') {
+            throw new RuntimeException('Only active meters can be replaced.');
+        }
+        if ($this->normalizeMeterNumber((string)$oldMeter['meter_number']) === $newMeterNumber) {
+            throw new RuntimeException('The new meter number must be different from the faulty meter.');
+        }
+        if ($this->meterExists($newMeterNumber)) {
+            throw new RuntimeException('That new meter number is already assigned to another account or meter record.');
+        }
+
+        $startedTransaction = false;
+        if (!$this->conn->inTransaction()) {
+            $this->conn->beginTransaction();
+            $startedTransaction = true;
+        }
+
+        try {
+            $isPrimary = !empty($oldMeter['is_primary']);
+
+            $deactivate = $this->conn->prepare(
+                'UPDATE ' . $this->table . ' SET status = :status, is_primary = 0, updated_at = NOW() WHERE id = :id AND user_id = :user_id'
+            );
+            $inactive = 'inactive';
+            $deactivate->bindParam(':status', $inactive);
+            $deactivate->bindParam(':id', $oldMeterId, PDO::PARAM_INT);
+            $deactivate->bindParam(':user_id', $userId, PDO::PARAM_INT);
+            $deactivate->execute();
+
+            $insert = $this->conn->prepare(
+                'INSERT INTO ' . $this->table . ' (user_id, meter_number, meter_label, status, is_primary, registration_bill_id, created_by_user_id)
+                 VALUES (:user_id, :meter_number, :meter_label, :status, :is_primary, NULL, :created_by_user_id)'
+            );
+            $active = 'active';
+            $primaryFlag = $isPrimary ? 1 : 0;
+            $insert->bindParam(':user_id', $userId, PDO::PARAM_INT);
+            $insert->bindParam(':meter_number', $newMeterNumber);
+            $insert->bindParam(':meter_label', $newLabel);
+            $insert->bindParam(':status', $active);
+            $insert->bindParam(':is_primary', $primaryFlag, PDO::PARAM_INT);
+            $insert->bindValue(':created_by_user_id', $replacedByUserId, $replacedByUserId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+            $insert->execute();
+            $newMeterId = (int)$this->conn->lastInsertId();
+
+            if ($isPrimary) {
+                $updateUser = $this->conn->prepare('UPDATE users SET meter_number = :meter_number WHERE id = :user_id');
+                $updateUser->bindParam(':meter_number', $newMeterNumber);
+                $updateUser->bindParam(':user_id', $userId, PDO::PARAM_INT);
+                $updateUser->execute();
+            }
+
+            $logReplacement = $this->conn->prepare(
+                'INSERT INTO ' . $this->replacementTable . ' (
+                    user_id, old_meter_id, new_meter_id, old_meter_number, new_meter_number,
+                    old_final_reading, new_opening_reading, reason, replaced_by_user_id
+                 ) VALUES (
+                    :user_id, :old_meter_id, :new_meter_id, :old_meter_number, :new_meter_number,
+                    :old_final_reading, :new_opening_reading, :reason, :replaced_by_user_id
+                 )'
+            );
+            $oldMeterNumber = (string)$oldMeter['meter_number'];
+            $logReplacement->bindParam(':user_id', $userId, PDO::PARAM_INT);
+            $logReplacement->bindParam(':old_meter_id', $oldMeterId, PDO::PARAM_INT);
+            $logReplacement->bindParam(':new_meter_id', $newMeterId, PDO::PARAM_INT);
+            $logReplacement->bindParam(':old_meter_number', $oldMeterNumber);
+            $logReplacement->bindParam(':new_meter_number', $newMeterNumber);
+            $logReplacement->bindParam(':old_final_reading', $oldFinalReading);
+            $logReplacement->bindParam(':new_opening_reading', $newOpeningReading);
+            $logReplacement->bindParam(':reason', $reason);
+            $logReplacement->bindValue(':replaced_by_user_id', $replacedByUserId, $replacedByUserId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+            $logReplacement->execute();
+
+            if ($startedTransaction) {
+                $this->conn->commit();
+            }
+
+            return [
+                'old_meter' => $oldMeter,
+                'new_meter_id' => $newMeterId,
+                'new_meter_number' => $newMeterNumber,
+                'new_opening_reading' => $newOpeningReading,
+                'old_final_reading' => $oldFinalReading,
+                'is_primary' => $isPrimary,
+            ];
+        } catch (Throwable $e) {
+            if ($startedTransaction && $this->conn->inTransaction()) {
+                $this->conn->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    public function getReplacementOpeningReading(int $userId, string $meterNumber): ?float
+    {
+        $meterNumber = $this->normalizeMeterNumber($meterNumber);
+        if ($userId <= 0 || $meterNumber === '') {
+            return null;
+        }
+
+        $stmt = $this->conn->prepare(
+            'SELECT new_opening_reading
+             FROM ' . $this->replacementTable . '
+             WHERE user_id = :user_id AND new_meter_number = :meter_number
+             ORDER BY replaced_at DESC, id DESC
+             LIMIT 1'
+        );
+        $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+        $stmt->bindParam(':meter_number', $meterNumber);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+        return $row !== null ? (float)$row['new_opening_reading'] : null;
     }
 
     public function syncPrimaryMeter(int $userId, ?string $meterNumber): void
@@ -174,6 +319,33 @@ class ClientMeter
         $this->ensureColumn('updated_at', 'ALTER TABLE ' . $this->table . ' ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at');
     }
 
+    private function ensureReplacementTable(): void
+    {
+        $sql = 'CREATE TABLE IF NOT EXISTS ' . $this->replacementTable . ' (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            old_meter_id INT NOT NULL,
+            new_meter_id INT NOT NULL,
+            old_meter_number VARCHAR(50) NOT NULL,
+            new_meter_number VARCHAR(50) NOT NULL,
+            old_final_reading DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            new_opening_reading DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            reason TEXT NULL,
+            replaced_by_user_id INT NULL,
+            replaced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_user_id (user_id),
+            KEY idx_old_meter_id (old_meter_id),
+            KEY idx_new_meter_id (new_meter_id),
+            KEY idx_new_meter_number (new_meter_number),
+            KEY idx_replaced_by_user_id (replaced_by_user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+        $this->conn->exec($sql);
+        $this->ensureReplacementColumn('new_opening_reading', 'ALTER TABLE ' . $this->replacementTable . ' ADD COLUMN new_opening_reading DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER old_final_reading');
+        $this->ensureReplacementColumn('reason', 'ALTER TABLE ' . $this->replacementTable . ' ADD COLUMN reason TEXT NULL AFTER new_opening_reading');
+        $this->ensureReplacementColumn('replaced_by_user_id', 'ALTER TABLE ' . $this->replacementTable . ' ADD COLUMN replaced_by_user_id INT NULL AFTER reason');
+        $this->ensureReplacementColumn('replaced_at', 'ALTER TABLE ' . $this->replacementTable . ' ADD COLUMN replaced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP AFTER replaced_by_user_id');
+    }
+
     private function ensureColumn(string $columnName, string $ddl): void
     {
         $stmt = $this->conn->query('SHOW COLUMNS FROM ' . $this->table . ' LIKE ' . $this->conn->quote($columnName));
@@ -181,6 +353,29 @@ class ClientMeter
         if (!$exists) {
             $this->conn->exec($ddl);
         }
+    }
+
+    private function ensureReplacementColumn(string $columnName, string $ddl): void
+    {
+        $stmt = $this->conn->query('SHOW COLUMNS FROM ' . $this->replacementTable . ' LIKE ' . $this->conn->quote($columnName));
+        $exists = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+        if (!$exists) {
+            $this->conn->exec($ddl);
+        }
+    }
+
+    private function getMeterById(int $meterId, int $userId): ?array
+    {
+        $stmt = $this->conn->prepare(
+            'SELECT id, user_id, meter_number, meter_label, status, is_primary, registration_bill_id, created_by_user_id, created_at
+             FROM ' . $this->table . '
+             WHERE id = :id AND user_id = :user_id
+             LIMIT 1'
+        );
+        $stmt->bindParam(':id', $meterId, PDO::PARAM_INT);
+        $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 
     private function seedPrimaryMeters(): void

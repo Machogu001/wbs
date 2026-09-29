@@ -56,12 +56,14 @@ try {
 
         $editUser = $editId > 0 ? $userService->getById($editId) : null;
         $editUserMeters = $editId > 0 ? $meterService->listByUserId($editId) : [];
+        $editUserMeterReplacements = $editId > 0 ? $meterService->listReplacementsByUserId($editId) : [];
 
         mobileApiJson(200, 'success', 'Customers loaded.', [
             'registration_fee' => $registrationFee,
             'users' => $users,
             'edit_user' => $editUser,
             'edit_user_meters' => $editUserMeters,
+            'edit_user_meter_replacements' => $editUserMeterReplacements,
         ]);
     }
 
@@ -158,6 +160,61 @@ try {
             mobileApiJson(200, 'success', $billId ? 'Additional meter added and registration fee bill created.' : 'Additional meter added successfully.', [
                 'bill_id' => $billId,
                 'payment_link' => $paymentLink,
+            ]);
+        }
+
+        if ($formType === 'replace_client_meter') {
+            $userId = (int)($data['user_id'] ?? 0);
+            $oldMeterId = (int)($data['old_meter_id'] ?? 0);
+            $newMeterNumber = mobileApiNormalizeMeter((string)($data['replacement_meter_number'] ?? ''));
+            $newMeterLabel = trim((string)($data['replacement_meter_label'] ?? ''));
+            $oldFinalReading = (float)($data['old_final_reading'] ?? 0);
+            $newOpeningReading = (float)($data['new_opening_reading'] ?? 0);
+            $replacementReason = trim((string)($data['replacement_reason'] ?? ''));
+
+            if ($userId <= 0 || $oldMeterId <= 0 || $newMeterNumber === '') {
+                mobileApiJson(422, 'error', 'Customer, faulty meter, and replacement meter number are required.');
+            }
+
+            $targetUser = $userService->getById($userId);
+            if (!$targetUser || strtolower((string)($targetUser['role'] ?? 'customer')) !== 'customer') {
+                mobileApiJson(404, 'error', 'Customer not found.');
+            }
+
+            $replacement = $meterService->replaceMeter(
+                $userId,
+                $oldMeterId,
+                $newMeterNumber,
+                $newMeterLabel !== '' ? $newMeterLabel : null,
+                $oldFinalReading,
+                $newOpeningReading,
+                $replacementReason !== '' ? $replacementReason : null,
+                (int)$actor['id']
+            );
+
+            $reasonText = $replacementReason !== '' ? ' Reason: ' . $replacementReason . '.' : '';
+            $messageText = 'Dear ' . (string)$targetUser['full_name'] . ', faulty meter '
+                . (string)($replacement['old_meter']['meter_number'] ?? '') . ' has been replaced with '
+                . (string)$replacement['new_meter_number'] . ' on Account ' . (string)$targetUser['account_number']
+                . '. Closing reading: ' . number_format((float)$replacement['old_final_reading'], 2)
+                . '. New opening reading: ' . number_format((float)$replacement['new_opening_reading'], 2) . '.' . $reasonText;
+            if (!empty($targetUser['phone_number'])) {
+                try {
+                    (new SMS($db))->sendWithFallback((string)$targetUser['phone_number'], $messageText, 'meter_replacement');
+                } catch (Throwable $e) {
+                    error_log('Meter replacement SMS failed: ' . $e->getMessage());
+                }
+            }
+            if (!empty($targetUser['email'])) {
+                try {
+                    (new Email())->queue((string)$targetUser['email'], 'Meter replacement completed', $messageText, 'meter_replacement');
+                } catch (Throwable $e) {
+                    error_log('Meter replacement email failed: ' . $e->getMessage());
+                }
+            }
+
+            mobileApiJson(200, 'success', 'Meter replaced successfully.', [
+                'replacement' => $replacement,
             ]);
         }
 

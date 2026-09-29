@@ -84,7 +84,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
                         $due_date,
                         $settings['rate_per_unit'],
                         $settings['service_charge'],
-                        'pending'
+                        'pending',
+                        (string)($user['meter_number'] ?? '')
                     );
 
                     if (!$billResult) {

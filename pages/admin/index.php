@@ -303,7 +303,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 						$due_date,
 						$settings['rate_per_unit'],
 						$settings['service_charge'],
-						'pending'
+						'pending',
+						(string)($user['matched_meter_number'] ?? $user['meter_number'] ?? '')
 					);
 
 					if (!$billResult) {
@@ -419,7 +420,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 					$reading['due_date'],
 					$settings['rate_per_unit'],
 					$settings['service_charge'],
-					'pending'
+					'pending',
+					(string)($reading['meter_number'] ?? '')
 				);
 
 				if ($result) {

@@ -120,6 +120,7 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 	}
 
 	$user = $clientResult['user'];
+	$meterNumber = (string)($user['matched_meter_number'] ?? $user['meter_number'] ?? '');
 	$photoResult = uploadReadingPhoto($photo, $user['account_number']);
 	if (!$photoResult['success']) {
 		return $photoResult;
@@ -133,7 +134,8 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 		$dueDate,
 		$settings['rate_per_unit'],
 		$settings['service_charge'],
-		'pending'
+		'pending',
+		$meterNumber
 	);
 
 	if (empty($billResult['success'])) {
@@ -215,7 +217,7 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 	$readingId = $readingService->createReading(
 		$user['id'],
 		$user['account_number'],
-		$user['matched_meter_number'] ?? $user['meter_number'],
+		$meterNumber,
 		$currentReading,
 		$billingMonth,
 		$dueDate,

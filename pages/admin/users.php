@@ -12,6 +12,7 @@ require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/Email.php';
 require_once __DIR__ . '/../../includes/PaymentLink.php';
 require_once __DIR__ . '/../../includes/CountryDialCode.php';
+require_once __DIR__ . '/../../includes/ActivityLog.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -376,6 +377,100 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			if ($db && $db->inTransaction()) {
 				$db->rollBack();
 			}
+			$errorMessage = $e->getMessage();
+		}
+	} elseif ($formType === 'replace_client_meter') {
+		try {
+			$userId = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
+			$oldMeterId = isset($_POST['old_meter_id']) ? (int)$_POST['old_meter_id'] : 0;
+			$newMeterNumber = normalizeMeterNumberInput($_POST['replacement_meter_number'] ?? '');
+			$newMeterLabel = trim((string)($_POST['replacement_meter_label'] ?? ''));
+			$oldFinalReading = isset($_POST['old_final_reading']) ? (float)$_POST['old_final_reading'] : 0.0;
+			$newOpeningReading = isset($_POST['new_opening_reading']) ? (float)$_POST['new_opening_reading'] : 0.0;
+			$replacementReason = trim((string)($_POST['replacement_reason'] ?? ''));
+
+			if ($userId <= 0 || $oldMeterId <= 0) {
+				throw new Exception('Select the faulty meter to replace.');
+			}
+			if ($newMeterNumber === '') {
+				throw new Exception('New meter number is required.');
+			}
+
+			$userModel = new User($db);
+			$targetUser = $userModel->getById($userId);
+			if (!$targetUser || strtolower((string)($targetUser['role'] ?? 'customer')) !== 'customer') {
+				throw new Exception('Customer not found.');
+			}
+
+			$clientMeterService = new ClientMeter($db);
+			$replacement = $clientMeterService->replaceMeter(
+				(int)$targetUser['id'],
+				$oldMeterId,
+				$newMeterNumber,
+				$newMeterLabel !== '' ? $newMeterLabel : null,
+				$oldFinalReading,
+				$newOpeningReading,
+				$replacementReason !== '' ? $replacementReason : null,
+				(int)($_SESSION['user_id'] ?? 0) ?: null
+			);
+
+			try {
+				$logger = new ActivityLog($db);
+				$logger->log(
+					$_SESSION['user_id'] ?? null,
+					'replace_meter',
+					'user_meter',
+					$replacement['new_meter_id'] ?? null,
+					'Replaced customer meter',
+					[
+						'user_id' => (int)$targetUser['id'],
+						'account_number' => (string)$targetUser['account_number'],
+						'old_meter_number' => (string)($replacement['old_meter']['meter_number'] ?? ''),
+						'new_meter_number' => (string)$replacement['new_meter_number'],
+						'old_final_reading' => (float)$replacement['old_final_reading'],
+						'new_opening_reading' => (float)$replacement['new_opening_reading'],
+						'is_primary' => !empty($replacement['is_primary']),
+						'reason' => $replacementReason,
+					]
+				);
+			} catch (Throwable $e) {
+				error_log('Meter replacement log failed: ' . $e->getMessage());
+			}
+
+			$reasonText = $replacementReason !== '' ? ' Reason: ' . $replacementReason . '.' : '';
+			$messageText = 'Dear ' . (string)$targetUser['full_name'] . ', faulty meter '
+				. (string)($replacement['old_meter']['meter_number'] ?? '') . ' has been replaced with '
+				. (string)$replacement['new_meter_number'] . ' on Account ' . (string)$targetUser['account_number']
+				. '. Closing reading: ' . number_format((float)$replacement['old_final_reading'], 2)
+				. '. New opening reading: ' . number_format((float)$replacement['new_opening_reading'], 2) . '.' . $reasonText;
+
+			if (!empty($targetUser['phone_number'])) {
+				try {
+					$sms = new SMS($db);
+					$sms->sendWithFallback((string)$targetUser['phone_number'], $messageText, 'meter_replacement');
+				} catch (Throwable $e) {
+					error_log('Meter replacement SMS failed: ' . $e->getMessage());
+				}
+			}
+
+			if (!empty($targetUser['email'])) {
+				try {
+					$emailService = new Email();
+					$emailService->queue((string)$targetUser['email'], 'Meter replacement completed', $messageText, 'meter_replacement');
+				} catch (Throwable $e) {
+					error_log('Meter replacement email failed: ' . $e->getMessage());
+				}
+			}
+
+			$_SESSION['flash_message'] = 'Meter replaced successfully. Future billing will use the new meter history.';
+			$_SESSION['flash_type'] = 'success';
+			header('Location: ' . buildUsersPageUrl([
+				'page' => $currentPage,
+				'customer_search' => $customerSearch,
+				'edit_id' => $userId,
+			]));
+			exit;
+		} catch (Exception $e) {
 			$errorMessage = $e->getMessage();
 		}
 	} elseif ($formType === 'edit_user_save') {
@@ -858,6 +953,7 @@ if ($db) {
 $editUser = null;
 $isEditMode = false;
 $editUserMeters = [];
+$editUserMeterReplacements = [];
 if ($db && isset($_GET['edit_id'])) {
 	$editId = (int)$_GET['edit_id'];
 	if ($editId > 0) {
@@ -871,11 +967,13 @@ if ($db && isset($_GET['edit_id'])) {
 			$isEditMode = (bool)$editUser;
 			if ($isEditMode) {
 				$editUserMeters = $clientMeterRepo->listByUserId((int)$editUser['id']);
+				$editUserMeterReplacements = $clientMeterRepo->listReplacementsByUserId((int)$editUser['id']);
 			}
 		} catch (Exception $e) {
 			$editUser = null;
 			$isEditMode = false;
 			$editUserMeters = [];
+			$editUserMeterReplacements = [];
 		}
 	}
 }
@@ -1376,6 +1474,86 @@ require_once __DIR__ . '/../../templates/header.php';
 								</tbody>
 							</table>
 						</div>
+
+						<div class="border rounded p-3 mt-4 bg-light-subtle">
+							<h6 class="mb-3">Replace Faulty Meter</h6>
+							<p class="text-muted small mb-3">Use this when an installed meter is faulty and the replacement meter should start with its own reading history.</p>
+							<form method="post" action="" class="row g-3 align-items-end">
+								<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($usersCsrfToken); ?>">
+								<input type="hidden" name="form_type" value="replace_client_meter">
+								<input type="hidden" name="user_id" value="<?php echo (int)$editUser['id']; ?>">
+								<input type="hidden" name="page" value="<?php echo (int)$currentPage; ?>">
+								<input type="hidden" name="customer_search" value="<?php echo htmlspecialchars($customerSearch); ?>">
+								<input type="hidden" name="edit_id" value="<?php echo (int)$editUser['id']; ?>">
+								<div class="col-md-6 col-lg-4">
+									<label for="old_meter_id" class="form-label">Faulty Meter</label>
+									<select class="form-select" id="old_meter_id" name="old_meter_id" required>
+										<option value="">Select meter</option>
+										<?php foreach ($editUserMeters as $meterRow): ?>
+											<?php if (($meterRow['status'] ?? 'active') !== 'active') { continue; } ?>
+											<option value="<?php echo (int)$meterRow['id']; ?>" <?php echo isset($_POST['old_meter_id']) && (int)$_POST['old_meter_id'] === (int)$meterRow['id'] ? 'selected' : ''; ?>>
+												<?php echo htmlspecialchars((string)$meterRow['meter_number']); ?><?php echo !empty($meterRow['meter_label']) ? ' - ' . htmlspecialchars((string)$meterRow['meter_label']) : ''; ?><?php echo !empty($meterRow['is_primary']) ? ' (Primary)' : ''; ?>
+											</option>
+										<?php endforeach; ?>
+									</select>
+								</div>
+								<div class="col-md-6 col-lg-4">
+									<label for="replacement_meter_number" class="form-label">Replacement Meter No</label>
+									<input type="text" class="form-control" id="replacement_meter_number" name="replacement_meter_number" value="<?php echo htmlspecialchars((string)($_POST['replacement_meter_number'] ?? '')); ?>" autocomplete="off" required>
+								</div>
+								<div class="col-md-6 col-lg-4">
+									<label for="replacement_meter_label" class="form-label">New Meter Label</label>
+									<input type="text" class="form-control" id="replacement_meter_label" name="replacement_meter_label" value="<?php echo htmlspecialchars((string)($_POST['replacement_meter_label'] ?? '')); ?>" autocomplete="off" placeholder="Optional label">
+								</div>
+								<div class="col-md-6 col-lg-3">
+									<label for="old_final_reading" class="form-label">Old Meter Closing Reading</label>
+									<input type="number" step="0.01" min="0" class="form-control" id="old_final_reading" name="old_final_reading" value="<?php echo htmlspecialchars((string)($_POST['old_final_reading'] ?? '0')); ?>">
+								</div>
+								<div class="col-md-6 col-lg-3">
+									<label for="new_opening_reading" class="form-label">New Meter Opening Reading</label>
+									<input type="number" step="0.01" min="0" class="form-control" id="new_opening_reading" name="new_opening_reading" value="<?php echo htmlspecialchars((string)($_POST['new_opening_reading'] ?? '0')); ?>">
+								</div>
+								<div class="col-md-12 col-lg-4">
+									<label for="replacement_reason" class="form-label">Reason</label>
+									<input type="text" class="form-control" id="replacement_reason" name="replacement_reason" value="<?php echo htmlspecialchars((string)($_POST['replacement_reason'] ?? '')); ?>" maxlength="255" placeholder="e.g. Faulty meter stopped counting">
+								</div>
+								<div class="col-md-12 col-lg-2">
+									<button type="submit" class="btn btn-warning w-100">Replace Meter</button>
+								</div>
+							</form>
+						</div>
+
+						<?php if (!empty($editUserMeterReplacements)): ?>
+							<div class="mt-4">
+								<h6 class="mb-3">Replacement History</h6>
+								<div class="table-responsive">
+									<table class="table table-sm align-middle mb-0">
+										<thead>
+											<tr>
+												<th>Date</th>
+												<th>Old Meter</th>
+												<th>New Meter</th>
+												<th>Closing</th>
+												<th>Opening</th>
+												<th>Reason</th>
+											</tr>
+										</thead>
+										<tbody>
+											<?php foreach ($editUserMeterReplacements as $replacementRow): ?>
+												<tr>
+													<td><?php echo htmlspecialchars(date('d-m-Y H:i', strtotime((string)$replacementRow['replaced_at']))); ?></td>
+													<td><?php echo htmlspecialchars((string)$replacementRow['old_meter_number']); ?></td>
+													<td><?php echo htmlspecialchars((string)$replacementRow['new_meter_number']); ?></td>
+													<td><?php echo number_format((float)$replacementRow['old_final_reading'], 2); ?></td>
+													<td><?php echo number_format((float)$replacementRow['new_opening_reading'], 2); ?></td>
+													<td><?php echo htmlspecialchars((string)($replacementRow['reason'] ?? '')); ?></td>
+												</tr>
+											<?php endforeach; ?>
+										</tbody>
+									</table>
+								</div>
+							</div>
+						<?php endif; ?>
 					</div>
 				</div>
 			</div>
