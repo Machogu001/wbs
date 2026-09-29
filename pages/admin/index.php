@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../config/mpesa_config.php';
 require_once __DIR__ . '/../../includes/Auth.php';
 require_once __DIR__ . '/../../includes/User.php';
 require_once __DIR__ . '/../../includes/Bill.php';
+require_once __DIR__ . '/../../includes/ClientMeter.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
 require_once __DIR__ . '/../../includes/ActivityLog.php';
 require_once __DIR__ . '/../../includes/MeterReading.php';
@@ -345,13 +346,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 						$account = $user['account_number'];
 						$paybill = MpesaConfig::getShortCode();
 						$payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
-						try {
-							$shortUrl = new ShortUrl($db);
-							$payUrl = $shortUrl->shortenUrl($payUrl, (int)$billResult['bill_id']);
-						} catch (\Throwable $e) {
-							// Keep the full payment link if shortening fails.
-							error_log('Invoice payment link shortening failed: ' . $e->getMessage());
-						}
 
 						$messageText = "AC: {$account}\n" .
 							"BillDate: {$billDate}\n" .
@@ -370,7 +364,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 						$reading_id = $readingService->createReading(
 							$user['id'],
 							$user['account_number'],
-							$user['meter_number'],
+							$user['matched_meter_number'] ?? $user['meter_number'],
 							$current_reading,
 							$billing_month,
 							$due_date,
@@ -572,7 +566,6 @@ require_once __DIR__ . '/../../templates/header.php';
 			<?php echo htmlspecialchars($message); ?>
 		</div>
 	<?php endif; ?>
-
 <div class="row mt-4 g-0 align-items-start" id="settingsMain">
 
 <!-- ====== LEFT COLUMN: Tab panels ====== -->
@@ -713,6 +706,24 @@ foreach ($months as $num => $label): ?>
 </div>
 </div>
 
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-card-text"></i> Terms &amp; Conditions</div>
+<div class="ssp-section-body">
+<div class="card border-0 bg-light">
+<div class="card-body">
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+<div>
+<h6 class="mb-1">Protected editor</h6>
+<p class="text-muted mb-2">Terms &amp; Conditions now open in a separate page so the main settings screen stays organized and accidental edits are less likely.</p>
+<p class="text-muted small mb-0">Opening the editor requires the current user password. You can also load sample templates and switch to full-screen edit or preview on that page.</p>
+</div>
+<button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#termsEditorAccessModal"><i class="bi bi-pencil-square me-1"></i>Open Terms Editor</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+
 <!-- Save -->
 <div class="ssp-save-row">
 <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-1"></i> Save Settings</button>
@@ -787,6 +798,18 @@ foreach ($months as $num => $label): ?>
 <button type="button" class="btn btn-outline-secondary" id="btnCopyPaymentLinkSecret">Copy</button>
 </div>
 <div class="form-text">Use <strong>Generate</strong> to create a new 64-char secret, then <strong>Copy</strong> and paste into your <code>.env</code> file. Changing this secret invalidates previously generated payment links.</div>
+</div>
+</div>
+
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-phone-fill"></i> Mobile API Key (.env)</div>
+<div class="ssp-section-body">
+<div class="input-group mb-2">
+<input type="text" id="mobileApiKeyValue" class="form-control font-monospace" value="<?php echo htmlspecialchars(MpesaConfig::getMobileApiKey()); ?>" readonly>
+<button type="button" class="btn btn-outline-primary" id="btnGenerateMobileApiKey">Generate</button>
+<button type="button" class="btn btn-outline-secondary" id="btnCopyMobileApiKey">Copy</button>
+</div>
+<div class="form-text">Every mobile API request must include <code>X-API-Key</code>. Generate a key here and give it only to trusted mobile applications. Rotating this key immediately blocks old app clients until they update.</div>
 </div>
 </div>
 
@@ -1203,7 +1226,12 @@ formnovalidate
 									<?php foreach($pending_readings as $reading): ?>
 										<tr>
 											<td><?php echo htmlspecialchars($reading['account_number']); ?></td>
-											<td><?php echo htmlspecialchars($reading['meter_number']); ?></td>
+											<td>
+												<div class="fw-semibold"><?php echo htmlspecialchars($reading['meter_number']); ?></div>
+												<?php if (!empty($reading['meter_label'])): ?>
+													<div class="small text-muted"><?php echo htmlspecialchars((string)$reading['meter_label']); ?></div>
+												<?php endif; ?>
+											</td>
 											<td><?php echo number_format($reading['current_reading'], 2); ?></td>
 											<td><?php echo htmlspecialchars(date('M Y', strtotime($reading['billing_month']))); ?></td>
 											<td><?php echo htmlspecialchars(date('d-m-Y', strtotime($reading['due_date']))); ?></td>
@@ -1325,6 +1353,32 @@ formnovalidate
 	</div>
 </div>
 
+<div class="modal fade" id="termsEditorAccessModal" tabindex="-1" aria-hidden="true">
+<div class="modal-dialog modal-dialog-centered">
+<div class="modal-content">
+<form method="POST" action="/admin/terms-conditions">
+<div class="modal-header">
+<h5 class="modal-title"><i class="bi bi-shield-lock me-2"></i>Open Terms Editor</h5>
+<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+</div>
+<div class="modal-body">
+<p class="text-muted">Enter your current password to open the dedicated Terms &amp; Conditions editor page.</p>
+<input type="hidden" name="action" value="verify_terms_editor">
+<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+<div class="mb-3">
+<label class="form-label">Current password</label>
+<input type="password" name="editor_password" class="form-control" autocomplete="current-password" required>
+</div>
+</div>
+<div class="modal-footer">
+<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+<button type="submit" class="btn btn-primary">Continue</button>
+</div>
+</form>
+</div>
+</div>
+</div>
+
 <script>
 (function() {
 	const tabHash = window.location.hash;
@@ -1355,13 +1409,10 @@ formnovalidate
 						if (!data || data.status !== 'success') return;
 						while (dataList.firstChild) dataList.removeChild(dataList.firstChild);
 						data.data.forEach(item => {
-							const opt1 = document.createElement('option');
-							opt1.value = item.account_number;
-							opt1.textContent = item.full_name + ' - ' + item.account_number;
-							dataList.appendChild(opt1);
-							const opt2 = document.createElement('option');
-							opt2.value = item.full_name;
-							dataList.appendChild(opt2);
+							const option = document.createElement('option');
+							option.value = item.selection_value || item.account_number;
+							option.textContent = item.suggestion_text || (item.full_name + ' - ' + item.account_number);
+							dataList.appendChild(option);
 						});
 					});
 			}, 300);
@@ -1387,6 +1438,9 @@ formnovalidate
 	const secretInput = document.getElementById('paymentLinkSecretValue');
 	const btnGenerateSecret = document.getElementById('btnGeneratePaymentLinkSecret');
 	const btnCopySecret = document.getElementById('btnCopyPaymentLinkSecret');
+	const mobileApiKeyInput = document.getElementById('mobileApiKeyValue');
+	const btnGenerateMobileApiKey = document.getElementById('btnGenerateMobileApiKey');
+	const btnCopyMobileApiKey = document.getElementById('btnCopyMobileApiKey');
 
 	function copySecretText(text) {
 		if (navigator.clipboard && window.isSecureContext) {
@@ -1413,6 +1467,38 @@ formnovalidate
 
 	function postSecret(payload) {
 		return fetch('/api/admin/generate_payment_link_secret', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: {
+				'Content-Type': 'application/json',
+				'Accept': 'application/json',
+				'X-Requested-With': 'XMLHttpRequest'
+			},
+			body: JSON.stringify(payload || {})
+		}).then(async function(res) {
+			const raw = await res.text();
+			let data = null;
+
+			try {
+				data = raw ? JSON.parse(raw) : null;
+			} catch (e) {
+				throw new Error('Server returned HTML instead of JSON. Your session may have expired. Refresh and log in again.');
+			}
+
+			if (!res.ok && data && data.message) {
+				throw new Error(data.message);
+			}
+
+			if (!res.ok) {
+				throw new Error('Request failed with HTTP ' + res.status + '.');
+			}
+
+			return data;
+		});
+	}
+
+	function postMobileApiKey(payload) {
+		return fetch('/api/admin/generate_mobile_api_key', {
 			method: 'POST',
 			credentials: 'same-origin',
 			headers: {
@@ -1482,6 +1568,52 @@ formnovalidate
 			copySecretText(value)
 				.then(function() {
 					if (window.showToast) showToast('Secret copied to clipboard.', 'success');
+				})
+				.catch(function() {
+					if (window.showToast) showToast('Unable to copy automatically. Select and copy manually.', 'warning');
+				});
+		});
+	}
+
+	if (btnGenerateMobileApiKey && mobileApiKeyInput) {
+		btnGenerateMobileApiKey.addEventListener('click', function() {
+			btnGenerateMobileApiKey.disabled = true;
+			const oldText = btnGenerateMobileApiKey.textContent;
+			btnGenerateMobileApiKey.textContent = 'Generating...';
+
+			postMobileApiKey({ save_to_env: true })
+				.then(function(data) {
+					if (!data || data.status !== 'success' || !data.data || !data.data.api_key) {
+						throw new Error((data && data.message) ? data.message : 'Could not generate mobile API key');
+					}
+					mobileApiKeyInput.value = data.data.api_key;
+					if (window.showToast) {
+						showToast(data.message || (data.data.saved_to_env ? 'New mobile API key generated and saved to .env.' : 'New mobile API key generated. Copy it into .env manually.'), data.data.saved_to_env ? 'success' : 'warning');
+					}
+				})
+				.catch(function(err) {
+					if (window.showToast) {
+						showToast(err.message || 'Failed to generate mobile API key.', 'danger');
+					}
+				})
+				.finally(function() {
+					btnGenerateMobileApiKey.disabled = false;
+					btnGenerateMobileApiKey.textContent = oldText;
+				});
+		});
+	}
+
+	if (btnCopyMobileApiKey && mobileApiKeyInput) {
+		btnCopyMobileApiKey.addEventListener('click', function() {
+			const value = String(mobileApiKeyInput.value || '').trim();
+			if (!value) {
+				if (window.showToast) showToast('Generate a mobile API key first.', 'warning');
+				return;
+			}
+
+			copySecretText(value)
+				.then(function() {
+					if (window.showToast) showToast('Mobile API key copied to clipboard.', 'success');
 				})
 				.catch(function() {
 					if (window.showToast) showToast('Unable to copy automatically. Select and copy manually.', 'warning');

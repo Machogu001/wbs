@@ -12,6 +12,11 @@
   ],
   "components": {
     "securitySchemes": {
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      },
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
@@ -43,6 +48,7 @@
     "/api/mobile/login.php": {
       "post": {
         "summary": "Login and receive a bearer token or 2FA challenge",
+        "security": [{ "apiKeyAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -69,6 +75,7 @@
     "/api/mobile/verify_2fa.php": {
       "post": {
         "summary": "Verify a 2FA challenge and receive a bearer token",
+        "security": [{ "apiKeyAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -94,6 +101,7 @@
     "/api/mobile/resend_2fa.php": {
       "post": {
         "summary": "Resend a 2FA code",
+        "security": [{ "apiKeyAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -118,7 +126,7 @@
     "/api/mobile/logout.php": {
       "post": {
         "summary": "Revoke the current bearer token",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "responses": {
           "200": { "description": "Logged out" }
         }
@@ -127,7 +135,7 @@
     "/api/mobile/me.php": {
       "get": {
         "summary": "Get the authenticated customer profile",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "responses": {
           "200": { "description": "Profile" },
           "401": { "description": "Unauthorized" }
@@ -137,21 +145,21 @@
     "/api/mobile/dashboard.php": {
       "get": {
         "summary": "Get customer dashboard data",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "responses": { "200": { "description": "Dashboard" } }
       }
     },
     "/api/mobile/meters.php": {
       "get": {
         "summary": "Get linked customer meters",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "responses": { "200": { "description": "Meters" } }
       }
     },
     "/api/mobile/bills.php": {
       "get": {
         "summary": "Get paginated customer bills",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "parameters": [
           { "name": "page", "in": "query", "schema": { "type": "integer" } },
           { "name": "limit", "in": "query", "schema": { "type": "integer" } },
@@ -163,7 +171,7 @@
     "/api/mobile/bill.php": {
       "get": {
         "summary": "Get one bill with line items and payments",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "parameters": [
           { "name": "id", "in": "query", "required": true, "schema": { "type": "integer" } }
         ],
@@ -173,7 +181,7 @@
     "/api/mobile/payments.php": {
       "get": {
         "summary": "Get payment history",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "parameters": [
           { "name": "page", "in": "query", "schema": { "type": "integer" } },
           { "name": "limit", "in": "query", "schema": { "type": "integer" } }
@@ -184,7 +192,7 @@
     "/api/mobile/initiate_payment.php": {
       "post": {
         "summary": "Initiate an M-Pesa STK push for a bill",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -206,7 +214,7 @@
     "/api/mobile/meter_readings.php": {
       "get": {
         "summary": "Get recent meter-reading submissions",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "parameters": [
           { "name": "limit", "in": "query", "schema": { "type": "integer" } },
           { "name": "meter_number", "in": "query", "schema": { "type": "string" } }
@@ -217,7 +225,7 @@
     "/api/mobile/submit_reading.php": {
       "post": {
         "summary": "Submit a meter reading with photo",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -242,7 +250,7 @@
     "/api/mobile/admin/search_clients.php": {
       "get": {
         "summary": "Search clients for staff/admin mobile apps",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "parameters": [
           { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } }
         ],
@@ -255,7 +263,7 @@
     "/api/mobile/admin/collections.php": {
       "get": {
         "summary": "Get staff/admin collections summary and recent payments",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "parameters": [
           { "name": "days", "in": "query", "schema": { "type": "integer" } },
           { "name": "limit", "in": "query", "schema": { "type": "integer" } }
@@ -269,7 +277,7 @@
     "/api/mobile/admin/onboarding_tracker.php": {
       "get": {
         "summary": "Get onboarding tracker records for staff/admin mobile apps",
-        "security": [{ "bearerAuth": [] }],
+        "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "parameters": [
           { "name": "q", "in": "query", "schema": { "type": "string" } },
           { "name": "type", "in": "query", "schema": { "type": "string", "enum": ["all", "proforma", "meter"] } },

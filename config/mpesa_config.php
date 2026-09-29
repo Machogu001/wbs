@@ -39,6 +39,10 @@ class MpesaConfig {
         return self::env('PAYMENT_LINK_SECRET', 'change_this_payment_link_secret_please');
     }
 
+    public static function getMobileApiKey(): string {
+        return self::env('MOBILE_API_KEY');
+    }
+
     public static function isProduction() {
         $mode = strtolower(self::env('MPESA_ENV', 'sandbox'));
         return in_array($mode, ['production', 'prod', 'live'], true);

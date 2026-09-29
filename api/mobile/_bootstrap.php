@@ -2,7 +2,7 @@
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Headers: Authorization, Content-Type, Accept');
+header('Access-Control-Allow-Headers: Authorization, Content-Type, Accept, X-API-Key');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
@@ -103,6 +103,37 @@ function mobileApiGetBearerToken(): ?string
     }
 
     return null;
+}
+
+function mobileApiGetAppKey(): ?string
+{
+    $header = $_SERVER['HTTP_X_API_KEY'] ?? $_SERVER['X_API_KEY'] ?? '';
+    if ($header === '' && function_exists('getallheaders')) {
+        $headers = getallheaders();
+        if (is_array($headers)) {
+            $header = $headers['X-API-Key'] ?? $headers['x-api-key'] ?? '';
+        }
+    }
+
+    $header = is_string($header) ? trim($header) : '';
+    return $header !== '' ? $header : null;
+}
+
+function mobileApiRequireAppKey(): void
+{
+    $configuredKey = MpesaConfig::getMobileApiKey();
+    if ($configuredKey === '') {
+        mobileApiJson(503, 'error', 'Mobile API access key is not configured. Ask an administrator to generate MOBILE_API_KEY in system settings.');
+    }
+
+    $providedKey = mobileApiGetAppKey();
+    if ($providedKey === null) {
+        mobileApiJson(401, 'error', 'X-API-Key header is required.');
+    }
+
+    if (!hash_equals($configuredKey, $providedKey)) {
+        mobileApiJson(403, 'error', 'Invalid mobile API key.');
+    }
 }
 
 function mobileApiRequireUser(PDO $db): array
@@ -390,6 +421,8 @@ function mobileApiFormatPayment(array $payment): array
         'transaction_date' => (string)($payment['transaction_date'] ?? ''),
     ];
 }
+
+mobileApiRequireAppKey();
 
 function mobileApiFormatClientSearchResult(array $row, string $query = ''): array
 {

@@ -10,15 +10,24 @@ https://your-domain.example/api/mobile
 
 ## Authentication
 
-- The API uses `Bearer` tokens.
+- The API uses both an application key and user bearer tokens.
+- Every request must include the mobile app key header:
+
+```http
+X-API-Key: YOUR_MOBILE_API_KEY
+```
+
 - Send the token in the `Authorization` header:
 
 ```http
 Authorization: Bearer YOUR_ACCESS_TOKEN
 ```
 
+- Public login and 2FA endpoints also require `X-API-Key`.
 - Tokens are returned by the login flow and expire after 30 days by default.
 - If a user has 2FA enabled, the login flow returns a `challenge_token` first. The app must then verify the code before it receives an access token.
+
+Generate or rotate the mobile API key from System Settings. Only admins or users with `manage_settings` can do that.
 
 ## Common Response Format
 
