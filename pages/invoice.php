@@ -13,8 +13,8 @@ require_once __DIR__ . '/../vendor/autoload.php';
 $token = trim((string)($_GET['t'] ?? ''));
 $bill_id = isset($_GET['bill_id']) ? (int)$_GET['bill_id'] : 0;
 $tokenBillId = $token !== '' ? (int)(PaymentLink::getBillIdFromToken($token) ?? 0) : 0;
-$isPublicProformaRequest = $tokenBillId > 0;
-if ($bill_id <= 0 && $tokenBillId > 0) {
+$hasPublicInvoiceToken = $tokenBillId > 0;
+if ($hasPublicInvoiceToken) {
     $bill_id = $tokenBillId;
 }
 if ($bill_id <= 0) {
@@ -25,7 +25,7 @@ if ($bill_id <= 0) {
 $database = new Database();
 $db = $database->getConnection();
 $auth = new Auth($db);
-if (!$auth->isLoggedIn() && !$isPublicProformaRequest) {
+if (!$auth->isLoggedIn() && !$hasPublicInvoiceToken) {
     header("Location: /login");
     exit;
 }
@@ -41,7 +41,7 @@ $canRegistrationProformaAccess = $auth->isAdmin() || $auth->hasPermission('manag
 $canAdminDownloadInvoice = $canFullInvoiceAccess || $canRegistrationProformaAccess;
 
 $billService = new Bill($db);
-$bill = $isPublicProformaRequest
+$bill = $hasPublicInvoiceToken
     ? $billService->getById($bill_id, null)
     : ($canAdminDownloadInvoice
     ? $billService->getById($bill_id, null)
@@ -51,10 +51,6 @@ if (!$bill) {
     exit;
 }
 $isRegistrationBill = $billService->isRegistrationFeeBill($bill);
-if ($isPublicProformaRequest && !$isRegistrationBill) {
-    header('Location: /');
-    exit;
-}
 if (!$canFullInvoiceAccess && $canRegistrationProformaAccess && !$isRegistrationBill) {
     header('Location: /admin/registration-proformas');
     exit;
