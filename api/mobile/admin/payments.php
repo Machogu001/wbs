@@ -48,6 +48,19 @@ try {
             $userPayments = $paymentService->getCompletedPaymentsByUserId((int)$currentUser['id']);
             $paymentAdjustments = $paymentService->getAdjustmentsByUserId((int)$currentUser['id']);
         }
+        $paymentTargetOptions = [
+            ['value' => 'invoice', 'label' => 'Invoice'],
+            ['value' => 'balance', 'label' => 'Outstanding Balance'],
+        ];
+        $paymentMethodOptions = [
+            ['value' => 'mpesa', 'label' => 'M-Pesa'],
+            ['value' => 'cash', 'label' => 'Cash'],
+            ['value' => 'bank', 'label' => 'Bank Transfer'],
+            ['value' => 'card', 'label' => 'Card'],
+            ['value' => 'cheque', 'label' => 'Cheque'],
+            ['value' => 'wallet', 'label' => 'Wallet'],
+            ['value' => 'other', 'label' => 'Other'],
+        ];
         mobileApiJson(200, 'success', 'Payments workspace loaded.', [
             'can_receive_payments' => $canReceivePayments,
             'currency' => $settings['currency_code'] ?? 'KES',
@@ -56,6 +69,56 @@ try {
             'payments' => $userPayments,
             'payment_adjustments' => $paymentAdjustments,
             'wallet_balance' => $currentUser ? $wallet->getBalance((int)$currentUser['id']) : 0.0,
+            'payment_target_options' => $paymentTargetOptions,
+            'payment_method_options' => $paymentMethodOptions,
+            'field_metadata' => [
+                'account_number' => [
+                    'input_type' => 'autocomplete',
+                    'search_endpoint' => '/api/mobile/admin/search_clients.php?q={query}',
+                    'placeholder' => 'Search by account, meter, or client name',
+                    'selection_keys' => ['value', 'selection_value', 'account_number'],
+                    'display_keys' => ['label', 'suggestion_text', 'full_name'],
+                ],
+                'bill_id' => [
+                    'input_type' => 'dropdown',
+                    'source' => 'bills',
+                    'label_key' => 'bill_number',
+                    'fallback_label_template' => 'Invoice #{id} - {billing_month} - {outstanding_amount}',
+                ],
+                'payment_target' => [
+                    'input_type' => 'dropdown',
+                    'options' => $paymentTargetOptions,
+                    'default_value' => 'invoice',
+                ],
+                'payment_method' => [
+                    'input_type' => 'dropdown',
+                    'options' => $paymentMethodOptions,
+                    'default_value' => 'mpesa',
+                ],
+                'amount' => [
+                    'input_type' => 'number',
+                    'min' => 0.01,
+                    'step' => 0.01,
+                ],
+                'paid_date' => [
+                    'input_type' => 'date',
+                    'picker_mode' => 'date',
+                    'format' => 'Y-m-d',
+                    'default_value' => date('Y-m-d'),
+                ],
+                'paid_time' => [
+                    'input_type' => 'time',
+                    'picker_mode' => 'time',
+                    'format' => 'H:i',
+                    'default_value' => date('H:i'),
+                ],
+                'payment_reference' => [
+                    'input_type' => 'text',
+                    'required_when' => [
+                        'payment_method' => ['mpesa'],
+                    ],
+                ],
+            ],
         ]);
     }
 

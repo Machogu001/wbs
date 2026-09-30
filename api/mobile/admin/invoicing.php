@@ -20,6 +20,32 @@ try {
         mobileApiJson(200, 'success', 'Invoicing workspace loaded.', [
             'default_billing_month' => date('Y-m-01', strtotime('first day of last month')),
             'default_due_date' => date('Y-m-d', strtotime('+3 days')),
+            'field_metadata' => [
+                'account_or_meter' => [
+                    'input_type' => 'autocomplete',
+                    'search_endpoint' => '/api/mobile/admin/search_clients.php?q={query}',
+                    'placeholder' => 'Search by account, meter, or client name',
+                    'selection_keys' => ['value', 'selection_value', 'account_number'],
+                    'display_keys' => ['label', 'suggestion_text', 'full_name'],
+                ],
+                'current_reading' => [
+                    'input_type' => 'number',
+                    'min' => 0,
+                    'step' => 0.01,
+                ],
+                'billing_month' => [
+                    'input_type' => 'date',
+                    'picker_mode' => 'month',
+                    'format' => 'Y-m-01',
+                    'default_value' => date('Y-m-01', strtotime('first day of last month')),
+                ],
+                'due_date' => [
+                    'input_type' => 'date',
+                    'picker_mode' => 'date',
+                    'format' => 'Y-m-d',
+                    'default_value' => date('Y-m-d', strtotime('+3 days')),
+                ],
+            ],
             'settings' => $settings,
         ]);
     }
