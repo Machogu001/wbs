@@ -63,7 +63,16 @@ try {
             $row['outstanding_amount'] = $paymentService->getBillOutstandingAmount((int)$row['bill_id']);
         }
         unset($row);
-        mobileApiJson(200, 'success', 'Registration proformas loaded.', ['registration_fee' => $registrationFee, 'proformas' => $rows]);
+        mobileApiJson(200, 'success', 'Registration proformas loaded.', [
+            'registration_fee' => $registrationFee,
+            'proformas' => $rows,
+            'form_metadata' => [
+                'default_country_code' => '254',
+                'country_code_options' => mobileApiCountryCodeOptions($db),
+                'customer_type_options' => mobileApiCustomerTypeOptions(),
+                'connection_type_options' => mobileApiConnectionTypeOptions(),
+            ],
+        ]);
     }
 
     if ($method === 'POST') {

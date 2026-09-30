@@ -64,6 +64,12 @@ try {
             'edit_user' => $editUser,
             'edit_user_meters' => $editUserMeters,
             'edit_user_meter_replacements' => $editUserMeterReplacements,
+            'form_metadata' => [
+                'default_country_code' => '254',
+                'country_code_options' => mobileApiCountryCodeOptions($db),
+                'connection_type_options' => mobileApiConnectionTypeOptions(),
+                'status_options' => mobileApiStatusOptions(),
+            ],
         ]);
     }
 

@@ -18,6 +18,7 @@ require_once __DIR__ . '/../../includes/Payment.php';
 require_once __DIR__ . '/../../includes/MeterReading.php';
 require_once __DIR__ . '/../../includes/ClientMeter.php';
 require_once __DIR__ . '/../../includes/BillingSettings.php';
+require_once __DIR__ . '/../../includes/CountryDialCode.php';
 require_once __DIR__ . '/../../includes/MobileApiAuth.php';
 require_once __DIR__ . '/../../includes/Mpesa.php';
 require_once __DIR__ . '/../../includes/PaymentLink.php';
@@ -320,6 +321,60 @@ function mobileApiNormalizeCurrencyAmount($amount): float
         return 0.0;
     }
     return round((float)$normalized, 2);
+}
+
+function mobileApiCountryCodeOptions(PDO $db): array
+{
+    $fallback = [
+        ['value' => '254', 'label' => 'Kenya (+254)'],
+        ['value' => '256', 'label' => 'Uganda (+256)'],
+        ['value' => '255', 'label' => 'Tanzania (+255)'],
+        ['value' => '1', 'label' => 'United States (+1)'],
+        ['value' => '44', 'label' => 'United Kingdom (+44)'],
+    ];
+
+    try {
+        $rows = (new CountryDialCode($db))->listActive();
+        return !empty($rows) ? $rows : $fallback;
+    } catch (Throwable $e) {
+        return $fallback;
+    }
+}
+
+function mobileApiConnectionTypeOptions(): array
+{
+    return [
+        ['value' => 'domestic', 'label' => 'Domestic'],
+        ['value' => 'commercial', 'label' => 'Commercial'],
+        ['value' => 'industrial', 'label' => 'Industrial'],
+    ];
+}
+
+function mobileApiCustomerTypeOptions(): array
+{
+    return [
+        ['value' => 'individual', 'label' => 'Individual'],
+        ['value' => 'company', 'label' => 'Company'],
+    ];
+}
+
+function mobileApiStaffRoleOptions(): array
+{
+    return [
+        ['value' => 'admin', 'label' => 'Admin'],
+        ['value' => 'reader', 'label' => 'Reader'],
+        ['value' => 'finance', 'label' => 'Finance'],
+        ['value' => 'support', 'label' => 'Support'],
+    ];
+}
+
+function mobileApiStatusOptions(): array
+{
+    return [
+        ['value' => 'active', 'label' => 'Active'],
+        ['value' => 'inactive', 'label' => 'Inactive'],
+        ['value' => 'suspended', 'label' => 'Suspended'],
+    ];
 }
 
 function mobileApiResolveClient(User $userService, string $identifier): ?array

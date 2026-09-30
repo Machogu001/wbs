@@ -18,8 +18,13 @@ try {
     $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
     if ($method === 'GET') {
+        $errorLogs = array_map(static function (array $row): array {
+            $row['message'] = (string)($row['error_message'] ?? '');
+            return $row;
+        }, $errorLog->getRecent(50));
+
         mobileApiJson(200, 'success', 'System logs loaded.', [
-            'error_logs' => $errorLog->getRecent(50),
+            'error_logs' => $errorLogs,
             'error_stats' => $errorLog->getErrorCountByService(24),
             'sms_queue' => [
                 'pending' => $smsQueue->getByStatusForReview('pending', 100),

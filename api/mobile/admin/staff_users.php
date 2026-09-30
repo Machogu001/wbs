@@ -26,7 +26,15 @@ try {
 
     if ($method === 'GET') {
         $stmt = $db->query("SELECT id, account_number, full_name, username, phone_number, id_number, role, status, created_at FROM users WHERE role <> 'customer' ORDER BY created_at DESC, id DESC");
-        mobileApiJson(200, 'success', 'Staff users loaded.', ['users' => $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : []]);
+        mobileApiJson(200, 'success', 'Staff users loaded.', [
+            'users' => $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [],
+            'form_metadata' => [
+                'default_country_code' => '254',
+                'country_code_options' => mobileApiCountryCodeOptions($db),
+                'role_options' => mobileApiStaffRoleOptions(),
+                'status_options' => mobileApiStatusOptions(),
+            ],
+        ]);
     }
 
     if ($method === 'POST') {
