@@ -43,14 +43,78 @@ try {
     }
     $countStmt->execute();
     $total = (int)$countStmt->fetchColumn();
+    $formattedBills = array_map(static function (array $billRow) use ($billService, $paymentService): array {
+        return mobileApiFormatBill($billService, $paymentService, $billRow);
+    }, $rows);
 
     mobileApiJson(200, 'success', 'Bills loaded.', [
         'page' => $page,
         'limit' => $limit,
         'total' => $total,
-        'bills' => array_map(static function (array $billRow) use ($billService, $paymentService): array {
-            return mobileApiFormatBill($billService, $paymentService, $billRow);
-        }, $rows),
+        'bills' => $formattedBills,
+        'screen' => [
+            'title' => 'Bills',
+            'layout' => 'filterable_list',
+            'primary_action' => [
+                'type' => 'navigate',
+                'label' => 'Dashboard',
+                'target' => '/api/mobile/dashboard.php',
+            ],
+            'filters' => [
+                [
+                    'key' => 'status',
+                    'label' => 'Bill Status',
+                    'input_type' => 'dropdown',
+                    'default_value' => $statusFilter,
+                    'options' => [
+                        ['value' => '', 'label' => 'All Bills'],
+                        ['value' => 'pending', 'label' => 'Pending'],
+                        ['value' => 'paid', 'label' => 'Paid'],
+                        ['value' => 'overdue', 'label' => 'Overdue'],
+                        ['value' => 'cancelled', 'label' => 'Cancelled'],
+                    ],
+                ],
+                [
+                    'key' => 'limit',
+                    'label' => 'Rows',
+                    'input_type' => 'dropdown',
+                    'default_value' => $limit,
+                    'options' => [
+                        ['value' => 10, 'label' => '10'],
+                        ['value' => 20, 'label' => '20'],
+                        ['value' => 50, 'label' => '50'],
+                        ['value' => 100, 'label' => '100'],
+                    ],
+                ],
+            ],
+            'pagination' => [
+                'page' => $page,
+                'limit' => $limit,
+                'total' => $total,
+                'has_next_page' => ($page * $limit) < $total,
+                'has_previous_page' => $page > 1,
+            ],
+            'sections' => [
+                [
+                    'key' => 'bills',
+                    'title' => 'Bill List',
+                    'presentation' => 'list',
+                    'empty_state' => 'No bills matched the selected filters.',
+                    'item_actions' => [
+                        [
+                            'type' => 'navigate',
+                            'label' => 'Open Bill',
+                            'target_template' => '/api/mobile/bill.php?id={id}',
+                        ],
+                        [
+                            'type' => 'link',
+                            'label' => 'Payment Link',
+                            'field' => 'public_payment_url',
+                        ],
+                    ],
+                ],
+            ],
+        ],
     ]);
 } catch (Throwable $e) {
     error_log('Mobile API bills failed: ' . $e->getMessage());

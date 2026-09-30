@@ -24,6 +24,45 @@ require_once __DIR__ . '/../../includes/PaymentLink.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/Email.php';
 
+function mobileApiGetUiMeta(): array
+{
+    static $uiMeta = null;
+    if (is_array($uiMeta)) {
+        return $uiMeta;
+    }
+
+    $uiMeta = [
+        'company_name' => 'Water Billing System',
+        'currency_code' => 'KES',
+        'locale_code' => 'en-KE',
+        'timezone_name' => 'Africa/Nairobi',
+        'preferred_terms_format' => 'sections',
+        'preferred_autocomplete_keys' => [
+            'label',
+            'value',
+        ],
+        'preferred_card_style' => 'summary_first',
+        'preferred_date_format' => 'Y-m-d',
+        'preferred_datetime_format' => 'Y-m-d H:i:s',
+        'preferred_time_format' => 'H:i',
+    ];
+
+    try {
+        $database = new Database();
+        $db = $database->getConnection();
+        if ($db instanceof PDO) {
+            $settings = (new BillingSettings($db))->getSettings();
+            $uiMeta['company_name'] = (string)($settings['company_name'] ?? $uiMeta['company_name']);
+            $uiMeta['currency_code'] = (string)($settings['currency_code'] ?? $uiMeta['currency_code']);
+            $uiMeta['locale_code'] = (string)($settings['locale_code'] ?? $uiMeta['locale_code']);
+            $uiMeta['timezone_name'] = (string)($settings['timezone_name'] ?? $uiMeta['timezone_name']);
+        }
+    } catch (Throwable $e) {
+    }
+
+    return $uiMeta;
+}
+
 function mobileApiJson(int $statusCode, string $status, string $message, array $data = []): void
 {
     http_response_code($statusCode);
@@ -31,6 +70,11 @@ function mobileApiJson(int $statusCode, string $status, string $message, array $
         'status' => $status,
         'message' => $message,
         'data' => $data,
+        'meta' => [
+            'api_version' => 'v1',
+            'generated_at' => gmdate('c'),
+            'ui' => mobileApiGetUiMeta(),
+        ],
     ];
 
     $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);

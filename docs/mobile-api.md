@@ -37,11 +37,29 @@ If `.env` is not writable by the web server user, the generated mobile API key i
 {
   "status": "success",
   "message": "Human readable message",
-  "data": {}
+  "data": {},
+  "meta": {
+    "api_version": "v1",
+    "generated_at": "2026-09-30T12:00:00Z",
+    "ui": {
+      "company_name": "BreMac Consultant Ltd",
+      "currency_code": "KES",
+      "locale_code": "en-KE",
+      "timezone_name": "Africa/Nairobi",
+      "preferred_terms_format": "sections",
+      "preferred_autocomplete_keys": ["label", "value"],
+      "preferred_card_style": "summary_first",
+      "preferred_date_format": "Y-m-d",
+      "preferred_datetime_format": "Y-m-d H:i:s",
+      "preferred_time_format": "H:i"
+    }
+  }
 }
 ```
 
 Error responses use the same format with `status: "error"`.
+
+`meta.ui` is a non-breaking presentation helper for the mobile app. It does not replace endpoint-specific fields like `field_metadata`, `display_metadata`, `summary_cards`, or `*_options`, but it gives the app one consistent set of UI defaults across all payloads.
 
 ## Endpoints
 

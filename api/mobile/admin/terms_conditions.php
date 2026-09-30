@@ -15,11 +15,14 @@ try {
     if ($method === 'GET') {
         $settings = $settingsService->getSettings();
         $renderedTerms = BillingSettings::renderTermsContent($settings, 'https://wbs.bremac.co.ke/');
+        $renderedTermsText = BillingSettings::renderTermsPlainText($settings, 'https://wbs.bremac.co.ke/');
+        $renderedTermsSections = BillingSettings::renderTermsSections($settings, 'https://wbs.bremac.co.ke/');
         mobileApiJson(200, 'success', 'Terms and conditions loaded.', [
-            'terms_conditions_content' => $settings['terms_conditions_content'] ?? '',
+            'terms_conditions_content' => $renderedTermsText,
+            'terms_conditions_template' => $settings['terms_conditions_content'] ?? '',
             'rendered_terms' => $renderedTerms,
-            'rendered_terms_text' => BillingSettings::renderTermsPlainText($settings, 'https://wbs.bremac.co.ke/'),
-            'rendered_terms_sections' => BillingSettings::renderTermsSections($settings, 'https://wbs.bremac.co.ke/'),
+            'rendered_terms_text' => $renderedTermsText,
+            'rendered_terms_sections' => $renderedTermsSections,
             'display_metadata' => [
                 'preferred_format' => 'sections',
                 'available_formats' => ['sections', 'text', 'html'],
@@ -31,7 +34,7 @@ try {
     if ($method === 'POST') {
         $data = mobileApiReadJson();
         $currentPassword = (string)($data['current_password'] ?? '');
-        $termsContent = trim((string)($data['terms_conditions_content'] ?? ''));
+        $termsContent = trim((string)($data['terms_conditions_template'] ?? ($data['terms_conditions_content'] ?? '')));
         $currentUser = (new User($db))->getById((int)$actor['id']);
         if (!$currentUser || empty($currentUser['password_hash']) || !password_verify($currentPassword, (string)$currentUser['password_hash'])) {
             mobileApiJson(422, 'error', 'Password is incorrect. Terms were not updated.');

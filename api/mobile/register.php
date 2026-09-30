@@ -46,6 +46,9 @@ try {
 	$method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
 	if ($method === 'GET') {
+		$termsHtml = BillingSettings::renderTermsContent($settings, mobileApiBuildAbsoluteUrl('/'));
+		$termsText = BillingSettings::renderTermsPlainText($settings, mobileApiBuildAbsoluteUrl('/'));
+		$termsSections = BillingSettings::renderTermsSections($settings, mobileApiBuildAbsoluteUrl('/'));
 		mobileApiJson(200, 'success', 'Registration form metadata loaded.', [
 			'registration_fee' => $registrationFee,
 			'enforce_location_accuracy' => $enforceLocationAccuracy,
@@ -65,10 +68,14 @@ try {
 				['value' => 'industrial', 'label' => 'Industrial'],
 			],
 			'company_name' => (string)($settings['company_name'] ?? ''),
+			'terms_conditions_content' => $termsText,
+			'terms_conditions_html' => $termsHtml,
+			'terms_conditions_sections' => $termsSections,
 			'terms_conditions' => [
-				'html' => BillingSettings::renderTermsContent($settings, mobileApiBuildAbsoluteUrl('/')),
-				'text' => BillingSettings::renderTermsPlainText($settings, mobileApiBuildAbsoluteUrl('/')),
-				'sections' => BillingSettings::renderTermsSections($settings, mobileApiBuildAbsoluteUrl('/')),
+				'content' => $termsText,
+				'html' => $termsHtml,
+				'text' => $termsText,
+				'sections' => $termsSections,
 				'preferred_format' => 'sections',
 			],
 		]);
