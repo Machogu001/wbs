@@ -24,15 +24,15 @@ Status Legend
 | `/api/mobile/resend_2fa.php` | 2FA resend | Aligned | App posts `challenge_token` and method values the backend accepts. |
 | `/api/mobile/verify_2fa.php` | 2FA verify | Aligned | App expects access token and user payload; backend returns that. |
 | `/api/mobile/logout.php` | Sign-out | Aligned | Bearer-token logout matches app flow. |
-| `/api/mobile/me.php` | Session restore and profile | Partial | App consumes `user` and registration-payment flags, but ignores newer `screen` metadata and profile alerts layout hints. |
+| `/api/mobile/me.php` | Session restore and profile | Aligned | App now consumes profile actions, alert routing, server-defined account-detail fields, and linked-meter section metadata. |
 | `/api/mobile/theme.php` | Theme preference | Aligned | App reads `theme_preference` and `available_preferences`, and posts updates correctly. |
 | `/api/mobile/change_password.php` | Change password | Aligned | Request and response contract matches app. |
-| `/api/mobile/register.php` | Public registration metadata and submit | Partial | App correctly consumes option arrays and terms display text, but it does not yet consume richer nested `terms_conditions` metadata beyond the display fields. |
+| `/api/mobile/register.php` | Public registration metadata and submit | Aligned | App now consumes the main registration option arrays plus the richer nested `terms_conditions` structure, including section-preferred rendering with HTML/text fallback. |
 | `/api/mobile/registration_payment.php` | Post-registration STK follow-up | Aligned | App uses GET status plus POST resend/initiate correctly; optional phone fallback is supported by backend. |
-| `/api/mobile/dashboard.php` | Customer dashboard | Partial | App renders a hardcoded dashboard and does not consume backend `screen` or `summary_cards` metadata. |
+| `/api/mobile/dashboard.php` | Customer dashboard | Aligned | App now consumes server-driven summary cards, recommended actions, section titles, and empty-state metadata. |
 | `/api/mobile/statement.php` | Statement | Aligned | App reads `summary`, `bills`, and `payments` as provided. |
 | `/api/mobile/complaints.php` | Customer complaints | Aligned | App uses `complaints` list and create action correctly. |
-| `/api/mobile/bills.php` | Bills list | Partial | App reads `bills` and `total`, but ignores backend filter/pagination/screen metadata. |
+| `/api/mobile/bills.php` | Bills list | Aligned | App now consumes filter labels/options, pagination metadata, primary action, and item link actions from the backend screen payload. |
 | `/api/mobile/bill.php` | Bill detail | Aligned | App reads bill amounts, readings, line items, payments, and document links as provided. |
 | `/api/mobile/payments.php` | Customer payment list | Aligned | App reads `payments` and total count correctly. |
 | `/api/mobile/payment.php` | Payment detail | Aligned | App reads payment receipt fields and document links correctly. |
@@ -55,14 +55,14 @@ Status Legend
 | `/api/mobile/admin/staff_users.php` | Staff account management | Aligned | App request bodies match create/edit/reset/delete actions. |
 | `/api/mobile/admin/role_permissions.php` | Permissions matrix | Aligned | App consumes `roles`, `permission_defs`, and `current` correctly. |
 | `/api/mobile/admin/settings.php` | Billing settings and tariffs | Aligned | App reads `settings`, `mobile_api_key_masked`, and `tariff_plans` exactly as returned. |
-| `/api/mobile/admin/terms_conditions.php` | Terms display and edit | Gap | GET display is aligned, but the app still edits `terms_conditions_content` instead of preferring `terms_conditions_template`, so raw template structure can be flattened on save. |
+| `/api/mobile/admin/terms_conditions.php` | Terms display and edit | Aligned | App now edits `terms_conditions_template`, consumes display metadata for preview formats, and can load backend sample templates into the editor. |
 | `/api/mobile/admin/activity_logs.php` | Activity log list and delete | Aligned | App consumes `logs` and pagination total correctly. |
-| `/api/mobile/admin/system_logs.php` | Error logs and SMS queue | Partial | Now aligned because backend provides `error_logs[].message` alias, but the app still depends on that alias rather than the canonical `error_message` field. |
-| `/api/mobile/admin/collections.php` | Collections dashboard | Partial | Core totals and recent payments work, but the app ignores `period_options`, `payment_method_options`, `field_metadata`, and `summary_cards`. |
-| `/api/mobile/admin/payments.php` | Payments workspace | Partial | Functional, but the app hardcodes payment target/method/date inputs instead of using `payment_target_options`, `payment_method_options`, and `field_metadata`. |
+| `/api/mobile/admin/system_logs.php` | Error logs and SMS queue | Aligned | App now prefers the canonical `error_message` field and only falls back to `message` for compatibility. |
+| `/api/mobile/admin/collections.php` | Collections dashboard | Aligned | App now consumes period/row metadata, summary cards, and backend payment-method labels when rendering collection totals. |
+| `/api/mobile/admin/payments.php` | Payments workspace | Aligned | App now consumes server-provided field labels, defaults, source-driven bill options, and permission gating for manual payment actions. |
 | `/api/mobile/admin/manual_payment.php` | Quick manual payment | Aligned | Quick record-payment flow matches endpoint fields and validation. |
 | `/api/mobile/admin/payment_transactions.php` | Transaction history | Aligned | App uses `counts` and `payments` as returned. |
-| `/api/mobile/admin/invoicing.php` | Bill from reading | Partial | Functional, but app ignores backend `field_metadata` for autocomplete/date/number controls. |
+| `/api/mobile/admin/invoicing.php` | Bill from reading | Aligned | App now uses backend field metadata for labels, picker modes, placeholders, and returned billing defaults. |
 | `/api/mobile/admin/bill_correction.php` | Bill correction workspace | Aligned | Search, selected bill, and correction history shape matches app. |
 | `/api/mobile/admin/bill_detail.php` | Admin bill detail | Aligned | App consumes bill, credit notes, approval items, and invoice URL fields correctly. |
 | `/api/mobile/admin/approvals.php` | Finance approvals | Aligned | App reads `summary` and `items` correctly. |
@@ -83,13 +83,8 @@ Status Legend
 
 ## Remaining Mismatches To Fix In The Android App
 
-1. Terms editing should prefer `terms_conditions_template` on GET and send `terms_conditions_template` on POST to preserve the raw template instead of rewriting the rendered display text.
-2. Dashboard, bills, profile, collections, payments workspace, and invoicing do not yet consume the richer response metadata already exposed by the backend (`screen`, `summary_cards`, `field_metadata`, option arrays, and `meta.ui`).
-3. Several admin create/edit screens still hardcode enumerated choices instead of loading server-provided options. This works today but will drift if backend-supported values change.
-4. `system_logs.php` is only compatible because the backend now includes a `message` alias for app compatibility. The app still does not read the canonical `error_message` field.
+1. Several admin create/edit screens still hardcode some server-supported choices where no mobile metadata contract exists yet. The main remaining candidates are specialized operations outside the upgraded payments/settings flows.
 
 ## Recommended Edit Order
 
-1. Fix the Android terms editor to use `terms_conditions_template`.
-2. Migrate the app's payments and invoicing screens to consume backend `field_metadata` and option arrays.
-3. Migrate dashboard, bills, and profile screens to consume `screen` metadata where it improves layout without rewriting all screen code at once.
+1. Migrate the remaining admin create/edit forms to consume shared server metadata instead of hardcoded enumerations.

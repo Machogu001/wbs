@@ -90,6 +90,7 @@ try {
         'payment_method_options' => $paymentMethodOptions,
         'field_metadata' => [
             'days' => [
+                'label' => 'Period',
                 'input_type' => 'dropdown',
                 'options' => [
                     ['value' => 7, 'label' => 'Last 7 days'],
@@ -101,6 +102,7 @@ try {
                 'default_value' => $days,
             ],
             'limit' => [
+                'label' => 'Rows',
                 'input_type' => 'dropdown',
                 'options' => [
                     ['value' => 10, 'label' => '10 records'],

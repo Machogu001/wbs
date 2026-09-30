@@ -113,10 +113,29 @@ try {
                     'default_value' => date('H:i'),
                 ],
                 'payment_reference' => [
+                    'label' => 'Payment reference',
                     'input_type' => 'text',
                     'required_when' => [
                         'payment_method' => ['mpesa'],
                     ],
+                ],
+                'credit_type' => [
+                    'label' => 'Credit type',
+                    'input_type' => 'dropdown',
+                    'options' => [
+                        ['value' => 'full', 'label' => 'Full credit'],
+                        ['value' => 'partial', 'label' => 'Partial credit'],
+                    ],
+                    'default_value' => 'full',
+                ],
+                'adjustment_type' => [
+                    'label' => 'Adjustment type',
+                    'input_type' => 'dropdown',
+                    'options' => [
+                        ['value' => 'refund', 'label' => 'Refund'],
+                        ['value' => 'correction', 'label' => 'Correction'],
+                    ],
+                    'default_value' => 'refund',
                 ],
             ],
         ]);

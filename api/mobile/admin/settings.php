@@ -24,6 +24,14 @@ try {
             'mobile_api_key_masked' => $maskedKey,
             'mobile_api_key' => !empty($_GET['include_api_key']) ? $mobileApiKey : null,
             'tariff_plans' => $settingsService->listTariffPlans(false),
+            'form_metadata' => [
+                'tariff_category_options' => [
+                    ['value' => 'all', 'label' => 'All connections'],
+                    ['value' => 'domestic', 'label' => 'Domestic'],
+                    ['value' => 'commercial', 'label' => 'Commercial'],
+                    ['value' => 'industrial', 'label' => 'Industrial'],
+                ],
+            ],
         ]);
     }
 
