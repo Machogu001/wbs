@@ -14,11 +14,17 @@ try {
         $selectedType = preg_replace('/[^a-z_]/', '', strtolower((string)($_GET['type'] ?? '')));
         $selectedAccountId = (int)($_GET['account_id'] ?? 0);
         $selectedEntryId = (int)($_GET['entry_id'] ?? 0);
-        $accounts = $accounting->getAccounts($selectedType !== '' ? $selectedType : null);
+        $accounts = $accounting->getAccounts(false);
+        if ($selectedType !== '') {
+            $accounts = array_values(array_filter(
+                $accounts,
+                static fn(array $account): bool => (string)($account['account_type'] ?? '') === $selectedType
+            ));
+        }
         $selectedAccount = $selectedAccountId > 0 ? $accounting->getAccountById($selectedAccountId) : null;
         $accountLedger = $selectedAccountId > 0 ? $accounting->getLedgerByAccount($selectedAccountId) : [];
         $journalEntries = $accounting->getJournalEntries(50);
-        $selectedEntry = $selectedEntryId > 0 ? $accounting->getJournalEntryById($selectedEntryId) : (!empty($journalEntries) ? $accounting->getJournalEntryById((int)$journalEntries[0]['id']) : null);
+        $selectedEntry = $selectedEntryId > 0 ? $accounting->getJournalEntryById($selectedEntryId) : null;
 
         mobileApiJson(200, 'success', 'Accounting ledger loaded.', [
             'accounts' => $accounts,
