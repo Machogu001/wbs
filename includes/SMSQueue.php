@@ -27,13 +27,14 @@ class SMSQueue {
 	 * Get pending SMS messages (limit to prevent API throttling)
 	 */
 	public function getPending($limit = 50) {
+		$safeLimit = max(1, min(1000, (int)$limit));
 		$stmt = $this->db->prepare("
 			SELECT * FROM sms_queue
 			WHERE status = 'pending' AND retry_count < 3
 			ORDER BY created_at ASC
-			LIMIT ?
+			LIMIT {$safeLimit}
 		");
-		$stmt->execute([$limit]);
+		$stmt->execute();
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
 
@@ -41,13 +42,14 @@ class SMSQueue {
 	 * Get pending SMS for admin visibility (includes all retry counts)
 	 */
 	public function getPendingForReview($limit = 200) {
+		$safeLimit = max(1, min(1000, (int)$limit));
 		$stmt = $this->db->prepare("
 			SELECT * FROM sms_queue
 			WHERE status = 'pending'
 			ORDER BY created_at ASC
-			LIMIT ?
+			LIMIT {$safeLimit}
 		");
-		$stmt->execute([$limit]);
+		$stmt->execute();
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
 
@@ -74,13 +76,15 @@ class SMSQueue {
 			throw new InvalidArgumentException('Invalid SMS queue status.');
 		}
 
+		$safeLimit = max(1, min(1000, (int)$limit));
+
 		$stmt = $this->db->prepare("
 			SELECT * FROM sms_queue
 			WHERE status = ?
 			ORDER BY created_at DESC
-			LIMIT ?
+			LIMIT {$safeLimit}
 		");
-		$stmt->execute([$status, $limit]);
+		$stmt->execute([$status]);
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
 

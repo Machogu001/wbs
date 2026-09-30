@@ -36,6 +36,12 @@ try {
         exit;
     }
 
+    $normalizedMessage = strtolower(trim($message));
+    if ($normalizedMessage === 'script error.' || $normalizedMessage === 'script error') {
+        echo json_encode(['status' => 'ok', 'ignored' => true]);
+        exit;
+    }
+
     $message = substr($message, 0, 500);
     $source = substr($source, 0, 300);
     $line = (int)($data['line'] ?? 0);

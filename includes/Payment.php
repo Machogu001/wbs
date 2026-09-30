@@ -783,27 +783,9 @@ class Payment {
 					'queued' => !empty($smsResult['queued']),
 					'http_code' => isset($smsResult['http_code']) ? (int)$smsResult['http_code'] : null,
 				];
-				if ($errorLogger) {
-					$errorLogger->logSystemError('PaymentNotification', 'SMS confirmation status: ' . $smsStatus, __FILE__, __LINE__, array_merge($baseNotificationContext, [
-						'channel' => 'sms',
-						'status' => $smsStatus,
-						'phone_number' => $recipientPhone,
-						'result' => $smsResult,
-					]));
-				}
 
 				if ($smsStatus === 'queued') {
 					$status['warnings'][] = 'SMS confirmation was queued for delivery.';
-					if ($errorLogger) {
-						$errorLogger->logSystemError('PaymentNotification', 'SMS confirmation queued for delivery.', __FILE__, __LINE__, [
-							'payment_id' => $paymentId,
-							'user_id' => $userId,
-							'phone_number' => $recipientPhone,
-							'payment_method' => $paymentMethod,
-							'message' => $messageText,
-							'result' => $smsResult,
-						]);
-					}
 				} elseif ($smsStatus === 'failed') {
 					$status['warnings'][] = 'SMS confirmation could not be sent.';
 					if ($errorLogger) {
@@ -832,12 +814,6 @@ class Payment {
 			}
 		} else {
 			$status['warnings'][] = 'Customer phone number is missing, so no SMS confirmation was sent.';
-			if ($errorLogger) {
-				$errorLogger->logSystemError('PaymentNotification', 'SMS confirmation skipped: missing phone number.', __FILE__, __LINE__, array_merge($baseNotificationContext, [
-					'channel' => 'sms',
-					'status' => 'skipped',
-				]));
-			}
 		}
 
 		if (!empty($user['email'])) {
@@ -847,16 +823,16 @@ class Payment {
 				$emailResult = $email->queue((string)$user['email'], 'Payment received', $messageText, 'payment_confirmation');
 				$emailStatus = !empty($emailResult['success']) ? 'queued' : 'failed';
 				$status['email'] = ['status' => $emailStatus];
-				if ($errorLogger) {
-					$errorLogger->logSystemError('PaymentNotification', 'Email confirmation status: ' . $emailStatus, __FILE__, __LINE__, array_merge($baseNotificationContext, [
-						'channel' => 'email',
-						'status' => $emailStatus,
-						'email' => (string)$user['email'],
-						'result' => $emailResult,
-					]));
-				}
 				if ($emailStatus === 'failed') {
 					$status['warnings'][] = 'Email confirmation could not be queued.';
+					if ($errorLogger) {
+						$errorLogger->logSystemError('PaymentNotification', 'Email confirmation failed to queue.', __FILE__, __LINE__, array_merge($baseNotificationContext, [
+							'channel' => 'email',
+							'status' => 'failed',
+							'email' => (string)$user['email'],
+							'result' => $emailResult,
+						]));
+					}
 				}
 			} catch (Throwable $e) {
 				error_log('Payment email notification failed for payment #' . $paymentId . ': ' . $e->getMessage());
@@ -869,13 +845,6 @@ class Payment {
 						'email' => (string)$user['email'],
 					]));
 				}
-			}
-		} else {
-			if ($errorLogger) {
-				$errorLogger->logSystemError('PaymentNotification', 'Email confirmation skipped: missing email address.', __FILE__, __LINE__, array_merge($baseNotificationContext, [
-					'channel' => 'email',
-					'status' => 'skipped',
-				]));
 			}
 		}
 
