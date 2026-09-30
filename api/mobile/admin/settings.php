@@ -14,9 +14,9 @@ try {
 
     if ($method === 'GET') {
         $settings = $settingsService->getSettings();
-        $mobileApiKey = function_exists('getMobileApiKeyFromDatabase') ? getMobileApiKeyFromDatabase($db) : null;
+        $mobileApiKey = MpesaConfig::getMobileApiKeyFromDatabase($db);
         if ($mobileApiKey === null || $mobileApiKey === '') {
-            $mobileApiKey = getMobileApiKey();
+            $mobileApiKey = MpesaConfig::getMobileApiKey();
         }
         $maskedKey = $mobileApiKey ? str_repeat('*', max(0, strlen($mobileApiKey) - 4)) . substr($mobileApiKey, -4) : '';
         mobileApiJson(200, 'success', 'Settings loaded.', [

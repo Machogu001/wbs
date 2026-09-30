@@ -14,9 +14,16 @@ try {
 
     if ($method === 'GET') {
         $settings = $settingsService->getSettings();
+        $renderedTerms = BillingSettings::renderTermsContent($settings, 'https://wbs.bremac.co.ke/');
         mobileApiJson(200, 'success', 'Terms and conditions loaded.', [
             'terms_conditions_content' => $settings['terms_conditions_content'] ?? '',
-            'rendered_terms' => BillingSettings::renderTermsContent($settings, 'https://wbs.bremac.co.ke/'),
+            'rendered_terms' => $renderedTerms,
+            'rendered_terms_text' => BillingSettings::renderTermsPlainText($settings, 'https://wbs.bremac.co.ke/'),
+            'rendered_terms_sections' => BillingSettings::renderTermsSections($settings, 'https://wbs.bremac.co.ke/'),
+            'display_metadata' => [
+                'preferred_format' => 'sections',
+                'available_formats' => ['sections', 'text', 'html'],
+            ],
             'sample_templates' => BillingSettings::getTermsTemplateSamples(),
         ]);
     }

@@ -65,6 +65,12 @@ try {
 				['value' => 'industrial', 'label' => 'Industrial'],
 			],
 			'company_name' => (string)($settings['company_name'] ?? ''),
+			'terms_conditions' => [
+				'html' => BillingSettings::renderTermsContent($settings, mobileApiBuildAbsoluteUrl('/')),
+				'text' => BillingSettings::renderTermsPlainText($settings, mobileApiBuildAbsoluteUrl('/')),
+				'sections' => BillingSettings::renderTermsSections($settings, mobileApiBuildAbsoluteUrl('/')),
+				'preferred_format' => 'sections',
+			],
 		]);
 	}
 

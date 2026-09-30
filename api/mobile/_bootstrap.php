@@ -27,11 +27,25 @@ require_once __DIR__ . '/../../includes/Email.php';
 function mobileApiJson(int $statusCode, string $status, string $message, array $data = []): void
 {
     http_response_code($statusCode);
-    echo json_encode([
+    $payload = [
         'status' => $status,
         'message' => $message,
         'data' => $data,
-    ]);
+    ];
+
+    $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($json === false) {
+        $json = json_encode([
+            'status' => 'error',
+            'message' => 'Unable to encode API response.',
+            'data' => [],
+        ]);
+        if ($json === false) {
+            $json = '{"status":"error","message":"Unable to encode API response.","data":{}}';
+        }
+    }
+
+    echo $json;
     exit;
 }
 

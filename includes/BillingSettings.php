@@ -208,6 +208,44 @@ class BillingSettings {
         return strtr($template, $replacements);
     }
 
+    public static function renderTermsPlainText(array $settings, string $baseUrl = 'https://wbs.bremac.co.ke/'): string
+    {
+        $html = self::renderTermsContent($settings, $baseUrl);
+        $text = preg_replace('/<\s*br\s*\/?>/i', "\n", $html);
+        $text = preg_replace('/<\/(p|h[1-6]|li|ul|ol)>/i', "\n", (string)$text);
+        $text = strip_tags((string)$text);
+        $decoded = html_entity_decode((string)$text, ENT_QUOTES, 'UTF-8');
+        $decoded = preg_replace('/\r\n?|\n{3,}/', "\n\n", (string)$decoded);
+        return trim((string)$decoded);
+    }
+
+    public static function renderTermsSections(array $settings, string $baseUrl = 'https://wbs.bremac.co.ke/'): array
+    {
+        $html = self::renderTermsContent($settings, $baseUrl);
+        if (!preg_match_all('/<h6>(.*?)<\/h6>(.*?)(?=<h6>|$)/is', $html, $matches, PREG_SET_ORDER)) {
+            $plain = self::renderTermsPlainText($settings, $baseUrl);
+            return $plain !== '' ? [['title' => 'Terms & Conditions', 'content' => $plain]] : [];
+        }
+
+        $sections = [];
+        foreach ($matches as $match) {
+            $title = trim(strip_tags((string)($match[1] ?? '')));
+            $contentHtml = trim((string)($match[2] ?? ''));
+            $contentText = preg_replace('/<\s*br\s*\/?>/i', "\n", $contentHtml);
+            $contentText = preg_replace('/<\/(p|li|ul|ol)>/i', "\n", (string)$contentText);
+            $contentText = trim(preg_replace('/\n{3,}/', "\n\n", html_entity_decode(strip_tags((string)$contentText), ENT_QUOTES, 'UTF-8')));
+            if ($title === '' && $contentText === '') {
+                continue;
+            }
+            $sections[] = [
+                'title' => $title,
+                'content' => $contentText,
+            ];
+        }
+
+        return $sections;
+    }
+
     public static function getDefaultTermsTemplate(): string
     {
         return <<<'HTML'

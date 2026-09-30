@@ -34,6 +34,23 @@ try {
     $methodStmt->execute([':from_sql' => $fromSql]);
     $methodRows = $methodStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
+    $paymentMethodOptions = array_map(static function (array $row): array {
+        $value = (string)($row['payment_method'] ?? 'mpesa');
+        $labels = [
+            'mpesa' => 'M-Pesa',
+            'cash' => 'Cash',
+            'bank' => 'Bank Transfer',
+            'card' => 'Card',
+            'cheque' => 'Cheque',
+            'wallet' => 'Wallet',
+            'other' => 'Other',
+        ];
+        return [
+            'value' => $value,
+            'label' => $labels[$value] ?? ucfirst($value),
+        ];
+    }, $methodRows);
+
     $paymentsStmt = $db->prepare("SELECT p.*, u.full_name, u.account_number, b.billing_month
         FROM payments p
         LEFT JOIN users u ON u.id = p.user_id
@@ -63,6 +80,43 @@ try {
                 'total_amount' => (float)($row['total_amount'] ?? 0),
             ];
         }, $methodRows),
+        'period_options' => [
+            ['value' => 7, 'label' => 'Last 7 days'],
+            ['value' => 14, 'label' => 'Last 14 days'],
+            ['value' => 30, 'label' => 'Last 30 days'],
+            ['value' => 60, 'label' => 'Last 60 days'],
+            ['value' => 90, 'label' => 'Last 90 days'],
+        ],
+        'payment_method_options' => $paymentMethodOptions,
+        'field_metadata' => [
+            'days' => [
+                'input_type' => 'dropdown',
+                'options' => [
+                    ['value' => 7, 'label' => 'Last 7 days'],
+                    ['value' => 14, 'label' => 'Last 14 days'],
+                    ['value' => 30, 'label' => 'Last 30 days'],
+                    ['value' => 60, 'label' => 'Last 60 days'],
+                    ['value' => 90, 'label' => 'Last 90 days'],
+                ],
+                'default_value' => $days,
+            ],
+            'limit' => [
+                'input_type' => 'dropdown',
+                'options' => [
+                    ['value' => 10, 'label' => '10 records'],
+                    ['value' => 20, 'label' => '20 records'],
+                    ['value' => 50, 'label' => '50 records'],
+                    ['value' => 100, 'label' => '100 records'],
+                ],
+                'default_value' => $limit,
+            ],
+        ],
+        'summary_cards' => [
+            ['key' => 'total_collected', 'label' => 'Total Collected', 'value' => (float)($summary['total_collected'] ?? 0)],
+            ['key' => 'completed_collected', 'label' => 'Completed Payments', 'value' => (float)($summary['completed_collected'] ?? 0)],
+            ['key' => 'customers_served', 'label' => 'Customers Served', 'value' => (int)($summary['customers_served'] ?? 0)],
+            ['key' => 'total_payments', 'label' => 'Payment Count', 'value' => (int)($summary['total_payments'] ?? 0)],
+        ],
         'recent_payments' => array_map(static function (array $row): array {
             return mobileApiFormatPayment($row) + [
                 'full_name' => (string)($row['full_name'] ?? ''),
