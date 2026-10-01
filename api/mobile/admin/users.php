@@ -264,6 +264,36 @@ try {
             if (!$existingUser || strtolower((string)($existingUser['role'] ?? '')) !== 'customer') {
                 mobileApiJson(404, 'error', 'User not found.');
             }
+            $unchangeableText = static function ($value): string {
+                return trim((string)($value ?? ''));
+            };
+            $lockedEditFields = [
+                'customer_type' => [
+                    $unchangeableText($existingUser['customer_type'] ?? 'individual') ?: 'individual',
+                    in_array($customerType, ['individual', 'company'], true) ? $customerType : 'individual',
+                    'Customer type cannot be changed from the edit customer form.',
+                ],
+                'company_name' => [
+                    $unchangeableText($existingUser['company_name'] ?? ''),
+                    $companyName,
+                    'Company name cannot be changed from the edit customer form.',
+                ],
+                'contact_person_name' => [
+                    $unchangeableText($existingUser['contact_person_name'] ?? ''),
+                    $contactPersonName,
+                    'Contact person cannot be changed from the edit customer form.',
+                ],
+                'company_registration_number' => [
+                    $unchangeableText($existingUser['company_registration_number'] ?? ''),
+                    $companyRegistrationNumber,
+                    'Company registration number cannot be changed from the edit customer form.',
+                ],
+            ];
+            foreach ($lockedEditFields as $fieldName => [$currentValue, $requestedValue, $message]) {
+                if (array_key_exists($fieldName, $data) && $unchangeableText($requestedValue) !== $unchangeableText($currentValue)) {
+                    mobileApiJson(422, 'error', $message);
+                }
+            }
 
             $stmtCheck = $db->prepare('SELECT id FROM users WHERE phone_number = :phone AND id <> :id LIMIT 1');
             $stmtCheck->execute([':phone' => $phoneNumber, ':id' => $userId]);
@@ -279,7 +309,7 @@ try {
                 mobileApiJson(422, 'error', 'The meter number is already assigned to another user.');
             }
 
-            $sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, customer_type = :customer_type, company_name = :company_name, contact_person_name = :contact_person_name, company_registration_number = :company_registration_number, meter_number = :meter_number, connection_type = :connection_type, unit_rate = :unit_rate, location_label = :location_label, latitude = :latitude, longitude = :longitude';
+            $sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, meter_number = :meter_number, connection_type = :connection_type, unit_rate = :unit_rate, location_label = :location_label, latitude = :latitude, longitude = :longitude';
             $params = [
                 ':full_name' => $fullName,
                 ':phone_number' => $phoneNumber,
@@ -287,10 +317,6 @@ try {
                 ':id_number' => $idNumber,
                 ':address' => $address,
                 ':tax_pin' => $taxPin !== '' ? $taxPin : null,
-                ':customer_type' => in_array($customerType, ['individual', 'company'], true) ? $customerType : 'individual',
-                ':company_name' => $companyName !== '' ? $companyName : null,
-                ':contact_person_name' => $contactPersonName !== '' ? $contactPersonName : null,
-                ':company_registration_number' => $companyRegistrationNumber !== '' ? $companyRegistrationNumber : null,
                 ':meter_number' => $meterNumber,
                 ':connection_type' => $connectionType,
                 ':unit_rate' => $unitRate,

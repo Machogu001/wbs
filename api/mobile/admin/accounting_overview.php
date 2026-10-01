@@ -48,6 +48,15 @@ try {
                 mobileApiJson(422, 'error', 'Code, name, and type are required.');
             }
             if ($accountId > 0) {
+                $existingStmt = $db->prepare('SELECT code FROM chart_of_accounts WHERE id = :id LIMIT 1');
+                $existingStmt->execute([':id' => $accountId]);
+                $existingCode = $existingStmt->fetchColumn();
+                if ($existingCode === false) {
+                    mobileApiJson(404, 'error', 'Account not found.');
+                }
+                if ($code !== (string)$existingCode) {
+                    mobileApiJson(422, 'error', 'The account code cannot be changed after the account is created.');
+                }
                 $accounting->updateAccount($accountId, $name, $type, $normalBalance, $parentId > 0 ? $parentId : null, $description !== '' ? $description : null, $isActive);
                 mobileApiJson(200, 'success', 'Account updated.');
             }
