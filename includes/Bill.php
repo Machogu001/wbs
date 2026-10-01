@@ -57,6 +57,15 @@ class Bill {
 	}
 
 	public function createBillForUser($user_id, $account_number, $current_reading, $billing_month, $due_date, $rate_per_unit, $service_charge, $status = 'pending', ?string $meter_number = null) {
+		$billing_month = trim((string)$billing_month);
+		$due_date = trim((string)$due_date);
+		if ($billing_month === '') {
+			$billing_month = date('Y-m-01', strtotime('first day of last month'));
+		}
+		if ($due_date === '') {
+			$due_date = date('Y-m-d', strtotime('+3 days'));
+		}
+
 		// Check credit before creating bill
 		$credit = new CustomerCredit($this->conn);
 		$creditProfile = $credit->getProfile($user_id);
@@ -200,6 +209,46 @@ class Bill {
 			'success' => false,
 			'message' => 'Failed to create bill'
 		];
+	}
+
+	public static function buildBillNotificationMessage(
+		array $user,
+		array $billResult,
+		string $dueDate,
+		float $previousBalance,
+		float $totalToPay,
+		string $paybill,
+		string $paymentUrl,
+		?string $billDate = null
+	): string {
+		$clientName = trim((string)($user['full_name'] ?? ''));
+		if ($clientName === '') {
+			$clientName = trim((string)($user['company_name'] ?? ''));
+		}
+		if ($clientName === '') {
+			$clientName = trim((string)($user['account_number'] ?? 'Client'));
+		}
+
+		$accountNumber = trim((string)($user['account_number'] ?? ''));
+		$resolvedBillDate = trim((string)($billDate ?? ''));
+		if ($resolvedBillDate === '') {
+			$resolvedBillDate = date('d-m-Y');
+		}
+
+		return "Dear {$clientName},\n\n"
+			. 'Your water bill is KES ' . number_format((float)($billResult['amount'] ?? 0), 2) . ".\n\n"
+			. 'AC: ' . $accountNumber . "\n"
+			. 'Bill Date: ' . $resolvedBillDate . "\n"
+			. 'Reading: ' . number_format((float)($billResult['current_reading'] ?? 0), 2) . "\n"
+			. 'Units: ' . number_format((float)($billResult['consumption'] ?? 0), 2) . "\n"
+			. 'Service Fee: KES ' . number_format((float)($billResult['service_charge'] ?? 0), 2) . "\n"
+			. 'Prev Bal: KES ' . number_format($previousBalance, 2) . "\n"
+			. 'Total: KES ' . number_format($totalToPay, 2) . "\n"
+			. 'Due: ' . date('d-m-Y', strtotime($dueDate)) . "\n\n"
+			. 'Paybill: ' . $paybill . "\n"
+			. 'Acc: ' . $accountNumber . "\n"
+			. 'Pay online: ' . $paymentUrl . "\n"
+			. 'Thank you.';
 	}
 
 	public function createRegistrationFeeBill($user_id, $account_number, $amount, $due_date, $status = 'pending') {

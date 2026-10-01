@@ -113,18 +113,16 @@ try {
 
     $payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
     $billDate = date('d-m-Y');
-    $messageText = 'AC: ' . (string)$user['account_number'] . "\n"
-        . 'BillDate: ' . $billDate . "\n"
-        . 'CurRead: ' . number_format((float)$billResult['current_reading'], 2) . "\n"
-        . 'PrevRead: ' . number_format((float)$billResult['previous_reading'], 2) . "\n"
-        . 'Units: ' . number_format((float)$billResult['consumption'], 2) . "\n"
-        . 'Bill: KES ' . number_format((float)$billResult['amount'], 2) . "\n"
-        . 'PrevBal: KES 0.00' . "\n"
-        . 'Total to Pay: KES ' . number_format((float)$billResult['amount'], 2) . "\n"
-        . 'DueDate: ' . date('d-m-Y', strtotime($dueDate)) . "\n"
-        . 'Paybill: ' . MpesaConfig::getShortCode() . "\n"
-        . 'Acc: ' . (string)$user['account_number'] . "\n"
-        . 'Pay online: ' . $payUrl;
+    $messageText = Bill::buildBillNotificationMessage(
+        $user,
+        $billResult,
+        $dueDate,
+        0.0,
+        (float)$billResult['amount'],
+        MpesaConfig::getShortCode(),
+        $payUrl,
+        $billDate
+    );
 
     try {
         $sms = new SMS($db);

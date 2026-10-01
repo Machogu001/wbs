@@ -96,8 +96,8 @@ try {
         $processEntry = static function (array $entry) use ($db, $userService, $readingService, $billService, $settings, $actor): array {
             $identifier = trim((string)($entry['account_or_meter'] ?? ''));
             $currentReading = (float)($entry['current_reading'] ?? 0);
-            $billingMonth = (string)($entry['billing_month'] ?? '');
-            $dueDate = (string)($entry['due_date'] ?? '');
+            $billingMonth = trim((string)($entry['billing_month'] ?? '')) ?: date('Y-m-01', strtotime('first day of last month'));
+            $dueDate = trim((string)($entry['due_date'] ?? '')) ?: date('Y-m-d', strtotime('+3 days'));
             if ($currentReading <= 0) {
                 return ['success' => false, 'message' => 'Current reading must be greater than 0.'];
             }
@@ -145,7 +145,15 @@ try {
             } catch (Throwable $e) {
                 error_log('Mobile API wallet auto-apply on bill creation failed: ' . $e->getMessage());
             }
-            $messageText = "AC: {$user['account_number']}\nBillDate: " . date('d-m-Y') . "\nCurRead: " . number_format((float)$billResult['current_reading'], 2) . "\nPrevRead: " . number_format((float)$billResult['previous_reading'], 2) . "\nUnits: " . number_format((float)$billResult['consumption'], 2) . "\nBill: KES " . number_format((float)$billResult['amount'], 2) . "\nPrevBal: KES 0.00\nTotal to Pay: KES " . number_format((float)$billResult['amount'], 2) . "\nDueDate: " . date('d-m-Y', strtotime($dueDate)) . "\nPaybill: " . MpesaConfig::getShortCode() . "\nAcc: {$user['account_number']}\nPay online: " . PaymentLink::generateLink((int)$billResult['bill_id']);
+            $messageText = Bill::buildBillNotificationMessage(
+                $user,
+                $billResult,
+                $dueDate,
+                0.0,
+                (float)$billResult['amount'],
+                MpesaConfig::getShortCode(),
+                PaymentLink::generateLink((int)$billResult['bill_id'])
+            );
             try {
                 (new SMS())->sendWithFallback((string)$user['phone_number'], $messageText, 'bill_notification');
             } catch (Throwable $e) {

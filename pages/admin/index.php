@@ -236,8 +236,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 	if (isset($_POST['action']) && $_POST['action'] === 'add_reading') {
 		$identifier = trim($_POST['account_or_meter']);
 		$current_reading = (float)$_POST['current_reading'];
-		$billing_month = $_POST['billing_month'];
-		$due_date = $_POST['due_date'];
+		$billing_month = trim((string)($_POST['billing_month'] ?? '')) ?: date('Y-m-01', strtotime('first day of last month'));
+		$due_date = trim((string)($_POST['due_date'] ?? '')) ?: date('Y-m-d', strtotime('+3 days'));
 
 		$userService = new User($db);
 		$readingService = new MeterReading($db);
@@ -350,18 +350,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 						$paybill = MpesaConfig::getShortCode();
 						$payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
 
-						$messageText = "AC: {$account}\n" .
-							"BillDate: {$billDate}\n" .
-							"CurRead: " . number_format($currentReading, 2) . "\n" .
-							"PrevRead: " . number_format($previousReading, 2) . "\n" .
-							"Units: " . number_format($units, 2) . "\n" .
-							"Bill: KES " . number_format($billAmount, 2) . "\n" .
-							"PrevBal: KES " . number_format($previousBalance, 2) . "\n" .
-							"Total to Pay: KES " . number_format($totalToPay, 2) . "\n" .
-							"DueDate: " . date('d-m-Y', strtotime($due_date)) . "\n" .
-							"Paybill: {$paybill}\n" .
-							"Acc: {$account}\n" .
-							"Pay online: {$payUrl}";
+						$messageText = Bill::buildBillNotificationMessage(
+							$user,
+							$billResult,
+							$due_date,
+							(float)$previousBalance,
+							(float)$totalToPay,
+							$paybill,
+							$payUrl,
+							$billDate
+						);
 
 						$sms->sendWithFallback($user['phone_number'], $messageText, 'bill_notification');
 						$reading_id = $readingService->createReading(

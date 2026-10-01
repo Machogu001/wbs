@@ -193,18 +193,16 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 	$paybill = MpesaConfig::getShortCode();
 	$payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
 
-	$messageText = "AC: {$account}\n" .
-		"BillDate: {$billDate}\n" .
-		"CurRead: " . number_format($currentReadingValue, 2) . "\n" .
-		"PrevRead: " . number_format($previousReading, 2) . "\n" .
-		"Units: " . number_format($units, 2) . "\n" .
-		"Bill: KES " . number_format($billAmount, 2) . "\n" .
-		"PrevBal: KES " . number_format($previousBalance, 2) . "\n" .
-		"Total to Pay: KES " . number_format($totalToPay, 2) . "\n" .
-		"DueDate: " . date('d-m-Y', strtotime($dueDate)) . "\n" .
-		"Paybill: {$paybill}\n" .
-		"Acc: {$account}\n" .
-		"Pay online: {$payUrl}";
+	$messageText = Bill::buildBillNotificationMessage(
+		$user,
+		$billResult,
+		$dueDate,
+		(float)$previousBalance,
+		(float)$totalToPay,
+		$paybill,
+		$payUrl,
+		$billDate
+	);
 
 	$sms->sendWithFallback($user['phone_number'], $messageText, 'bill_notification');
 
