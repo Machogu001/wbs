@@ -507,6 +507,22 @@ function mobileApiBuildAbsoluteUrl(string $path): string
     return $scheme . '://' . $host . $path;
 }
 
+function mobileApiDocumentUrl(string $type, int $billId, int $paymentId = 0): string
+{
+    if ($billId <= 0 && $paymentId <= 0) {
+        return '';
+    }
+
+    $query = ['type' => $type];
+    if ($type === 'receipt') {
+        $query['payment_id'] = $paymentId;
+    } else {
+        $query['bill_id'] = $billId;
+    }
+
+    return mobileApiBuildAbsoluteUrl('/api/mobile/document.php?' . http_build_query($query));
+}
+
 function mobileApiGetRegistrationPaymentData(PDO $db, int $userId): ?array
 {
     if ($userId <= 0) {
@@ -530,7 +546,7 @@ function mobileApiGetRegistrationPaymentData(PDO $db, int $userId): ?array
         'bill_status' => (string)($bill['status'] ?? 'pending'),
         'checkout_request_id' => (string)($registrationPayment['checkout_request_id'] ?? ''),
         'public_payment_url' => mobileApiBuildAbsoluteUrl(PaymentLink::generateRegistrationProformaLink($billId)),
-        'document_url' => mobileApiBuildAbsoluteUrl('/invoice?t=' . urlencode(PaymentLink::generateToken($billId)) . '&proforma=1'),
+        'document_url' => mobileApiDocumentUrl('proforma', $billId),
     ];
 }
 
@@ -610,7 +626,7 @@ function mobileApiFormatBill(Bill $billService, Payment $paymentService, array $
         'status' => (string)($bill['status'] ?? 'pending'),
         'due_date' => (string)($bill['due_date'] ?? ''),
         'public_payment_url' => $billId > 0 ? mobileApiBuildAbsoluteUrl($isRegistrationFee ? PaymentLink::generateRegistrationProformaLink($billId) : PaymentLink::generateLink($billId)) : '',
-        'document_url' => $billId > 0 ? mobileApiBuildAbsoluteUrl('/invoice?t=' . urlencode(PaymentLink::generateToken($billId)) . $documentSuffix) : '',
+        'document_url' => mobileApiDocumentUrl($documentSuffix !== '' ? 'proforma' : 'invoice', $billId),
     ];
 }
 

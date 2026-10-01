@@ -164,7 +164,7 @@ try {
                 'overall_key' => $overallKey,
                 'overall_label' => $overallLabel,
                 'open_url' => PaymentLink::generateRegistrationProformaLink((int)$row['bill_id']),
-                'document_url' => '/invoice?t=' . urlencode(PaymentLink::generateToken((int)$row['bill_id'])) . ($outstandingAmount > 0.01 ? '&proforma=1' : ''),
+                'document_url' => mobileApiDocumentUrl($outstandingAmount > 0.01 ? 'proforma' : 'invoice', (int)$row['bill_id']),
                 'payments_url' => '/admin/payments?account=' . urlencode((string)$row['account_number']),
                 'customer_url' => '/admin/users?edit_id=' . (int)$row['user_id'],
             ];
@@ -261,7 +261,7 @@ try {
                 'overall_key' => $overallKey,
                 'overall_label' => $overallLabel,
                 'open_url' => $registrationBillId > 0 ? PaymentLink::generateLink($registrationBillId) : '',
-                'document_url' => $registrationBillId > 0 ? '/invoice?t=' . urlencode(PaymentLink::generateToken($registrationBillId)) : '',
+                'document_url' => mobileApiDocumentUrl('invoice', $registrationBillId),
                 'payments_url' => '/admin/payments?account=' . urlencode((string)$row['account_number']),
                 'customer_url' => '/admin/users?edit_id=' . (int)$row['user_id'],
             ];

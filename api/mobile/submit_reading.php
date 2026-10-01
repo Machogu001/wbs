@@ -155,7 +155,7 @@ try {
             'id' => (int)$billResult['bill_id'],
             'amount' => (float)$billResult['amount'],
             'public_payment_url' => mobileApiBuildAbsoluteUrl($payUrl),
-            'document_url' => mobileApiBuildAbsoluteUrl('/invoice?t=' . urlencode(PaymentLink::generateToken((int)$billResult['bill_id']))),
+            'document_url' => mobileApiDocumentUrl('invoice', (int)$billResult['bill_id']),
         ],
     ]);
 } catch (Throwable $e) {

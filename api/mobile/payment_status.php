@@ -50,8 +50,8 @@ try {
 		'outstanding_amount' => $outstandingAmount,
 		'is_final' => $isFinal,
 		'is_successful' => strtolower((string)($payment['status'] ?? '')) === 'completed',
-		'receipt_url' => !empty($payment['bill_id']) ? mobileApiBuildAbsoluteUrl('/payment-receipt?t=' . urlencode(PaymentLink::generateToken((int)$payment['bill_id'])) . '&p=' . (int)$payment['id']) : '',
-		'receipt_pdf_url' => !empty($payment['bill_id']) ? mobileApiBuildAbsoluteUrl('/payment-receipt-pdf?t=' . urlencode(PaymentLink::generateToken((int)$payment['bill_id'])) . '&p=' . (int)$payment['id']) : '',
+		'receipt_url' => !empty($payment['bill_id']) && ($payment['status'] ?? '') === 'completed' ? mobileApiDocumentUrl('receipt', (int)$payment['bill_id'], (int)$payment['id']) : '',
+		'receipt_pdf_url' => !empty($payment['bill_id']) && ($payment['status'] ?? '') === 'completed' ? mobileApiDocumentUrl('receipt', (int)$payment['bill_id'], (int)$payment['id']) : '',
 	];
 
 	mobileApiJson(200, 'success', 'Payment status loaded.', [

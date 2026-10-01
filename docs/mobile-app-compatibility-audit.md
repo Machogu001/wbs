@@ -36,6 +36,7 @@ Status Legend
 | `/api/mobile/bill.php` | Bill detail | Aligned | App reads bill amounts, readings, line items, payments, and document links as provided. |
 | `/api/mobile/payments.php` | Customer payment list | Aligned | App reads `payments` and total count correctly. |
 | `/api/mobile/payment.php` | Payment detail | Aligned | App reads payment receipt fields and document links correctly. |
+| `/api/mobile/document.php` | Invoice, proforma and receipt PDFs | Aligned | Bearer-authenticated PDF stream used by every mobile `document_url`, `receipt_url` and `receipt_pdf_url`, so the app renders documents natively instead of loading website pages. |
 | `/api/mobile/meters.php` | Linked meters | Aligned | App uses `meters` array as returned. |
 | `/api/mobile/meter_readings.php` | Reading history | Aligned | App uses `meter_readings` and `photo_url` fields correctly. |
 | `/api/mobile/submit_reading.php` | Reading upload | Aligned | Multipart upload flow matches endpoint contract. |
