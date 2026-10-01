@@ -633,6 +633,8 @@ function mobileApiFormatUser(PDO $db, array $user): array
         'permissions' => mobileApiEffectivePermissions($db, $user),
         'must_change_password' => !empty($user['must_change_password']),
         'two_factor_enabled' => !empty($user['two_factor_enabled']),
+        'two_factor_method' => strtolower((string)($user['two_factor_method'] ?? 'sms')) === 'email' ? 'email' : 'sms',
+        'tax_pin' => (string)($user['tax_pin'] ?? ''),
         'theme_preference' => mobileApiNormalizeThemePreference($user['theme_preference'] ?? 'system'),
         'meters' => $meters,
     ];
