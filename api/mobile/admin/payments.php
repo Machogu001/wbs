@@ -27,7 +27,7 @@ try {
     $financeApproval = new FinanceApproval($db);
     $wallet = new ClientWallet($db);
     $settings = (new BillingSettings($db))->getSettings();
-    $canReceivePayments = mobileApiUserHasRole($actor, 'admin') || mobileApiUserHasPermission($db, (int)$actor['id'], 'receive_payments');
+    $canReceivePayments = mobileApiUserHasRole($actor, 'admin') || mobileApiUserHasPermission($db, $actor, 'receive_payments');
     $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
     if ($method === 'GET') {

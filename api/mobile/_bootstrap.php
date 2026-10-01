@@ -287,6 +287,30 @@ function mobileApiUserHasPermission(PDO $db, array $user, string $permission): b
     return in_array($permission, $permissionCache[$role], true);
 }
 
+// Every staff permission the website and mobile API check. Admins implicitly hold all of them.
+function mobileApiStaffPermissionKeys(): array
+{
+    return [
+        'view_customers', 'view_payments', 'receive_payments', 'view_invoicing', 'view_bill_detail',
+        'correct_bills', 'view_accounting', 'view_reports', 'manage_approvals', 'manage_demand_notices',
+        'manage_registration_proformas', 'handle_support', 'send_messages', 'manage_settings',
+    ];
+}
+
+// Effective permissions sent to the app so it shows the same features the website
+// grants this user. The API still enforces every permission server-side.
+function mobileApiEffectivePermissions(PDO $db, array $user): array
+{
+    if (mobileApiUserHasRole($user, 'customer')) {
+        return [];
+    }
+
+    return array_values(array_filter(
+        mobileApiStaffPermissionKeys(),
+        static fn(string $permission): bool => mobileApiUserHasPermission($db, $user, $permission)
+    ));
+}
+
 function mobileApiUserHasAnyPermission(PDO $db, array $user, array $permissions): bool
 {
     foreach ($permissions as $permission) {
@@ -592,6 +616,9 @@ function mobileApiFormatUser(PDO $db, array $user): array
         'connection_type' => (string)($user['connection_type'] ?? ''),
         'status' => (string)($user['status'] ?? ''),
         'role' => (string)($user['role'] ?? 'customer'),
+        'is_admin' => mobileApiUserHasRole($user, 'admin'),
+        'is_staff' => !mobileApiUserHasRole($user, 'customer'),
+        'permissions' => mobileApiEffectivePermissions($db, $user),
         'must_change_password' => !empty($user['must_change_password']),
         'two_factor_enabled' => !empty($user['two_factor_enabled']),
         'theme_preference' => mobileApiNormalizeThemePreference($user['theme_preference'] ?? 'system'),
