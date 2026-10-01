@@ -8,6 +8,30 @@ require_once __DIR__ . '/../../../includes/BillingSettings.php';
 require_once __DIR__ . '/../../../includes/Payment.php';
 require_once __DIR__ . '/../../../includes/FinanceApproval.php';
 require_once __DIR__ . '/../../../includes/ClientWallet.php';
+require_once __DIR__ . '/../../../includes/SMS.php';
+require_once __DIR__ . '/../../../includes/Email.php';
+require_once __DIR__ . '/../../../includes/PaymentLink.php';
+
+// Same "Meters: 123 (Label), ..." line the website shows under the account lookup.
+function mobileApiPaymentMeterLabels(?array $client): array
+{
+    if (!$client) {
+        return [];
+    }
+    $labels = [];
+    foreach (array_filter(explode('||', (string)($client['meter_details'] ?? ''))) as $segment) {
+        $parts = explode('::', (string)$segment, 2);
+        $number = trim((string)($parts[0] ?? ''));
+        $label = trim((string)($parts[1] ?? ''));
+        if ($number !== '') {
+            $labels[] = $number . ($label !== '' ? ' (' . $label . ')' : '');
+        }
+    }
+    if (!$labels && trim((string)($client['meter_number'] ?? '')) !== '') {
+        $labels[] = trim((string)$client['meter_number']);
+    }
+    return $labels;
+}
 
 function mobileApiResolvePaymentClient(User $userService, string $identifier): ?array
 {
@@ -65,6 +89,7 @@ try {
             'can_receive_payments' => $canReceivePayments,
             'currency' => $settings['currency_code'] ?? 'KES',
             'current_user' => $currentUser,
+            'meter_labels' => mobileApiPaymentMeterLabels($currentUser),
             'bills' => $userBills,
             'payments' => $userPayments,
             'payment_adjustments' => $paymentAdjustments,
@@ -145,6 +170,79 @@ try {
         $data = mobileApiReadJson();
         $action = trim((string)($data['action'] ?? ''));
 
+        if ($action === 'send_reminder') {
+            // Mirrors api/bills/send-reminder.php used by the "Remind" button on /admin/payments.
+            $billId = (int)($data['bill_id'] ?? 0);
+            $bill = $billId > 0 ? $billService->getById($billId) : null;
+            if (!$bill) {
+                mobileApiJson(404, 'error', 'Bill not found.');
+            }
+            if (!in_array((string)$bill['status'], ['pending', 'overdue'], true)) {
+                mobileApiJson(422, 'error', 'Payment reminders can only be sent for pending or overdue bills.');
+            }
+            $stmt = $db->prepare('SELECT id, full_name, phone_number, email, account_number FROM users WHERE id = ? LIMIT 1');
+            $stmt->execute([(int)$bill['user_id']]);
+            $client = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$client) {
+                mobileApiJson(404, 'error', 'User not found.');
+            }
+            $currency = (string)($settings['currency_code'] ?? 'KES');
+            $billingMonth = date('M Y', strtotime((string)$bill['billing_month']));
+            $amount = number_format((float)$bill['amount'], 2);
+            $dueDate = date('d/m/Y', strtotime((string)$bill['due_date']));
+            $isOverdue = strtotime((string)$bill['due_date']) < strtotime(date('Y-m-d'));
+            $paymentLink = '';
+            try {
+                $paymentLink = (string)PaymentLink::generateLink($billId);
+            } catch (Throwable $linkError) {
+                error_log('Payment link generation failed: ' . $linkError->getMessage());
+            }
+            $clientName = !empty($client['full_name']) ? (string)$client['full_name'] : 'Customer';
+            $smsText = $isOverdue
+                ? "Dear {$clientName}, this is a reminder that your {$billingMonth} water bill for Account {$client['account_number']} amounting to {$currency} {$amount} was due on {$dueDate} and is now overdue. Kindly settle the bill as soon as possible to avoid service interruption."
+                : "Dear {$clientName}, this is a reminder that your {$billingMonth} water bill for Account {$client['account_number']} amounting to {$currency} {$amount} is due on {$dueDate}. Kindly settle the bill on or before the due date to avoid service interruption.";
+            if ($paymentLink !== '') {
+                $smsText .= " Pay here: {$paymentLink}";
+            }
+            $emailText = "Dear {$clientName},\n\n"
+                . ($isOverdue ? "This is a reminder that your {$billingMonth} water bill is overdue for payment.\n\n" : "This is a reminder that your {$billingMonth} water bill is due for payment.\n\n")
+                . "Billing Details:\nAccount Number: {$client['account_number']}\nAmount Due: {$currency} {$amount}\nDue Date: {$dueDate}\n\n"
+                . ($isOverdue ? "Kindly settle the bill as soon as possible to avoid service interruption.\n\n" : "Kindly settle the bill on or before the due date to avoid service interruption.\n\n")
+                . ($paymentLink !== '' ? "Click the link below to pay now:\n{$paymentLink}\n\n" : '')
+                . "Thank you for your prompt attention to this matter.\n\nRegards,\nWater Billing System";
+
+            $sent = [];
+            if (!empty($client['phone_number'])) {
+                try {
+                    $smsResult = (new SMS($db))->sendWithFallback($client['phone_number'], $smsText, 'payment_reminder');
+                    if (!empty($smsResult['success']) || !empty($smsResult['queued'])) {
+                        $sent[] = 'SMS';
+                    }
+                } catch (Throwable $smsError) {
+                    error_log('Mobile reminder SMS failed: ' . $smsError->getMessage());
+                }
+            }
+            if (!empty($client['email'])) {
+                try {
+                    $emailResult = (new Email())->send($client['email'], "Payment Reminder - {$billingMonth} Water Bill", $emailText);
+                    if ($emailResult === true || (is_array($emailResult) && !empty($emailResult['success']))) {
+                        $sent[] = 'Email';
+                    }
+                } catch (Throwable $mailError) {
+                    error_log('Mobile reminder email failed: ' . $mailError->getMessage());
+                }
+            }
+            if (!$sent) {
+                mobileApiJson(500, 'error', 'Could not send reminder. No valid contact information available.');
+            }
+            mobileApiLogActivity($db, (int)$actor['id'], 'payment_reminder_sent', 'bill', $billId, 'Sent payment reminder to ' . $clientName, [
+                'bill_amount' => (float)$bill['amount'],
+                'billing_month' => $bill['billing_month'],
+                'reminders_sent' => $sent,
+            ]);
+            mobileApiJson(200, 'success', 'Payment reminder sent successfully via ' . implode(' and ', $sent) . '.', ['reminders_sent' => $sent]);
+        }
+
         if ($action === 'search_account') {
             $account = trim((string)($data['account_number'] ?? ''));
             if ($account === '') {
@@ -161,6 +259,8 @@ try {
             unset($billRow);
             mobileApiJson(200, 'success', 'Account found.', [
                 'current_user' => $currentUser,
+                'meter_labels' => mobileApiPaymentMeterLabels($currentUser),
+            'meter_labels' => mobileApiPaymentMeterLabels($currentUser),
                 'bills' => $userBills,
                 'payments' => $paymentService->getCompletedPaymentsByUserId((int)$currentUser['id']),
                 'payment_adjustments' => $paymentService->getAdjustmentsByUserId((int)$currentUser['id']),
