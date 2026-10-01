@@ -1,6 +1,6 @@
 <?php
 
-// Streams invoice, proforma and receipt PDFs to the mobile app using bearer-token
+// Streams invoice, proforma, receipt and statement PDFs to the mobile app using bearer-token
 // authentication, so the app can render documents natively instead of loading
 // website pages.
 
@@ -12,8 +12,22 @@ try {
     $user = mobileApiRequireUser($db);
 
     $type = strtolower(trim((string)($_GET['type'] ?? 'invoice')));
-    if (!in_array($type, ['invoice', 'proforma', 'receipt'], true)) {
+    if (!in_array($type, ['invoice', 'proforma', 'receipt', 'statement'], true)) {
         mobileApiJson(422, 'error', 'Unsupported document type.');
+    }
+
+    if ($type === 'statement') {
+        // Statements always belong to the authenticated account holder, as on the website.
+        $from = trim((string)($_GET['from'] ?? ''));
+        $to = trim((string)($_GET['to'] ?? ''));
+        $_GET = [
+            'from' => preg_match('/^\d{4}-\d{2}$/', $from) ? $from : '',
+            'to' => preg_match('/^\d{4}-\d{2}$/', $to) ? $to : '',
+        ];
+        $mobileStatementUser = $user;
+        header_remove('Content-Type');
+        require __DIR__ . '/../../pages/statement.php';
+        exit;
     }
 
     $billService = new Bill($db);

@@ -60,6 +60,7 @@ try {
         $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
         foreach ($rows as &$row) {
             $row['share_url'] = PaymentLink::generateRegistrationProformaLink((int)$row['bill_id']);
+            $row['document_url'] = mobileApiDocumentUrl('proforma', (int)$row['bill_id']);
             $row['outstanding_amount'] = $paymentService->getBillOutstandingAmount((int)$row['bill_id']);
         }
         unset($row);

@@ -1,8 +1,13 @@
 <?php
-session_start();
-if(!isset($_SESSION['user_id'])) {
-    header("Location: /login");
-    exit;
+// api/mobile/document.php includes this page after bearer-token authentication and
+// supplies the account holder in $mobileStatementUser instead of a website session.
+$mobileStatementUser = (isset($mobileStatementUser) && is_array($mobileStatementUser)) ? $mobileStatementUser : null;
+if ($mobileStatementUser === null) {
+    session_start();
+    if(!isset($_SESSION['user_id'])) {
+        header("Location: /login");
+        exit;
+    }
 }
 
 require_once __DIR__ . '/../config/database.php';
@@ -14,15 +19,18 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 $database = new Database();
 $db = $database->getConnection();
-$auth = new Auth($db);
-if (!$auth->isLoggedIn()) {
-    header("Location: /login");
-    exit;
+if ($mobileStatementUser === null) {
+    $auth = new Auth($db);
+    if (!$auth->isLoggedIn()) {
+        header("Location: /login");
+        exit;
+    }
 }
 if (!$db) {
     header("Location: /bills");
     exit;
 }
+$statementUserId = $mobileStatementUser !== null ? (int)($mobileStatementUser['id'] ?? 0) : (int)$_SESSION['user_id'];
 
 $billService = new Bill($db);
 $fromPeriod = isset($_GET['from']) ? trim((string)$_GET['from']) : '';
@@ -38,7 +46,7 @@ if (!preg_match('/^\d{4}-\d{2}$/', $toPeriod)) {
 $fromDate = $fromPeriod !== '' ? ($fromPeriod . '-01') : null;
 $toDate = $toPeriod !== '' ? date('Y-m-t', strtotime($toPeriod . '-01')) : null;
 
-$bills = $billService->getBillsByUser($_SESSION['user_id']);
+$bills = $billService->getBillsByUser($statementUserId);
 if ($fromDate !== null || $toDate !== null) {
     $bills = array_values(array_filter($bills, function (array $billRow) use ($fromDate, $toDate): bool {
         $month = isset($billRow['billing_month']) ? date('Y-m-01', strtotime((string)$billRow['billing_month'])) : null;
@@ -71,7 +79,7 @@ foreach ($bills as $bill) {
 
 use Dompdf\Dompdf;
 
-$user = $_SESSION['user_data'] ?? [];
+$user = $mobileStatementUser ?? ($_SESSION['user_data'] ?? []);
 $walletService = new ClientWallet($db);
 $walletBalance = $walletService->getBalance((int)($user['id'] ?? 0));
 $settingsService = new BillingSettings($db);
@@ -252,5 +260,5 @@ $dompdf = new Dompdf();
 $dompdf->loadHtml($html);
 $dompdf->setPaper('A4', 'portrait');
 $dompdf->render();
-$dompdf->stream($filename, ["Attachment" => true]);
+$dompdf->stream($filename, ["Attachment" => $mobileStatementUser === null]);
 exit;
