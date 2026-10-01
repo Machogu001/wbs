@@ -21,6 +21,8 @@ try {
 
     $token = $authService->issueAccessToken((int)$challenge['user_id'], $deviceName !== '' ? $deviceName : null);
     $requiresRegistrationPayment = (string)($challenge['status'] ?? 'active') !== 'active';
+    mobileApiLogActivity($db, (int)$challenge['user_id'], 'login', 'user', (int)$challenge['user_id'],
+        'User logged in via mobile app (two-step verification passed)', ['device_name' => $deviceName, 'two_factor' => true]);
 
     mobileApiJson(200, 'success', 'Login successful.', [
         'user' => mobileApiFormatUser($db, $challenge),

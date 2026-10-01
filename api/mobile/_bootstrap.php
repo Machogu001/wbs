@@ -24,6 +24,7 @@ require_once __DIR__ . '/../../includes/Mpesa.php';
 require_once __DIR__ . '/../../includes/PaymentLink.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/Email.php';
+require_once __DIR__ . '/../../includes/ActivityLog.php';
 
 function mobileApiGetUiMeta(): array
 {
@@ -64,8 +65,115 @@ function mobileApiGetUiMeta(): array
     return $uiMeta;
 }
 
+// ---------------------------------------------------------------------------
+// Activity log: app requests are recorded in the same activity_log table as the
+// website, with the gadget (app version, Android version, device model), IP,
+// location and network owner so staff see app users exactly like web users.
+// ---------------------------------------------------------------------------
+function mobileApiActivityMetadata(array $extra = []): array
+{
+    $userAgent = trim((string)($_SERVER['HTTP_USER_AGENT'] ?? ''));
+    $metadata = [
+        'channel' => 'mobile_app',
+        'device_type' => 'Mobile App',
+        'browser' => 'My Water Bill app',
+    ];
+    if (preg_match('#MyWaterBillApp/([^\s(]+)\s*\(Android\s*([^;)]*);?\s*([^)]*)\)#i', $userAgent, $match)) {
+        $metadata['app_version'] = $match[1];
+        $metadata['browser'] = 'My Water Bill app ' . $match[1];
+        $device = trim($match[3]);
+        $metadata['os'] = 'Android ' . trim($match[2]) . ($device !== '' ? ' (' . $device . ')' : '');
+        if ($device !== '') {
+            $metadata['device_model'] = $device;
+        }
+    } elseif (stripos($userAgent, 'android') !== false) {
+        $metadata['os'] = 'Android';
+    }
+
+    return array_merge($metadata, $extra);
+}
+
+function mobileApiLogActivity(PDO $db, ?int $userId, string $action, ?string $entityType = null, $entityId = null, string $description = '', array $metadata = []): void
+{
+    $GLOBALS['mobileApiActivityLogged'] = true;
+    try {
+        (new ActivityLog($db))->log(
+            $userId,
+            $action,
+            $entityType,
+            $entityId !== null && $entityId !== '' ? (int)$entityId : null,
+            $description,
+            mobileApiActivityMetadata($metadata)
+        );
+    } catch (Throwable $e) {
+        error_log('Mobile API activity log failed: ' . $e->getMessage());
+    }
+}
+
+// Every successful state-changing request made by a signed-in app user is logged
+// automatically, so new endpoints are covered without extra code. Endpoints that
+// log a more specific entry themselves set mobileApiActivityLogged first.
+function mobileApiAutoLogActivity(int $statusCode, string $message, array $data): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+
+    $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    $actor = $GLOBALS['mobileApiActor'] ?? null;
+    if ($method === 'GET' || $method === 'OPTIONS' || !is_array($actor) || $statusCode >= 400
+        || !empty($GLOBALS['mobileApiActivityLogged'])) {
+        return;
+    }
+
+    $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_FILENAME'] ?? ''));
+    $endpoint = preg_match('#/api/mobile/(.+)\.php$#', $script, $match) ? $match[1] : basename($script, '.php');
+    $payload = [];
+    $raw = file_get_contents('php://input');
+    if (is_string($raw) && $raw !== '') {
+        $decoded = json_decode($raw, true);
+        $payload = is_array($decoded) ? $decoded : [];
+    }
+    $payload += $_POST;
+
+    $requested = strtolower(trim((string)($payload['action'] ?? '')));
+    $endpointKey = str_replace(['/', '-'], '_', $endpoint);
+    $action = preg_match('/^[a-z0-9_]{2,60}$/', $requested) ? $requested : $endpointKey;
+    if (strpos($action, 'admin_') !== 0 && strpos($endpointKey, 'admin_') === 0 && $action !== $endpointKey) {
+        $action = $action . '_' . substr($endpointKey, 6);
+    }
+
+    $entityId = null;
+    foreach ([$data, $payload] as $source) {
+        foreach (['id', 'bill_id', 'payment_id', 'user_id', 'customer_id', 'complaint_id', 'reading_id'] as $key) {
+            if (isset($source[$key]) && is_scalar($source[$key]) && (int)$source[$key] > 0) {
+                $entityId = (int)$source[$key];
+                break 2;
+            }
+        }
+    }
+
+    $fields = array_values(array_diff(array_keys($payload), ['password', 'current_password', 'new_password', 'confirm_password', 'code', 'pin', 'otp']));
+    mobileApiLogActivity(
+        mobileApiGetDatabase(),
+        (int)($actor['id'] ?? 0) ?: null,
+        substr($action, 0, 100),
+        $endpointKey,
+        $entityId,
+        trim($message) !== '' ? $message . ' (via mobile app)' : 'Mobile app action: ' . $endpoint,
+        [
+            'endpoint' => 'api/mobile/' . $endpoint . '.php',
+            'method' => $method,
+            'fields' => array_slice($fields, 0, 30),
+        ]
+    );
+}
+
 function mobileApiJson(int $statusCode, string $status, string $message, array $data = []): void
 {
+    mobileApiAutoLogActivity($statusCode, $message, $data);
     http_response_code($statusCode);
     $payload = [
         'status' => $status,
@@ -237,6 +345,7 @@ function mobileApiRequireUser(PDO $db): array
     if (!$user) {
         mobileApiJson(401, 'error', 'Invalid or expired access token.');
     }
+    $GLOBALS['mobileApiActor'] = $user;
 
     if (isset($user['password_hash'])) {
         unset($user['password_hash']);

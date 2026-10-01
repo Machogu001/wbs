@@ -43,7 +43,7 @@ try {
             mobileApiJson(500, 'error', 'Failed to save Terms & Conditions.');
         }
         try {
-            (new ActivityLog($db))->log((int)$actor['id'], 'update_terms_conditions', 'billing_settings', 1, 'Updated terms and conditions content', ['content_length' => strlen($termsContent)]);
+            mobileApiLogActivity($db, (int)$actor['id'], 'update_terms_conditions', 'billing_settings', 1, 'Updated terms and conditions content', ['content_length' => strlen($termsContent)]);
         } catch (Throwable $e) {
         }
         mobileApiJson(200, 'success', 'Terms & Conditions updated successfully.');

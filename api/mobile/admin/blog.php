@@ -37,7 +37,6 @@ try {
         }
         $data = mobileApiReadJson();
         $action = trim((string)($data['action'] ?? ''));
-        $logger = new ActivityLog($db);
 
         if ($action === 'save_post') {
             $postId = (int)($data['post_id'] ?? 0);
@@ -51,11 +50,11 @@ try {
             }
             if ($postId > 0) {
                 $blog->updatePost($postId, $title, $body, $status, $excerpt, $coverImage);
-                $logger->log((int)$user['id'], 'update_blog_post', 'blog_post', $postId, 'Updated: ' . $title);
+                mobileApiLogActivity($db, (int)$user['id'], 'update_blog_post', 'blog_post', $postId, 'Updated: ' . $title);
                 mobileApiJson(200, 'success', 'Post updated.');
             }
             $newPostId = $blog->createPost((int)$user['id'], $title, $body, $status, $excerpt, $coverImage);
-            $logger->log((int)$user['id'], 'create_blog_post', 'blog_post', $newPostId, 'Created: ' . $title);
+            mobileApiLogActivity($db, (int)$user['id'], 'create_blog_post', 'blog_post', $newPostId, 'Created: ' . $title);
             mobileApiJson(201, 'success', 'Post created.', ['post_id' => $newPostId]);
         }
 
@@ -65,7 +64,7 @@ try {
                 mobileApiJson(422, 'error', 'A valid post ID is required.');
             }
             $blog->deletePost($postId);
-            $logger->log((int)$user['id'], 'delete_blog_post', 'blog_post', $postId, 'Deleted post #' . $postId);
+            mobileApiLogActivity($db, (int)$user['id'], 'delete_blog_post', 'blog_post', $postId, 'Deleted post #' . $postId);
             mobileApiJson(200, 'success', 'Post deleted.');
         }
 

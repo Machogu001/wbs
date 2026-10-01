@@ -20,6 +20,14 @@ try {
         $twoFactorMethod = 'sms';
     }
 
+    // Like the website profile page, phone/email changes must go through the OTP flow
+    // in contact_change.php; they cannot be changed directly here.
+    $storedPhone = trim((string)($user['phone_number'] ?? ''));
+    $storedEmail = trim((string)($user['email'] ?? ''));
+    if (($storedPhone !== '' && $phoneNumber !== $storedPhone) || ($storedEmail !== '' && strcasecmp($email, $storedEmail) !== 0)) {
+        mobileApiJson(422, 'error', 'Use Change phone number / Change email address to update contact details. An OTP is required.');
+    }
+
     if ($fullName === '') {
         mobileApiJson(422, 'error', 'Full name is required.');
     }

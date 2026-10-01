@@ -167,6 +167,7 @@ try {
 		} catch (Throwable $e) {
 		}
 
+		mobileApiLogActivity($db, !empty($user->id) ? (int)$user->id : null, 'register', 'user', $user->id ?? null, 'Staff user registered via mobile app', ['registration_type' => 'staff', 'account_number' => $accountNumber]);
 		mobileApiJson(201, 'success', 'Staff user registered successfully.', [
 			'registration_type' => 'staff',
 			'account_number' => $accountNumber,
@@ -288,6 +289,7 @@ try {
 		$payment->registration_id = $user->id;
 		$payment->create();
 
+		mobileApiLogActivity($db, !empty($user->id) ? (int)$user->id : null, 'register', 'user', $user->id ?? null, 'Client registration initiated via mobile app (awaiting M-Pesa payment)', ['registration_type' => 'client', 'account_number' => $accountNumber]);
 		mobileApiJson(201, 'success', 'Client registration initiated. Complete M-Pesa payment to activate account.', [
 			'registration_type' => 'client',
 			'account_number' => $accountNumber,
@@ -322,6 +324,7 @@ try {
 		}
 	}
 
+	mobileApiLogActivity($db, !empty($user->id) ? (int)$user->id : null, 'register', 'user', $user->id ?? null, 'Client registered via mobile app', ['registration_type' => 'client', 'account_number' => $accountNumber]);
 	mobileApiJson(201, 'success', 'Client registered successfully.', [
 		'registration_type' => 'client',
 		'account_number' => $accountNumber,

@@ -10,6 +10,20 @@ try {
     $requiresRegistrationPayment = (string)($user['status'] ?? 'active') !== 'active';
     $registrationPayment = $requiresRegistrationPayment ? mobileApiGetRegistrationPaymentData($db, (int)$user['id']) : null;
 
+    // Same "Last login / Last logout" figures the website profile page reads from activity_log.
+    $lastActivity = ['login' => null, 'logout' => null];
+    try {
+        $activityStmt = $db->prepare('SELECT created_at FROM activity_log WHERE user_id = :uid AND action = :action ORDER BY created_at DESC LIMIT 1');
+        foreach (array_keys($lastActivity) as $activityAction) {
+            $activityStmt->execute([':uid' => (int)$user['id'], ':action' => $activityAction]);
+            $lastActivity[$activityAction] = $activityStmt->fetchColumn() ?: null;
+        }
+    } catch (Throwable $activityError) {
+        error_log('Mobile API profile last activity failed: ' . $activityError->getMessage());
+    }
+    $formattedUser['last_login'] = $lastActivity['login'];
+    $formattedUser['last_logout'] = $lastActivity['logout'];
+
     mobileApiJson(200, 'success', 'Profile loaded.', [
         'user' => $formattedUser,
         'requires_registration_payment' => $requiresRegistrationPayment,

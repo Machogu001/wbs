@@ -69,7 +69,7 @@ try {
                 mobileApiJson(500, 'error', 'Failed to update billing settings.');
             }
             try {
-                (new ActivityLog($db))->log((int)$actor['id'], 'update_settings', 'billing_settings', 1, 'Updated billing and company settings');
+                mobileApiLogActivity($db, (int)$actor['id'], 'update_settings', 'billing_settings', 1, 'Updated billing and company settings');
             } catch (Throwable $e) {
             }
             mobileApiJson(200, 'success', 'Billing settings updated successfully.');

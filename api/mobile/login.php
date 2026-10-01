@@ -27,6 +27,9 @@ try {
 
     if (!$authRow || !password_verify($password, (string)($authRow['password_hash'] ?? ''))) {
         mobileApiRecordFailedLogin($db, $identifier, $clientIp);
+        if ($authRow) {
+            mobileApiLogActivity($db, (int)$authRow['id'], 'login_failed', 'user', (int)$authRow['id'], 'Failed login attempt from the mobile app (wrong password)', ['identifier' => $identifier]);
+        }
         mobileApiJson(401, 'error', 'Invalid account, phone/email or password.');
     }
 
@@ -35,6 +38,7 @@ try {
     $twoFactorEnabled = !empty($authRow['two_factor_enabled']);
     if ($twoFactorEnabled) {
         $challenge = $authService->startTwoFactorChallenge($authRow, $identifier, $clientIp);
+        mobileApiLogActivity($db, (int)$authRow['id'], 'two_factor_challenge', 'user', (int)$authRow['id'], 'Two-step verification code sent for mobile app login', ['identifier' => $identifier, 'device_name' => $deviceName]);
         mobileApiJson(200, 'two_factor_required', 'Verification code sent.', $challenge + [
             'device_name' => $deviceName,
         ]);
@@ -43,6 +47,9 @@ try {
     unset($authRow['password_hash']);
     $token = $authService->issueAccessToken((int)$authRow['id'], $deviceName !== '' ? $deviceName : null);
     $requiresRegistrationPayment = (string)($authRow['status'] ?? 'active') !== 'active';
+    mobileApiLogActivity($db, (int)$authRow['id'], 'login', 'user', (int)$authRow['id'],
+        $requiresRegistrationPayment ? 'User logged in via mobile app (registration payment required)' : 'User logged in via mobile app',
+        ['identifier' => $identifier, 'device_name' => $deviceName, 'status' => (string)($authRow['status'] ?? 'active')]);
 
     mobileApiJson(200, 'success', 'Login successful.', [
         'user' => mobileApiFormatUser($db, $authRow),

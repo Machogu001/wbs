@@ -11,7 +11,11 @@ try {
     }
 
     $authService = mobileApiGetAuthService($db);
+    $actor = $authService->authenticate($token);
     $authService->revokeAccessToken($token);
+    if (is_array($actor) && !empty($actor['id'])) {
+        mobileApiLogActivity($db, (int)$actor['id'], 'logout', 'user', (int)$actor['id'], 'User logged out of the mobile app');
+    }
     mobileApiJson(200, 'success', 'Logged out successfully.');
 } catch (Throwable $e) {
     error_log('Mobile API logout failed: ' . $e->getMessage());
