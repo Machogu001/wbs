@@ -29,6 +29,21 @@ function mobileApiEnsureRegistrationProformasTable(PDO $db): void
         KEY idx_registration_proforma_created_by (created_by_user_id),
         KEY idx_registration_proforma_setup_token (account_setup_token)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Same column upgrades the website applies, so older installs match the current schema.
+    $columns = [
+        'account_setup_token' => 'ALTER TABLE registration_proformas ADD COLUMN account_setup_token VARCHAR(96) NULL AFTER notes',
+        'account_setup_expires_at' => 'ALTER TABLE registration_proformas ADD COLUMN account_setup_expires_at DATETIME NULL AFTER account_setup_token',
+        'account_setup_completed_at' => 'ALTER TABLE registration_proformas ADD COLUMN account_setup_completed_at DATETIME NULL AFTER account_setup_expires_at',
+        'account_setup_sent_at' => 'ALTER TABLE registration_proformas ADD COLUMN account_setup_sent_at DATETIME NULL AFTER account_setup_completed_at',
+    ];
+    $check = $db->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'registration_proformas' AND column_name = :column_name");
+    foreach ($columns as $columnName => $sql) {
+        $check->execute([':column_name' => $columnName]);
+        if ((int)$check->fetchColumn() === 0) {
+            $db->exec($sql);
+        }
+    }
 }
 
 function mobileApiNextRegistrationAccountNumber(PDO $db, string $prefix): string
@@ -47,7 +62,12 @@ try {
     $db = mobileApiGetDatabase();
     $actor = mobileApiRequireUser($db);
     mobileApiRequireStaffPermission($db, $actor, ['manage_registration_proformas']);
-    mobileApiEnsureRegistrationProformasTable($db);
+    try {
+        mobileApiEnsureRegistrationProformasTable($db);
+    } catch (Throwable $e) {
+        // The table normally exists already; a schema check failure must not block the list.
+        error_log('Mobile API registration proformas schema check failed: ' . $e->getMessage());
+    }
     $userService = new User($db);
     $billService = new Bill($db);
     $paymentService = new Payment($db);
@@ -56,12 +76,30 @@ try {
     $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
     if ($method === 'GET') {
-        $stmt = $db->query("SELECT rp.*, u.account_number, u.full_name, u.phone_number, u.email, u.status AS user_status, b.amount AS bill_amount, b.status AS bill_status FROM registration_proformas rp INNER JOIN users u ON u.id = rp.user_id INNER JOIN bills b ON b.id = rp.bill_id ORDER BY rp.created_at DESC LIMIT 200");
+        $stmt = $db->query("SELECT rp.id, rp.user_id, rp.bill_id, rp.created_by_user_id, rp.notes, rp.created_at,
+            u.account_number, u.full_name, u.phone_number, u.email, u.status AS user_status, u.connection_type,
+            b.amount AS bill_amount, b.status AS bill_status, b.due_date
+            FROM registration_proformas rp
+            INNER JOIN users u ON u.id = rp.user_id
+            INNER JOIN bills b ON b.id = rp.bill_id
+            ORDER BY rp.created_at DESC, rp.id DESC
+            LIMIT 200");
         $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
         foreach ($rows as &$row) {
-            $row['share_url'] = PaymentLink::generateRegistrationProformaLink((int)$row['bill_id']);
-            $row['document_url'] = mobileApiDocumentUrl('proforma', (int)$row['bill_id']);
-            $row['outstanding_amount'] = $paymentService->getBillOutstandingAmount((int)$row['bill_id']);
+            $rowBillId = (int)($row['bill_id'] ?? 0);
+            $row['document_url'] = mobileApiDocumentUrl('proforma', $rowBillId);
+            try {
+                $row['outstanding_amount'] = $paymentService->getBillOutstandingAmount($rowBillId);
+            } catch (Throwable $e) {
+                $row['outstanding_amount'] = (float)($row['bill_amount'] ?? 0);
+            }
+            // A failing share link (short-URL service, signing secret) must not hide the whole list.
+            try {
+                $row['share_url'] = $rowBillId > 0 ? PaymentLink::generateRegistrationProformaLink($rowBillId) : '';
+            } catch (Throwable $e) {
+                error_log('Mobile API registration proforma link failed for bill ' . $rowBillId . ': ' . $e->getMessage());
+                $row['share_url'] = '';
+            }
         }
         unset($row);
         mobileApiJson(200, 'success', 'Registration proformas loaded.', [
@@ -238,6 +276,11 @@ try {
 
     mobileApiJson(405, 'error', 'Method not allowed.');
 } catch (Throwable $e) {
-    error_log('Mobile API admin registration proformas failed: ' . $e->getMessage());
-    mobileApiJson(500, 'error', 'Unable to process registration proformas right now.');
+    error_log('Mobile API admin registration proformas failed: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+    $message = 'Unable to process registration proformas right now.';
+    if (isset($actor) && is_array($actor) && mobileApiUserHasRole($actor, 'admin')) {
+        // Admins get the underlying reason so problems can be fixed without server log access.
+        $message .= ' (' . $e->getMessage() . ')';
+    }
+    mobileApiJson(500, 'error', $message);
 }
