@@ -12,6 +12,9 @@ try {
 
     if ($method === 'GET') {
         $status = trim((string)($_GET['status'] ?? ''));
+        if (!in_array($status, ['draft', 'sent', 'acknowledged', 'resolved', 'cancelled'], true)) {
+            $status = '';
+        }
         $limit = max(1, min(200, (int)($_GET['limit'] ?? 100)));
         mobileApiJson(200, 'success', 'Demand notices loaded.', [
             'summary' => $service->getSummary(),
@@ -27,7 +30,7 @@ try {
             mobileApiJson(200, 'success', $count . ' demand notice(s) generated.', ['generated' => $count]);
         }
 
-        if ($action === 'update_status') {
+        if ($action === 'update_status' || $action === 'mark_status') {
             $noticeId = (int)($data['notice_id'] ?? 0);
             $status = trim((string)($data['status'] ?? ''));
             $note = trim((string)($data['note'] ?? ''));

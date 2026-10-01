@@ -7,8 +7,119 @@ function mobileApiOnboardingStatusKey(array $row): string
     return (string)($row['overall_key'] ?? '');
 }
 
+function mobileApiOnboardingSendStk(PDO $db, Payment $paymentService, string $sourceType, int $sourceId, string $currency): string
+{
+    if ($sourceType === 'proforma') {
+        $stmt = $db->prepare('SELECT rp.id, rp.user_id, rp.bill_id, u.account_number, u.full_name, u.phone_number
+            FROM registration_proformas rp
+            INNER JOIN users u ON u.id = rp.user_id
+            WHERE rp.id = :id LIMIT 1');
+    } else {
+        $stmt = $db->prepare('SELECT um.id, um.user_id, um.registration_bill_id AS bill_id, u.account_number, u.full_name, u.phone_number
+            FROM user_meters um
+            INNER JOIN users u ON u.id = um.user_id
+            WHERE um.id = :id LIMIT 1');
+    }
+    $stmt->execute([':id' => $sourceId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!$row) {
+        throw new Exception($sourceType === 'proforma' ? 'Registration proforma not found.' : 'Additional meter record not found.');
+    }
+
+    $billId = (int)($row['bill_id'] ?? 0);
+    if ($billId <= 0) {
+        throw new Exception('No registration bill is linked to this onboarding item.');
+    }
+
+    $billService = new Bill($db);
+    $billRow = $billService->getById($billId);
+    if (!$billRow || !$billService->isRegistrationFeeBill($billRow)) {
+        throw new Exception('Registration fee bill not found for this onboarding item.');
+    }
+
+    $amountToCharge = $paymentService->getBillOutstandingAmount($billId);
+    if ($amountToCharge <= 0.01) {
+        throw new Exception('This onboarding fee is already fully settled.');
+    }
+    if (!preg_match('/^(?:254|\+254|0)?((?:7|1)\d{8})$/', (string)($row['phone_number'] ?? ''), $matches)) {
+        throw new Exception('A valid Kenyan M-Pesa phone number is required to send an STK push.');
+    }
+
+    $formattedPhone = '254' . $matches[1];
+    $response = (new Mpesa())->stkPush($formattedPhone, $amountToCharge, (string)$row['account_number'], 'Registration Fee');
+    if (isset($response['error'])) {
+        $details = '';
+        if (isset($response['http_code'])) {
+            $details .= ' (HTTP ' . $response['http_code'] . ')';
+        }
+        if (!empty($response['details']['errorMessage'])) {
+            $details .= ': ' . (string)$response['details']['errorMessage'];
+        }
+        throw new Exception('Payment initiation failed: ' . (string)$response['error'] . $details);
+    }
+
+    $payment = new Payment($db);
+    $payment->bill_id = $billId;
+    $payment->user_id = (int)$row['user_id'];
+    $payment->phone_number = $formattedPhone;
+    $payment->amount = $amountToCharge;
+    $payment->merchant_request_id = $response['MerchantRequestID'] ?? null;
+    $payment->checkout_request_id = $response['CheckoutRequestID'] ?? null;
+    $payment->status = 'pending';
+    $payment->registration_id = (int)$row['user_id'];
+    if (!$payment->create()) {
+        throw new Exception('Failed to save the pending payment request.');
+    }
+
+    return 'M-Pesa STK push sent to ' . (string)$row['full_name'] . ' for ' . $currency . ' ' . number_format($amountToCharge, 2) . '.';
+}
+
+function mobileApiOnboardingResendSetupLink(PDO $db, Payment $paymentService, int $proformaId, array $settings): string
+{
+    $stmt = $db->prepare('SELECT rp.id, rp.user_id, rp.bill_id, u.full_name, u.phone_number, u.email
+        FROM registration_proformas rp
+        INNER JOIN users u ON u.id = rp.user_id
+        WHERE rp.id = :id LIMIT 1');
+    $stmt->execute([':id' => $proformaId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!$row) {
+        throw new Exception('Registration proforma not found.');
+    }
+
+    if ($paymentService->getBillOutstandingAmount((int)$row['bill_id']) > 0.01) {
+        throw new Exception('The registration fee must be fully paid before resending the setup link.');
+    }
+
+    $setupData = $paymentService->reissueRegistrationAccountSetupToken((int)$row['user_id'], (int)$row['bill_id']);
+    if (!$setupData || empty($setupData['token'])) {
+        throw new Exception('Unable to generate a new setup link.');
+    }
+
+    $setupLink = mobileApiBuildAbsoluteUrl('/registration-account-setup?token=' . rawurlencode((string)$setupData['token']));
+    $companyName = !empty($settings['company_name']) ? (string)$settings['company_name'] : 'Water Billing System';
+    $supportPhone = !empty($settings['support_phone']) ? (string)$settings['support_phone'] : '254724400202';
+    $messageText = "Dear {$row['full_name']}, your registration fee has been confirmed. Set your portal password here: {$setupLink}\n\nUse the link within 7 days to activate your online access. For assistance contact {$supportPhone}.";
+
+    if (!empty($row['phone_number'])) {
+        try {
+            (new SMS($db))->sendWithFallback((string)$row['phone_number'], $messageText, 'registration_setup_link');
+        } catch (Throwable $e) {
+            error_log('Registration setup SMS failed: ' . $e->getMessage());
+        }
+    }
+    if (!empty($row['email'])) {
+        try {
+            $emailBody = "Hello {$row['full_name']},\n\nYour account setup link for {$companyName} is ready:\n{$setupLink}\n\nThis link expires in 7 days. If you need help, call {$supportPhone}.";
+            (new Email())->queue((string)$row['email'], 'Complete your account setup', $emailBody, 'registration_setup_link');
+        } catch (Throwable $e) {
+            error_log('Registration setup email failed: ' . $e->getMessage());
+        }
+    }
+
+    return 'Account setup link resent for ' . (string)$row['full_name'] . '.';
+}
+
 try {
-    mobileApiRequireMethod('GET');
     $db = mobileApiGetDatabase();
     $user = mobileApiRequireUser($db);
     mobileApiRequireStaffPermission($db, $user, ['manage_registration_proformas', 'view_customers']);
@@ -16,6 +127,38 @@ try {
     new ClientMeter($db);
     $paymentService = new Payment($db);
     $billService = new Bill($db);
+    $settings = (new BillingSettings($db))->getSettings();
+    $currency = !empty($settings['currency_code']) ? (string)$settings['currency_code'] : 'KES';
+    $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+
+    if ($method === 'POST') {
+        $data = mobileApiReadJson();
+        $action = trim((string)($data['tracker_action'] ?? $data['action'] ?? ''));
+        if ($action === 'send_stk') {
+            $sourceType = trim((string)($data['source_type'] ?? ''));
+            $sourceId = (int)($data['source_id'] ?? $data['record_id'] ?? 0);
+            if (!in_array($sourceType, ['proforma', 'meter'], true) || $sourceId <= 0) {
+                mobileApiJson(422, 'error', 'Invalid onboarding item selected.');
+            }
+            $message = mobileApiOnboardingSendStk($db, $paymentService, $sourceType, $sourceId, $currency);
+            mobileApiLogActivity($db, (int)($user['id'] ?? 0), 'onboarding_send_stk', $sourceType, $sourceId, $message);
+            mobileApiJson(200, 'success', $message);
+        }
+        if ($action === 'resend_setup_link') {
+            $proformaId = (int)($data['proforma_id'] ?? $data['record_id'] ?? 0);
+            if ($proformaId <= 0) {
+                mobileApiJson(422, 'error', 'Invalid registration proforma selected.');
+            }
+            $message = mobileApiOnboardingResendSetupLink($db, $paymentService, $proformaId, $settings);
+            mobileApiLogActivity($db, (int)($user['id'] ?? 0), 'onboarding_resend_setup_link', 'registration_proforma', $proformaId, $message);
+            mobileApiJson(200, 'success', $message);
+        }
+        mobileApiJson(422, 'error', 'Unsupported tracker action.');
+    }
+
+    if ($method !== 'GET') {
+        mobileApiJson(405, 'error', 'Method not allowed.');
+    }
 
     $typeFilter = strtolower(trim((string)($_GET['type'] ?? 'all')));
     if (!in_array($typeFilter, ['all', 'proforma', 'meter'], true)) {
@@ -34,6 +177,14 @@ try {
     $assigneeFilter = trim((string)($_GET['assignee'] ?? 'all'));
     $limit = max(1, min(100, (int)($_GET['limit'] ?? 20)));
     $page = max(1, (int)($_GET['page'] ?? 1));
+
+    $staffAssignees = [];
+    try {
+        $stmtStaff = $db->query("SELECT id, full_name, role FROM users WHERE role IN ('admin', 'reader', 'finance', 'support') ORDER BY full_name ASC");
+        $staffAssignees = $stmtStaff ? ($stmtStaff->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    } catch (Throwable $e) {
+        $staffAssignees = [];
+    }
 
     $dateFromSql = '';
     if ($dateFrom !== '') {
@@ -316,6 +467,7 @@ try {
         'total' => $total,
         'summary' => $summary,
         'assignee_summary' => array_values($assigneeSummary),
+        'staff_assignees' => $staffAssignees,
         'records' => array_map(static function (array $row) use ($paymentService, $billService): array {
             return [
                 'type' => (string)$row['type'],

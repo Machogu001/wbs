@@ -18,7 +18,12 @@ try {
         }
         $reconFromDate = trim((string)($_GET['recon_from'] ?? date('Y-m-01')));
         $reconToDate = trim((string)($_GET['recon_to'] ?? date('Y-m-d')));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $reconFromDate)) { $reconFromDate = date('Y-m-01'); }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $reconToDate)) { $reconToDate = date('Y-m-d'); }
         mobileApiJson(200, 'success', 'Accounting overview loaded.', [
+            'selected_type' => $selectedType,
+            'recon_from' => $reconFromDate,
+            'recon_to' => $reconToDate,
             'summary' => $accounting->getSummary(),
             'accounts' => $selectedType !== '' ? array_values(array_filter($accounting->getAccounts(false), static fn(array $a): bool => (string)($a['account_type'] ?? '') === $selectedType)) : $accounting->getAccounts(false),
             'trial_balance' => $accounting->getTrialBalance(),

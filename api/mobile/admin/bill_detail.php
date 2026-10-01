@@ -1,14 +1,20 @@
 <?php
 
 require_once __DIR__ . '/../_bootstrap.php';
+require_once __DIR__ . '/../../../includes/FinanceApproval.php';
+require_once __DIR__ . '/../../../includes/InstallmentPlan.php';
 
 try {
-    mobileApiRequireMethod('GET');
     $db = mobileApiGetDatabase();
     $user = mobileApiRequireUser($db);
-    mobileApiRequireStaffPermission($db, $user, ['view_bill_detail', 'view_payments', 'view_customers']);
+    mobileApiRequireStaffPermission($db, $user, ['view_bill_detail']);
+    $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    $data = $method === 'POST' ? mobileApiReadJson() : [];
 
-    $billId = (int)($_GET['id'] ?? 0);
+    $billId = (int)($_GET['id'] ?? $_GET['bill_id'] ?? 0);
+    if ($method === 'POST') {
+        $billId = (int)($data['bill_id'] ?? $billId);
+    }
     if ($billId <= 0) {
         mobileApiJson(422, 'error', 'A valid bill ID is required.');
     }
@@ -18,6 +24,40 @@ try {
     $bill = $billService->getById($billId);
     if (!$bill) {
         mobileApiJson(404, 'error', 'Bill not found.');
+    }
+    if ($method === 'POST') {
+        $action = trim((string)($data['action'] ?? ''));
+        $financeApproval = new FinanceApproval($db);
+        $submittedBy = (int)($user['id'] ?? 0);
+        if (in_array($action, ['request_writeoff', 'request_waiver'], true)) {
+            $result = $financeApproval->createBillWriteOffRequest(
+                $billId,
+                (float)($data['request_amount'] ?? 0),
+                $submittedBy,
+                trim((string)($data['reason'] ?? '')),
+                $action === 'request_waiver' ? 'waiver' : 'writeoff'
+            );
+            if (!$result) {
+                mobileApiJson(422, 'error', 'Could not submit approval request. Ensure amount is valid and bill has outstanding balance.');
+            }
+            mobileApiJson(200, 'success', 'Approval request submitted successfully.', ['bill_id' => $billId]);
+        }
+        if ($action === 'request_installment') {
+            $result = $financeApproval->createInstallmentPlanRequest(
+                $billId,
+                $submittedBy,
+                (float)($data['plan_amount'] ?? 0),
+                (int)($data['installment_count'] ?? 3),
+                trim((string)($data['frequency'] ?? 'monthly')),
+                trim((string)($data['start_date'] ?? date('Y-m-d'))),
+                trim((string)($data['plan_reason'] ?? $data['reason'] ?? ''))
+            );
+            if (!$result) {
+                mobileApiJson(422, 'error', 'Could not submit installment request. Check amount, dates, and outstanding balance.');
+            }
+            mobileApiJson(200, 'success', 'Installment approval request submitted successfully.', ['bill_id' => $billId]);
+        }
+        mobileApiJson(422, 'error', 'Unsupported bill detail action.');
     }
 
     $stmtUser = $db->prepare('SELECT * FROM users WHERE id = :id LIMIT 1');
@@ -45,6 +85,15 @@ try {
         ORDER BY created_at DESC");
     $stmtApprovals->execute([':entity_id' => $billId]);
     $approvals = $stmtApprovals->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $installmentService = new InstallmentPlan($db);
+    $latestInstallmentPlan = $installmentService->getLatestPlanByBillId($billId, ['active', 'completed']);
+    $installmentAllocationLedger = $latestInstallmentPlan ? $installmentService->getAllocationLedgerByPlanId((int)$latestInstallmentPlan['id']) : [];
+    foreach ($payments as &$paymentRow) {
+        $paymentRow['document_url'] = ((string)($paymentRow['status'] ?? '') === 'completed')
+            ? mobileApiDocumentUrl('receipt', (int)($paymentRow['bill_id'] ?? 0), (int)($paymentRow['id'] ?? 0))
+            : '';
+    }
+    unset($paymentRow);
 
     mobileApiJson(200, 'success', 'Bill detail loaded.', [
         'bill' => mobileApiFormatBill($billService, $paymentService, $bill) + [
@@ -52,6 +101,8 @@ try {
             'payments' => array_map('mobileApiFormatPayment', $payments),
             'credit_notes' => $credits,
             'approval_items' => $approvals,
+            'installment_plan' => $latestInstallmentPlan,
+            'installment_allocation_ledger' => $installmentAllocationLedger,
         ],
         'customer' => !empty($billUser) ? mobileApiFormatUser($db, $billUser) : null,
     ]);

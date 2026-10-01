@@ -37,6 +37,9 @@ try {
         foreach ($payments as &$payment) {
             $payment['receipt_token'] = !empty($payment['bill_id']) ? PaymentLink::generateToken((int)$payment['bill_id']) : '';
             $payment['is_mpesa_payment'] = strtolower((string)($payment['payment_method'] ?? '')) === 'mpesa' || trim((string)($payment['checkout_request_id'] ?? '')) !== '';
+            $payment['document_url'] = ((string)($payment['status'] ?? '') === 'completed' && !empty($payment['bill_id']))
+                ? mobileApiDocumentUrl('receipt', (int)$payment['bill_id'], (int)$payment['id'])
+                : '';
         }
         unset($payment);
         mobileApiJson(200, 'success', 'Payment transactions loaded.', ['counts' => $counts, 'payments' => $payments]);

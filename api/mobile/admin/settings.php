@@ -14,6 +14,16 @@ try {
 
     if ($method === 'GET') {
         $settings = $settingsService->getSettings();
+        $tariffPlans = $settingsService->listTariffPlans(false);
+        foreach ($tariffPlans as &$plan) {
+            $planId = (int)($plan['id'] ?? 0);
+            $plan['blocks'] = [];
+            if ($planId > 0 && method_exists($settingsService, 'getTariffPlanById')) {
+                $fullPlan = $settingsService->getTariffPlanById($planId);
+                $plan['blocks'] = is_array($fullPlan) ? (array)($fullPlan['blocks'] ?? []) : [];
+            }
+        }
+        unset($plan);
         $mobileApiKey = MpesaConfig::getMobileApiKeyFromDatabase($db);
         if ($mobileApiKey === null || $mobileApiKey === '') {
             $mobileApiKey = MpesaConfig::getMobileApiKey();
@@ -23,7 +33,7 @@ try {
             'settings' => $settings,
             'mobile_api_key_masked' => $maskedKey,
             'mobile_api_key' => !empty($_GET['include_api_key']) ? $mobileApiKey : null,
-            'tariff_plans' => $settingsService->listTariffPlans(false),
+            'tariff_plans' => $tariffPlans,
             'form_metadata' => [
                 'tariff_category_options' => [
                     ['value' => 'all', 'label' => 'All connections'],

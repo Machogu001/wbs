@@ -322,6 +322,23 @@ class SupportChat
         }
     }
 
+    public function markMessagesRead(int $threadId, string $readerType): bool
+    {
+        if ($threadId <= 0) {
+            return false;
+        }
+        $senderTypeToMark = $readerType === 'admin' ? 'user' : 'admin';
+        try {
+            $stmt = $this->conn->prepare("UPDATE {$this->messagesTable} SET is_read = 1 WHERE thread_id = :tid AND sender_type = :sender_type");
+            return $stmt->execute([
+                ':tid' => $threadId,
+                ':sender_type' => $senderTypeToMark,
+            ]);
+        } catch (\PDOException $e) {
+            return false;
+        }
+    }
+
     public function getThreadsForAdmin(int $limit = 20): array
     {
         try {
@@ -450,4 +467,3 @@ class SupportChat
         }
     }
 }
-

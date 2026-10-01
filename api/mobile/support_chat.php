@@ -91,6 +91,20 @@ try {
             mobileApiJson(200, 'success', 'Thread closed.');
         }
 
+        if ($action === 'mark_read') {
+            $threadId = (int)($data['thread_id'] ?? 0);
+            if ($threadId <= 0) {
+                mobileApiJson(422, 'error', 'A valid thread is required.');
+            }
+            if (!$isStaff && !$chat->isThreadOwnedByUser($threadId, $userId)) {
+                mobileApiJson(403, 'error', 'Forbidden.');
+            }
+            if (!$chat->markMessagesRead($threadId, $isStaff ? 'admin' : 'user')) {
+                mobileApiJson(500, 'error', 'Could not mark messages as read.');
+            }
+            mobileApiJson(200, 'success', 'Thread marked as read.');
+        }
+
         if ($action === 'set_availability') {
             if (!$isStaff) {
                 mobileApiJson(403, 'error', 'Forbidden.');

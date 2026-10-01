@@ -731,10 +731,17 @@ function mobileApiFormatUser(PDO $db, array $user): array
         'customer_type' => (string)($user['customer_type'] ?? 'individual'),
         'company_name' => (string)($user['company_name'] ?? ''),
         'contact_person_name' => (string)($user['contact_person_name'] ?? ''),
+        'company_registration_number' => (string)($user['company_registration_number'] ?? ''),
         'phone_number' => (string)($user['phone_number'] ?? ''),
         'email' => (string)($user['email'] ?? ''),
+        'id_number' => (string)($user['id_number'] ?? ''),
         'address' => (string)($user['address'] ?? ''),
+        'meter_number' => (string)($user['meter_number'] ?? ''),
         'connection_type' => (string)($user['connection_type'] ?? ''),
+        'unit_rate' => isset($user['unit_rate']) ? (float)$user['unit_rate'] : null,
+        'location_label' => (string)($user['location_label'] ?? ''),
+        'latitude' => isset($user['latitude']) ? (string)$user['latitude'] : '',
+        'longitude' => isset($user['longitude']) ? (string)$user['longitude'] : '',
         'status' => (string)($user['status'] ?? ''),
         'role' => (string)($user['role'] ?? 'customer'),
         'is_admin' => mobileApiUserHasRole($user, 'admin'),
@@ -796,6 +803,7 @@ function mobileApiFormatPayment(array $payment): array
         'account_number' => (string)($payment['account_number'] ?? ''),
         'payment_method' => (string)($payment['payment_method'] ?? 'mpesa'),
         'transaction_date' => (string)($payment['transaction_date'] ?? ''),
+        'document_url' => (string)($payment['document_url'] ?? ''),
     ];
 }
 

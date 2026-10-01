@@ -87,12 +87,13 @@ try {
         $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
         foreach ($rows as &$row) {
             $rowBillId = (int)($row['bill_id'] ?? 0);
-            $row['document_url'] = mobileApiDocumentUrl('proforma', $rowBillId);
             try {
                 $row['outstanding_amount'] = $paymentService->getBillOutstandingAmount($rowBillId);
             } catch (Throwable $e) {
                 $row['outstanding_amount'] = (float)($row['bill_amount'] ?? 0);
             }
+            $row['document_type'] = ((float)$row['outstanding_amount'] <= 0.01) ? 'invoice' : 'proforma';
+            $row['document_url'] = mobileApiDocumentUrl($row['document_type'], $rowBillId);
             // A failing share link (short-URL service, signing secret) must not hide the whole list.
             try {
                 $row['share_url'] = $rowBillId > 0 ? PaymentLink::generateRegistrationProformaLink($rowBillId) : '';

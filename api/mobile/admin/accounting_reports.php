@@ -11,8 +11,12 @@ try {
     $accounting = new Accounting($db);
     $from = trim((string)($_GET['recon_from'] ?? date('Y-01-01')));
     $to = trim((string)($_GET['recon_to'] ?? date('Y-m-d')));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) { $from = date('Y-01-01'); }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) { $to = date('Y-m-d'); }
 
     mobileApiJson(200, 'success', 'Accounting reports loaded.', [
+        'recon_from' => $from,
+        'recon_to' => $to,
         'balance_sheet' => $accounting->getBalanceSheet($to),
         'profit_and_loss' => $accounting->getProfitAndLoss($from, $to),
         'cash_flow' => $accounting->getCashFlow($from, $to),

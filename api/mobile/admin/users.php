@@ -40,14 +40,18 @@ try {
         $editId = (int)($_GET['edit_id'] ?? $_GET['user_id'] ?? 0);
 
         if ($search !== '') {
-            $users = $userService->searchByNameOrAccount($search, $limit);
+            $users = array_values(array_filter(
+                $userService->searchByNameOrAccount($search, $limit),
+                static fn(array $row): bool => strtolower((string)($row['role'] ?? 'customer')) === 'customer'
+            ));
         } else {
-            $stmt = $db->prepare("SELECT u.id, u.account_number, u.full_name, u.phone_number, u.meter_number, u.status, u.role,
+            $stmt = $db->prepare("SELECT u.id, u.account_number, u.full_name, u.phone_number, u.email, u.id_number, u.address, u.tax_pin,
+                u.meter_number, u.status, u.role, u.connection_type, u.unit_rate, u.location_label, u.latitude, u.longitude,
                 COALESCE((SELECT GROUP_CONCAT(DISTINCT um.meter_number ORDER BY um.is_primary DESC, um.created_at ASC, um.id ASC SEPARATOR ',') FROM user_meters um WHERE um.user_id = u.id AND um.status = 'active'), u.meter_number) AS meter_numbers,
                 COALESCE((SELECT GROUP_CONCAT(CONCAT(um.meter_number, '::', COALESCE(um.meter_label, '')) ORDER BY um.is_primary DESC, um.created_at ASC, um.id ASC SEPARATOR '||') FROM user_meters um WHERE um.user_id = u.id AND um.status = 'active'), CONCAT(COALESCE(u.meter_number, ''), '::')) AS meter_details
                 FROM users u
                 WHERE u.role = 'customer'
-                ORDER BY u.id DESC
+                ORDER BY u.full_name ASC
                 LIMIT :limit");
             $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
             $stmt->execute();
@@ -68,6 +72,7 @@ try {
                 'default_country_code' => '254',
                 'country_code_options' => mobileApiCountryCodeOptions($db),
                 'connection_type_options' => mobileApiConnectionTypeOptions(),
+                'customer_type_options' => mobileApiCustomerTypeOptions(),
                 'status_options' => mobileApiStatusOptions(),
             ],
         ]);
@@ -235,6 +240,10 @@ try {
             $idNumber = trim((string)($data['id_number'] ?? ''));
             $address = trim((string)($data['address'] ?? ''));
             $taxPin = trim((string)($data['tax_pin'] ?? ''));
+            $customerType = trim((string)($data['customer_type'] ?? 'individual'));
+            $companyName = trim((string)($data['company_name'] ?? ''));
+            $contactPersonName = trim((string)($data['contact_person_name'] ?? ''));
+            $companyRegistrationNumber = trim((string)($data['company_registration_number'] ?? ''));
             $meterNumber = mobileApiNormalizeMeter((string)($data['meter_number'] ?? ''));
             $connectionType = trim((string)($data['connection_type'] ?? 'domestic'));
             $unitRateInput = trim((string)($data['unit_rate'] ?? ''));
@@ -256,6 +265,12 @@ try {
                 mobileApiJson(404, 'error', 'User not found.');
             }
 
+            $stmtCheck = $db->prepare('SELECT id FROM users WHERE phone_number = :phone AND id <> :id LIMIT 1');
+            $stmtCheck->execute([':phone' => $phoneNumber, ':id' => $userId]);
+            if ($stmtCheck->fetch(PDO::FETCH_ASSOC)) {
+                mobileApiJson(422, 'error', 'The phone number is already registered to another user.');
+            }
+
             if ($meterNumber === '') {
                 $meterNumber = mobileApiNormalizeMeter((string)($existingUser['meter_number'] ?? $existingUser['account_number'] ?? ''));
             }
@@ -264,7 +279,7 @@ try {
                 mobileApiJson(422, 'error', 'The meter number is already assigned to another user.');
             }
 
-            $sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, meter_number = :meter_number, connection_type = :connection_type, unit_rate = :unit_rate, location_label = :location_label, latitude = :latitude, longitude = :longitude';
+            $sql = 'UPDATE users SET full_name = :full_name, phone_number = :phone_number, email = :email, id_number = :id_number, address = :address, tax_pin = :tax_pin, customer_type = :customer_type, company_name = :company_name, contact_person_name = :contact_person_name, company_registration_number = :company_registration_number, meter_number = :meter_number, connection_type = :connection_type, unit_rate = :unit_rate, location_label = :location_label, latitude = :latitude, longitude = :longitude';
             $params = [
                 ':full_name' => $fullName,
                 ':phone_number' => $phoneNumber,
@@ -272,6 +287,10 @@ try {
                 ':id_number' => $idNumber,
                 ':address' => $address,
                 ':tax_pin' => $taxPin !== '' ? $taxPin : null,
+                ':customer_type' => in_array($customerType, ['individual', 'company'], true) ? $customerType : 'individual',
+                ':company_name' => $companyName !== '' ? $companyName : null,
+                ':contact_person_name' => $contactPersonName !== '' ? $contactPersonName : null,
+                ':company_registration_number' => $companyRegistrationNumber !== '' ? $companyRegistrationNumber : null,
                 ':meter_number' => $meterNumber,
                 ':connection_type' => $connectionType,
                 ':unit_rate' => $unitRate,
@@ -356,6 +375,10 @@ try {
             $idNumber = trim((string)($data['id_number'] ?? ''));
             $address = trim((string)($data['address'] ?? ''));
             $taxPin = trim((string)($data['tax_pin'] ?? ''));
+            $customerType = trim((string)($data['customer_type'] ?? 'individual'));
+            $companyName = trim((string)($data['company_name'] ?? ''));
+            $contactPersonName = trim((string)($data['contact_person_name'] ?? ''));
+            $companyRegistrationNumber = trim((string)($data['company_registration_number'] ?? ''));
             $connectionType = trim((string)($data['connection_type'] ?? 'domestic'));
             $unitRateInput = trim((string)($data['unit_rate'] ?? ''));
             $unitRate = $unitRateInput !== '' ? (float)$unitRateInput : null;
@@ -400,6 +423,10 @@ try {
             $user->id_number = $idNumber;
             $user->address = $address;
             $user->tax_pin = $taxPin !== '' ? $taxPin : null;
+            $user->customer_type = in_array($customerType, ['individual', 'company'], true) ? $customerType : 'individual';
+            $user->company_name = $companyName !== '' ? $companyName : null;
+            $user->contact_person_name = $contactPersonName !== '' ? $contactPersonName : null;
+            $user->company_registration_number = $companyRegistrationNumber !== '' ? $companyRegistrationNumber : null;
             $user->meter_number = $meterNumber;
             $user->connection_type = $connectionType !== '' ? $connectionType : 'domestic';
             $user->unit_rate = $unitRate;

@@ -142,6 +142,22 @@ try {
             mobileApiJson(200, 'success', 'Inquiry deleted.');
         }
 
+        if ($action === 'delete_selected') {
+            if (!mobileApiUserHasRole($user, 'admin')) {
+                mobileApiJson(403, 'error', 'Forbidden.');
+            }
+            $ids = array_values(array_filter(array_map('intval', (array)($data['inquiry_ids'] ?? [])), static function (int $id): bool {
+                return $id > 0;
+            }));
+            if (empty($ids)) {
+                mobileApiJson(422, 'error', 'Select at least one inquiry to delete.');
+            }
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $stmt = $db->prepare("DELETE FROM support_inquiries WHERE id IN ({$placeholders})");
+            $stmt->execute($ids);
+            mobileApiJson(200, 'success', 'Selected inquiries deleted.');
+        }
+
         mobileApiJson(422, 'error', 'Unsupported support inquiry action.');
     }
 

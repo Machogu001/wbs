@@ -15,16 +15,16 @@ try {
         'view_accounting' => ['label' => 'View Accounting', 'description' => 'Access accounting journals'],
         'view_reports' => ['label' => 'View Reports', 'description' => 'Access financial reports'],
         'view_payments' => ['label' => 'View Payments', 'description' => 'View payments and transaction history'],
-        'receive_payments' => ['label' => 'Receive Payments', 'description' => 'Record manual payment receipts'],
+        'receive_payments' => ['label' => 'Receive Payments', 'description' => 'Record manual payment receipts for invoices and balances'],
         'view_invoicing' => ['label' => 'View Invoicing', 'description' => 'Access invoicing workspace'],
-        'manage_registration_proformas' => ['label' => 'Registration Proformas', 'description' => 'Create registration proformas'],
+        'manage_registration_proformas' => ['label' => 'Registration Proformas', 'description' => 'Create registration proformas and trigger payment collection for pending sign-ups'],
         'view_bill_detail' => ['label' => 'View Bill Detail', 'description' => 'View individual bill details'],
-        'correct_bills' => ['label' => 'Correct Bill Readings', 'description' => 'Fix wrongly entered meter readings'],
+        'correct_bills' => ['label' => 'Correct Bill Readings', 'description' => 'Fix wrongly entered meter readings and reconcile ledgers/wallet'],
         'manage_demand_notices' => ['label' => 'Demand Notices', 'description' => 'Access and manage demand notices'],
         'manage_approvals' => ['label' => 'Finance Approvals', 'description' => 'Access approval workflows'],
         'handle_support' => ['label' => 'Support Chat & Inquiries', 'description' => 'Access support chat and inquiry inbox'],
         'send_messages' => ['label' => 'Messaging / SMS', 'description' => 'Access messaging and bulk SMS tools'],
-        'manage_settings' => ['label' => 'Manage Settings', 'description' => 'Access system settings and secrets'],
+        'manage_settings' => ['label' => 'Manage Settings', 'description' => 'Access system settings, terms editor, and secret/API key management'],
     ];
     $roles = ['finance', 'reader', 'support'];
     $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));

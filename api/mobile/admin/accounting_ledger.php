@@ -25,6 +25,9 @@ try {
         $accountLedger = $selectedAccountId > 0 ? $accounting->getLedgerByAccount($selectedAccountId) : [];
         $journalEntries = $accounting->getJournalEntries(50);
         $selectedEntry = $selectedEntryId > 0 ? $accounting->getJournalEntryById($selectedEntryId) : null;
+        if ($selectedEntry === null && !empty($journalEntries)) {
+            $selectedEntry = $accounting->getJournalEntryById((int)$journalEntries[0]['id']);
+        }
 
         mobileApiJson(200, 'success', 'Accounting ledger loaded.', [
             'accounts' => $accounts,

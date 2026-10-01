@@ -7,7 +7,7 @@ require_once __DIR__ . '/../../../includes/SupportChat.php';
 try {
     $db = mobileApiGetDatabase();
     $user = mobileApiRequireUser($db);
-    mobileApiRequireStaffPermission($db, $user, ['send_messages', 'handle_support']);
+    mobileApiRequireStaffPermission($db, $user, ['send_messages']);
     $comms = new InternalComms($db);
     $chat = new SupportChat($db);
     $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
@@ -35,7 +35,7 @@ try {
         $data = mobileApiReadJson();
         $action = (string)($data['action'] ?? '');
 
-        if ($action === 'send_broadcast') {
+        if ($action === 'send_broadcast' || $action === 'send_client_broadcast') {
             $subject = trim((string)($data['subject'] ?? ''));
             $message = trim((string)($data['message'] ?? ''));
             $recipientGroup = (string)($data['recipient_group'] ?? 'clients');

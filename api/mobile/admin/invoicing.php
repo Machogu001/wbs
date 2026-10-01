@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../../includes/BillingSettings.php';
 require_once __DIR__ . '/../../../includes/MeterReading.php';
 require_once __DIR__ . '/../../../includes/SMS.php';
 require_once __DIR__ . '/../../../includes/PaymentLink.php';
+require_once __DIR__ . '/../../../includes/ClientWallet.php';
 
 try {
     $db = mobileApiGetDatabase();
@@ -17,9 +18,44 @@ try {
     $settings = (new BillingSettings($db))->getSettings();
 
     if ($method === 'GET') {
+        $billService = new Bill($db);
+        $clientsSummary = $billService->getUsersBillingSummary();
+        $totalClients = count($clientsSummary);
+        $clientsWithUnpaid = 0;
+        $paidClients = 0;
+        $totalUnpaidAmount = 0.0;
+        foreach ($clientsSummary as &$clientSummary) {
+            $lastBillId = (int)($clientSummary['last_bill_id'] ?? 0);
+            $totalUnpaid = (float)($clientSummary['total_unpaid'] ?? 0);
+            $clientSummary['id'] = (int)($clientSummary['id'] ?? 0);
+            $clientSummary['last_bill_id'] = $lastBillId;
+            $clientSummary['last_amount'] = $clientSummary['last_amount'] !== null ? (float)$clientSummary['last_amount'] : null;
+            $clientSummary['total_unpaid'] = $totalUnpaid;
+            $clientSummary['document_url'] = $lastBillId > 0 ? mobileApiDocumentUrl('invoice', $lastBillId) : '';
+            try {
+                $clientSummary['payment_url'] = $lastBillId > 0 ? mobileApiBuildAbsoluteUrl(PaymentLink::generateLink($lastBillId)) : '';
+            } catch (Throwable $e) {
+                $clientSummary['payment_url'] = '';
+            }
+            $totalUnpaidAmount += $totalUnpaid;
+            if ($totalUnpaid > 0) {
+                $clientsWithUnpaid++;
+            }
+            if (($clientSummary['last_status'] ?? '') === 'paid') {
+                $paidClients++;
+            }
+        }
+        unset($clientSummary);
         mobileApiJson(200, 'success', 'Invoicing workspace loaded.', [
             'default_billing_month' => date('Y-m-01', strtotime('first day of last month')),
             'default_due_date' => date('Y-m-d', strtotime('+3 days')),
+            'summary' => [
+                'total_clients' => $totalClients,
+                'clients_with_unpaid' => $clientsWithUnpaid,
+                'paid_clients' => $paidClients,
+                'total_unpaid_amount' => $totalUnpaidAmount,
+            ],
+            'clients_summary' => $clientsSummary,
             'field_metadata' => [
                 'account_or_meter' => [
                     'input_type' => 'autocomplete',
@@ -74,10 +110,51 @@ try {
             if (empty($billResult['success'])) {
                 return ['success' => false, 'message' => $billResult['message'] ?? 'Failed to create pending bill.'];
             }
+            try {
+                $walletService = new ClientWallet($db);
+                $walletBalance = $walletService->getBalance((int)$user['id']);
+                if ($walletBalance > 0.01) {
+                    $billOutstanding = (float)$billResult['amount'];
+                    $autoApply = round(min($walletBalance, $billOutstanding), 2);
+                    if ($autoApply > 0) {
+                        $walletRef = 'WALLET-' . date('YmdHis');
+                        $stmtWalletPayment = $db->prepare("INSERT INTO payments
+                            (bill_id, user_id, phone_number, payment_method, amount, mpesa_receipt, status, transaction_date, received_by_user_id, created_at)
+                            VALUES (?, ?, ?, 'wallet', ?, ?, 'completed', NOW(), ?, NOW())");
+                        $stmtWalletPayment->execute([
+                            (int)$billResult['bill_id'],
+                            (int)$user['id'],
+                            $user['phone_number'] ?? null,
+                            $autoApply,
+                            $walletRef,
+                            (int)$actor['id'],
+                        ]);
+                        $walletService->applyTowardsBill(
+                            (int)$user['id'],
+                            (int)$billResult['bill_id'],
+                            $autoApply,
+                            'Auto-applied to new bill #' . $billResult['bill_id'],
+                            (int)$actor['id']
+                        );
+                        if ($autoApply >= $billOutstanding - 0.01) {
+                            $stmtBillUpdate = $db->prepare("UPDATE bills SET status = 'paid' WHERE id = ?");
+                            $stmtBillUpdate->execute([(int)$billResult['bill_id']]);
+                        }
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log('Mobile API wallet auto-apply on bill creation failed: ' . $e->getMessage());
+            }
             $messageText = "AC: {$user['account_number']}\nBillDate: " . date('d-m-Y') . "\nCurRead: " . number_format((float)$billResult['current_reading'], 2) . "\nPrevRead: " . number_format((float)$billResult['previous_reading'], 2) . "\nUnits: " . number_format((float)$billResult['consumption'], 2) . "\nBill: KES " . number_format((float)$billResult['amount'], 2) . "\nPrevBal: KES 0.00\nTotal to Pay: KES " . number_format((float)$billResult['amount'], 2) . "\nDueDate: " . date('d-m-Y', strtotime($dueDate)) . "\nPaybill: " . MpesaConfig::getShortCode() . "\nAcc: {$user['account_number']}\nPay online: " . PaymentLink::generateLink((int)$billResult['bill_id']);
             try {
                 (new SMS())->sendWithFallback((string)$user['phone_number'], $messageText, 'bill_notification');
             } catch (Throwable $e) {
+            }
+            if (!empty($user['email'])) {
+                try {
+                    (new Email())->queue((string)$user['email'], 'New water bill generated', $messageText, 'bill_notification');
+                } catch (Throwable $e) {
+                }
             }
             $readingId = $readingService->createReading((int)$user['id'], (string)$user['account_number'], $meterNumber, $currentReading, $billingMonth, $dueDate, null, (int)$actor['id'], (int)$billResult['bill_id'], 'approved', (int)$actor['id']);
             return $readingId ? ['success' => true, 'account_number' => $user['account_number'], 'bill_id' => $billResult['bill_id']] : ['success' => false, 'message' => 'Failed to submit meter reading.'];
