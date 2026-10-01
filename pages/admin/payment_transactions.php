@@ -174,7 +174,7 @@ include __DIR__ . '/../../templates/header.php';
                                     <td><?php echo htmlspecialchars((string)($payment['etims_status'] ?? '-')); ?></td>
                                     <td>
                                         <?php if (($payment['status'] ?? '') === 'completed' && $receiptToken !== ''): ?>
-                                            <a class="btn btn-sm btn-outline-primary" href="/payment-receipt?t=<?php echo urlencode($receiptToken); ?>&p=<?php echo (int)$payment['id']; ?>">Receipt</a>
+                                            <a class="btn btn-sm btn-outline-primary" href="/payment-receipt-pdf?t=<?php echo urlencode($receiptToken); ?>&p=<?php echo (int)$payment['id']; ?>">Receipt PDF</a>
                                         <?php endif; ?>
                                         <?php $isMpesaPayment = strtolower((string)($payment['payment_method'] ?? '')) === 'mpesa' || trim((string)($payment['checkout_request_id'] ?? '')) !== ''; ?>
                                         <?php if (!$isMpesaPayment): ?>

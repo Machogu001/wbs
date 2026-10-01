@@ -260,19 +260,20 @@ function mobileApiUserHasRole(array $user, $roles): bool
     return $currentRole === strtolower((string)$roles);
 }
 
-function mobileApiUserHasPermission(PDO $db, array $user, string $permission): bool
+function mobileApiRolePermissions(PDO $db, string $role): array
 {
-    if (mobileApiUserHasRole($user, 'admin')) {
-        return true;
+    static $permissionCache = [];
+
+    $normalizedRole = strtolower(trim($role));
+    if ($normalizedRole === '') {
+        $normalizedRole = 'customer';
     }
 
-    static $permissionCache = [];
-    $role = strtolower((string)($user['role'] ?? 'customer'));
-    if (!array_key_exists($role, $permissionCache)) {
+    if (!array_key_exists($normalizedRole, $permissionCache)) {
         try {
             $stmt = $db->prepare('SELECT permission FROM role_permissions WHERE role = :role');
-            $stmt->execute([':role' => $role]);
-            $permissionCache[$role] = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+            $stmt->execute([':role' => $normalizedRole]);
+            $permissionCache[$normalizedRole] = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
         } catch (Throwable $e) {
             $fallback = [
                 'customer' => ['view_own_bills', 'submit_own_reading'],
@@ -280,11 +281,20 @@ function mobileApiUserHasPermission(PDO $db, array $user, string $permission): b
                 'finance' => ['view_customers', 'view_accounting', 'view_reports', 'view_payments', 'view_invoicing', 'view_bill_detail', 'manage_demand_notices', 'manage_approvals', 'manage_registration_proformas', 'send_messages', 'receive_payments'],
                 'support' => ['handle_support', 'view_customers', 'view_bill_detail', 'send_messages'],
             ];
-            $permissionCache[$role] = $fallback[$role] ?? [];
+            $permissionCache[$normalizedRole] = $fallback[$normalizedRole] ?? [];
         }
     }
 
-    return in_array($permission, $permissionCache[$role], true);
+    return $permissionCache[$normalizedRole];
+}
+
+function mobileApiUserHasPermission(PDO $db, array $user, string $permission): bool
+{
+    if (mobileApiUserHasRole($user, 'admin')) {
+        return true;
+    }
+
+    return in_array($permission, mobileApiRolePermissions($db, (string)($user['role'] ?? 'customer')), true);
 }
 
 // Every staff permission the website and mobile API check. Admins implicitly hold all of them.
@@ -601,6 +611,8 @@ function mobileApiFormatUser(PDO $db, array $user): array
 {
     $meterService = new ClientMeter($db);
     $meters = array_map('mobileApiFormatMeter', $meterService->listByUserId((int)$user['id']));
+    $role = (string)($user['role'] ?? 'customer');
+    $isAdmin = mobileApiUserHasRole($user, 'admin');
 
     return [
         'id' => (int)($user['id'] ?? 0),

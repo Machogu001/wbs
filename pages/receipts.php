@@ -70,8 +70,7 @@ include __DIR__ . '/../templates/header.php';
                                     <td><?php echo !empty($receipt['transaction_date']) ? htmlspecialchars(date('d-m-Y H:i', strtotime((string)$receipt['transaction_date']))) : '-'; ?></td>
                                     <td>
                                         <?php if ($receiptToken !== ''): ?>
-                                            <a class="btn btn-sm btn-outline-primary" href="/payment-receipt?t=<?php echo urlencode($receiptToken); ?>&p=<?php echo (int)$receipt['id']; ?>">View</a>
-                                            <a class="btn btn-sm btn-outline-secondary" href="/payment-receipt-pdf?t=<?php echo urlencode($receiptToken); ?>&p=<?php echo (int)$receipt['id']; ?>">PDF</a>
+                                            <a class="btn btn-sm btn-outline-primary" href="/payment-receipt-pdf?t=<?php echo urlencode($receiptToken); ?>&p=<?php echo (int)$receipt['id']; ?>">PDF</a>
                                         <?php else: ?>
                                             <span class="text-muted small">Receipt link unavailable</span>
                                         <?php endif; ?>
