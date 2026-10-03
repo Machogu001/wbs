@@ -31,6 +31,7 @@ $settingsService = null;
 if ($db) {
 	$settingsService = new BillingSettings($db);
 }
+$settings = $settingsService ? $settingsService->getSettings() : [];
 
 function resolveReadingClient(User $userService, string $identifier): array {
 	$identifier = trim($identifier);
@@ -201,7 +202,8 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 		(float)$totalToPay,
 		$paybill,
 		$payUrl,
-		$billDate
+		$billDate,
+		$settings['bill_notification_template'] ?? null
 	);
 
 	$sms->sendWithFallback($user['phone_number'], $messageText, 'bill_notification');

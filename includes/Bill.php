@@ -193,6 +193,7 @@ class Bill {
 			return [
 				'success' => true,
 				'bill_id' => $bill_id,
+				'billing_month' => $billing_month,
 				'previous_reading' => $previous_reading,
 				'current_reading' => (float)$current_reading,
 				'consumption' => $consumption,
@@ -219,7 +220,8 @@ class Bill {
 		float $totalToPay,
 		string $paybill,
 		string $paymentUrl,
-		?string $billDate = null
+		?string $billDate = null,
+		?string $template = null
 	): string {
 		$clientName = trim((string)($user['full_name'] ?? ''));
 		if ($clientName === '') {
@@ -235,20 +237,44 @@ class Bill {
 			$resolvedBillDate = date('d-m-Y');
 		}
 
-		return "Dear {$clientName},\n\n"
-			. 'Your water bill is KES ' . number_format((float)($billResult['amount'] ?? 0), 2) . ".\n\n"
-			. 'AC: ' . $accountNumber . "\n"
-			. 'Bill Date: ' . $resolvedBillDate . "\n"
-			. 'Reading: ' . number_format((float)($billResult['current_reading'] ?? 0), 2) . "\n"
-			. 'Units: ' . number_format((float)($billResult['consumption'] ?? 0), 2) . "\n"
-			. 'Service Fee: KES ' . number_format((float)($billResult['service_charge'] ?? 0), 2) . "\n"
-			. 'Prev Bal: KES ' . number_format($previousBalance, 2) . "\n"
-			. 'Total: KES ' . number_format($totalToPay, 2) . "\n"
-			. 'Due: ' . date('d-m-Y', strtotime($dueDate)) . "\n\n"
-			. 'Paybill: ' . $paybill . "\n"
-			. 'Acc: ' . $accountNumber . "\n"
-			. 'Pay online: ' . $paymentUrl . "\n"
-			. 'Thank you.';
+		$billingMonthValue = trim((string)($billResult['billing_month'] ?? ''));
+		if ($billingMonthValue === '') {
+			$billingMonthValue = date('Y-m-01', strtotime('first day of last month'));
+		}
+		$billingMonthTimestamp = strtotime($billingMonthValue);
+		$billingMonthLabel = $billingMonthTimestamp
+			? date('M', $billingMonthTimestamp)
+			: date('M', strtotime('first day of last month'));
+
+		$templateText = trim(str_replace(["\r\n", "\r"], "\n", (string)($template ?? '')));
+		if ($templateText === '') {
+			$templateText = BillingSettings::getDefaultBillNotificationTemplate();
+		}
+
+		$rendered = strtr($templateText, [
+			'{client_name}' => $clientName,
+			'{month}' => $billingMonthLabel,
+			'{total}' => number_format($totalToPay, 2),
+			'{bill_amount}' => number_format((float)($billResult['amount'] ?? 0), 2),
+			'{amount_due}' => number_format($totalToPay, 2),
+			'{account}' => $accountNumber,
+			'{bill_date}' => $resolvedBillDate,
+			'{previous_reading}' => number_format((float)($billResult['previous_reading'] ?? 0), 2),
+			'{current_reading}' => number_format((float)($billResult['current_reading'] ?? 0), 2),
+			'{units}' => number_format((float)($billResult['consumption'] ?? 0), 2),
+			'{service_fee}' => number_format((float)($billResult['service_charge'] ?? 0), 2),
+			'{previous_balance}' => number_format($previousBalance, 2),
+			'{due_date}' => date('d-m-Y', strtotime($dueDate)),
+			'{payment_url}' => $paymentUrl,
+			'{paybill}' => $paybill,
+		]);
+
+		$lines = explode("\n", $rendered);
+		$lines = array_map(static function ($line) {
+			return rtrim((string)$line);
+		}, $lines);
+
+		return trim(implode("\n", $lines));
 	}
 
 	public function createRegistrationFeeBill($user_id, $account_number, $amount, $due_date, $status = 'pending') {

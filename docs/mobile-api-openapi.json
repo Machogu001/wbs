@@ -715,11 +715,13 @@
     "/api/mobile/admin/settings.php": {
       "get": {
         "summary": "Get settings and tariff plans",
+        "description": "Returns the settings object, including bill_notification_template, mobile_api_key_required, mobile_api_key_masked, and tariff plan data for the mobile admin settings screen.",
         "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "responses": { "200": { "description": "Settings" } }
       },
       "post": {
         "summary": "Manage settings and tariff plans",
+        "description": "Accepts update_settings payloads for billing/system settings, including bill_notification_template, plus tariff-plan and failed-payment maintenance actions.",
         "security": [{ "apiKeyAuth": [], "bearerAuth": [] }],
         "responses": { "200": { "description": "Settings action completed" } }
       }

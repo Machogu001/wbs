@@ -9,7 +9,7 @@ class BillingSettings {
     }
 
     public function getSettings() {
-        $query = "SELECT rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, terms_conditions_content, mobile_api_key, mobile_api_key_required, updated_at FROM " . $this->table . " WHERE id = 1 LIMIT 1";
+        $query = "SELECT rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, terms_conditions_content, bill_notification_template, mobile_api_key, mobile_api_key_required, updated_at FROM " . $this->table . " WHERE id = 1 LIMIT 1";
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
         $settings = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -65,6 +65,9 @@ class BillingSettings {
         if (!isset($settings['terms_conditions_content']) || trim((string)$settings['terms_conditions_content']) === '') {
             $settings['terms_conditions_content'] = self::getDefaultTermsTemplate();
         }
+        if (!isset($settings['bill_notification_template']) || trim((string)$settings['bill_notification_template']) === '') {
+            $settings['bill_notification_template'] = self::getDefaultBillNotificationTemplate();
+        }
         if (!isset($settings['mobile_api_key']) || $settings['mobile_api_key'] === null) {
             $settings['mobile_api_key'] = '';
         }
@@ -93,7 +96,7 @@ class BillingSettings {
         return $stmt->execute();
     }
 
-    public function updateSettings($rate_per_unit, $service_charge, $company_pin = null, $etims_integration_url = null, $etims_api_key = null, $company_name = null, $support_phone = null, $support_email = null, $currency_code = null, $financial_year_start_month = null, $vat_rate = null, $etims_taxation_type_code = null, $registration_fee = null, $locale_code = null, $timezone_name = null, $enforce_location_accuracy = null, $terms_conditions_content = null, $mobile_api_key_required = null) {
+    public function updateSettings($rate_per_unit, $service_charge, $company_pin = null, $etims_integration_url = null, $etims_api_key = null, $company_name = null, $support_phone = null, $support_email = null, $currency_code = null, $financial_year_start_month = null, $vat_rate = null, $etims_taxation_type_code = null, $registration_fee = null, $locale_code = null, $timezone_name = null, $enforce_location_accuracy = null, $terms_conditions_content = null, $mobile_api_key_required = null, $bill_notification_template = null) {
         $query = "UPDATE " . $this->table . " 
                   SET rate_per_unit = :rate_per_unit,
                       service_charge = :service_charge,
@@ -111,6 +114,7 @@ class BillingSettings {
                       etims_taxation_type_code = :etims_taxation_type_code,
                       registration_fee = :registration_fee,
                       terms_conditions_content = :terms_conditions_content,
+                      bill_notification_template = :bill_notification_template,
                       mobile_api_key_required = :mobile_api_key_required,
                       enforce_location_accuracy = :enforce_location_accuracy,
                       updated_at = NOW()
@@ -151,6 +155,10 @@ class BillingSettings {
             ? $this->getStoredTermsContent()
             : $this->normalizeTermsContent($terms_conditions_content);
         $stmt->bindParam(":terms_conditions_content", $termsConditionsContent);
+        $billNotificationTemplate = $bill_notification_template === null
+            ? $this->getStoredBillNotificationTemplate()
+            : $this->normalizeBillNotificationTemplate($bill_notification_template);
+        $stmt->bindParam(":bill_notification_template", $billNotificationTemplate);
         $mobile_api_key_required = ($mobile_api_key_required !== null) ? (int)$mobile_api_key_required : 1;
         $stmt->bindParam(":mobile_api_key_required", $mobile_api_key_required, PDO::PARAM_INT);
         $enforce_location_accuracy = ($enforce_location_accuracy !== null) ? (int)$enforce_location_accuracy : 0;
@@ -435,6 +443,24 @@ class BillingSettings {
     project administration team for review and resolution. For help, contact {{support_phone}} or {{support_email}}.
 </p>
 HTML;
+    }
+
+    public static function getDefaultBillNotificationTemplate(): string
+    {
+        return <<<'TEXT'
+Dear {client_name},
+{month} water bill: KES {total}
+AC: {account}
+Bill Date: {bill_date}
+Prev Read: {previous_reading}
+Reading: {current_reading}
+Units: {units}
+Service Fee: KES {service_fee}
+Prev Bal: KES {previous_balance}
+Due: {due_date}
+Pay: {payment_url}
+Thank you, WBS.
+TEXT;
     }
 
     public static function getTermsTemplateSamples(): array
@@ -766,10 +792,11 @@ HTML,
           $default_vat_rate = 0.0;
           $default_tax_code = '';
           $default_terms = self::getDefaultTermsTemplate();
+          $default_bill_notification_template = self::getDefaultBillNotificationTemplate();
           $default_mobile_api_key = '';
           $default_mobile_api_key_required = 1;
-          $query = "INSERT INTO " . $this->table . " (id, rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, terms_conditions_content, mobile_api_key, mobile_api_key_required) 
-              VALUES (1, :rate_per_unit, :service_charge, NULL, NULL, NULL, :company_name, :support_phone, :support_email, :currency_code, :locale_code, :timezone_name, :financial_year_start_month, :vat_rate, :etims_taxation_type_code, :registration_fee, 0, :terms_conditions_content, :mobile_api_key, :mobile_api_key_required)";
+          $query = "INSERT INTO " . $this->table . " (id, rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, terms_conditions_content, bill_notification_template, mobile_api_key, mobile_api_key_required) 
+              VALUES (1, :rate_per_unit, :service_charge, NULL, NULL, NULL, :company_name, :support_phone, :support_email, :currency_code, :locale_code, :timezone_name, :financial_year_start_month, :vat_rate, :etims_taxation_type_code, :registration_fee, 0, :terms_conditions_content, :bill_notification_template, :mobile_api_key, :mobile_api_key_required)";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":rate_per_unit", $default_rate);
         $stmt->bindParam(":service_charge", $default_service);
@@ -784,6 +811,7 @@ HTML,
         $stmt->bindParam(":etims_taxation_type_code", $default_tax_code);
         $stmt->bindParam(":registration_fee", $default_registration_fee);
         $stmt->bindParam(":terms_conditions_content", $default_terms);
+        $stmt->bindParam(":bill_notification_template", $default_bill_notification_template);
         $stmt->bindParam(":mobile_api_key", $default_mobile_api_key);
         $stmt->bindParam(":mobile_api_key_required", $default_mobile_api_key_required, PDO::PARAM_INT);
         $stmt->execute();
@@ -809,6 +837,7 @@ HTML,
             registration_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             enforce_location_accuracy TINYINT(1) NOT NULL DEFAULT 0,
             terms_conditions_content LONGTEXT NULL,
+            bill_notification_template TEXT NULL,
             mobile_api_key VARCHAR(191) NULL,
             mobile_api_key_required TINYINT(1) NOT NULL DEFAULT 1,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -901,6 +930,11 @@ HTML,
             // Ignore if column already exists
         }
         try {
+            $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN bill_notification_template TEXT NULL");
+        } catch (\PDOException $e) {
+            // Ignore if column already exists
+        }
+        try {
             $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN mobile_api_key VARCHAR(191) NULL");
         } catch (\PDOException $e) {
             // Ignore if column already exists
@@ -938,6 +972,32 @@ HTML,
         }
 
         return self::getDefaultTermsTemplate();
+    }
+
+    private function normalizeBillNotificationTemplate($billNotificationTemplate): string
+    {
+        $content = trim(str_replace(["\r\n", "\r"], "\n", (string)$billNotificationTemplate));
+        if ($content === '') {
+            return self::getDefaultBillNotificationTemplate();
+        }
+
+        return $content;
+    }
+
+    private function getStoredBillNotificationTemplate(): string
+    {
+        try {
+            $stmt = $this->conn->prepare("SELECT bill_notification_template FROM " . $this->table . " WHERE id = 1 LIMIT 1");
+            $stmt->execute();
+            $value = $stmt->fetchColumn();
+            if (is_string($value) && trim($value) !== '') {
+                return $this->normalizeBillNotificationTemplate($value);
+            }
+        } catch (Throwable $e) {
+            // Fall back to default template if lookup fails.
+        }
+
+        return self::getDefaultBillNotificationTemplate();
     }
 
     private function ensureTariffTables(): void {

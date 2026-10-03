@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../../includes/MeterReading.php';
 require_once __DIR__ . '/../../../includes/SMS.php';
 require_once __DIR__ . '/../../../includes/PaymentLink.php';
 require_once __DIR__ . '/../../../includes/ClientWallet.php';
+require_once __DIR__ . '/../../../includes/Email.php';
 
 try {
     $db = mobileApiGetDatabase();
@@ -152,7 +153,9 @@ try {
                 0.0,
                 (float)$billResult['amount'],
                 MpesaConfig::getShortCode(),
-                PaymentLink::generateLink((int)$billResult['bill_id'])
+                PaymentLink::generateLink((int)$billResult['bill_id']),
+                null,
+                $settings['bill_notification_template'] ?? null
             );
             try {
                 (new SMS())->sendWithFallback((string)$user['phone_number'], $messageText, 'bill_notification');

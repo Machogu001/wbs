@@ -1,12 +1,14 @@
 <?php
 
 require_once __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../../includes/BillingSettings.php';
 
 try {
     mobileApiRequireMethod('POST');
     $db = mobileApiGetDatabase();
     $user = mobileApiRequireUser($db);
     $userId = (int)$user['id'];
+    $settings = (new BillingSettings($db))->getSettings();
 
     $currentReading = (float)($_POST['current_reading'] ?? 0);
     $billingMonth = trim((string)($_POST['billing_month'] ?? '')) ?: date('Y-m-01', strtotime('first day of last month'));
@@ -121,7 +123,8 @@ try {
         (float)$billResult['amount'],
         MpesaConfig::getShortCode(),
         $payUrl,
-        $billDate
+        $billDate,
+        $settings['bill_notification_template'] ?? null
     );
 
     try {

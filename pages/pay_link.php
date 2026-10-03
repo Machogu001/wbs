@@ -21,6 +21,8 @@ $billData = null;
 $userData = null;
 $latestPayment = null;
 $amountDue = 0.0;
+$manualPaybill = MpesaConfig::getShortCode();
+$showManualPaymentFallback = false;
 
 $token = isset($_GET['t']) ? trim($_GET['t']) : '';
 
@@ -92,6 +94,7 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST' && $billData && $userData
                         }
                     }
                     $message = 'Payment initiation failed: ' . $response['error'] . $details;
+                    $showManualPaymentFallback = true;
                 } else {
                     $payment = new Payment($db);
                     $payment->bill_id = $billData['id'];
@@ -108,10 +111,12 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST' && $billData && $userData
                         $createdPaymentId = (int)$payment->id;
                     } else {
                         $message = 'Failed to save payment record.';
+                        $showManualPaymentFallback = true;
                     }
                 }
             } catch (Exception $e) {
                 $message = 'Error initiating payment: ' . $e->getMessage();
+                $showManualPaymentFallback = true;
             }
         }
     }
@@ -321,6 +326,22 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST' && $billData && $userData
                         <li>As soon as the payment is confirmed, you will be redirected to your receipt.</li>
                     </ol>
                     <p class="small text-muted mb-0">If you do not see a prompt on your phone, ensure your line is on and has network, then try again after a few minutes.</p>
+
+                    <?php if($showManualPaymentFallback && $billData): ?>
+                        <hr>
+                        <h6 class="mb-3">Manual M-Pesa Payment</h6>
+                        <p class="small text-muted">If STK push is not working, you can pay manually with the details below, then keep this page open or refresh later to check for confirmation.</p>
+                        <dl class="row mb-0 receipt-detail-grid">
+                            <dt class="col-sm-5">Paybill</dt>
+                            <dd class="col-sm-7"><?php echo htmlspecialchars($manualPaybill); ?></dd>
+
+                            <dt class="col-sm-5">Account</dt>
+                            <dd class="col-sm-7"><?php echo htmlspecialchars($billData['account_number']); ?></dd>
+
+                            <dt class="col-sm-5">Amount</dt>
+                            <dd class="col-sm-7">KES <?php echo number_format((float)$amountDue, 2); ?></dd>
+                        </dl>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>

@@ -628,9 +628,17 @@ Load all pinned customer GPS locations.
 
 Load system settings and tariff plans.
 
+Response data includes the `settings` object, which now carries editable messaging fields such as:
+
+- `bill_notification_template` for the bill SMS/email template used by the backend bill notification formatter
+- `mobile_api_key_required` for mobile API key enforcement
+- `mobile_api_key_masked` as the masked current app key display value
+
 ### `POST /api/mobile/admin/settings.php`
 
 Update core settings, tariff plans, or failed payment cleanup actions.
+
+When `action` is `update_settings`, the request may include `bill_notification_template` to create or update the bill SMS/email template from the mobile admin app.
 
 ### `GET /api/mobile/admin/terms_conditions.php`
 

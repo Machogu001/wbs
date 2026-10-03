@@ -102,12 +102,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 		$registration_fee = isset($_POST['registration_fee']) ? $_POST['registration_fee'] : ($currentSettings['registration_fee'] ?? null);
 		$enforce_location_accuracy = isset($_POST['enforce_location_accuracy']) ? 1 : (int)($currentSettings['enforce_location_accuracy'] ?? 0);
 		$mobile_api_key_required = isset($_POST['mobile_api_key_required']) ? 1 : 0;
+		$bill_notification_template = isset($_POST['bill_notification_template']) ? trim((string)$_POST['bill_notification_template']) : ($currentSettings['bill_notification_template'] ?? null);
 
 		if ($rate <= 0) {
 			$message = "Rate per m³ must be greater than 0.";
 			$message_type = "danger";
 		} else {
-			if ($settingsService->updateSettings($rate, $service, $company_pin, $etims_integration_url, $etims_api_key, $company_name, $support_phone, $support_email, $currency_code, $financial_year_start_month, $vat_rate, $etims_taxation_type_code, $registration_fee, $locale_code, $timezone_name, $enforce_location_accuracy, null, $mobile_api_key_required)) {
+			if ($settingsService->updateSettings($rate, $service, $company_pin, $etims_integration_url, $etims_api_key, $company_name, $support_phone, $support_email, $currency_code, $financial_year_start_month, $vat_rate, $etims_taxation_type_code, $registration_fee, $locale_code, $timezone_name, $enforce_location_accuracy, null, $mobile_api_key_required, $bill_notification_template)) {
 				// Log activity
 				try {
 					$logger = new ActivityLog($db);
@@ -358,7 +359,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 							(float)$totalToPay,
 							$paybill,
 							$payUrl,
-							$billDate
+							$billDate,
+							$settings['bill_notification_template'] ?? null
 						);
 
 						$sms->sendWithFallback($user['phone_number'], $messageText, 'bill_notification');
@@ -703,6 +705,19 @@ foreach ($months as $num => $label): ?>
 <div class="ssp-toggle-info">
 <div class="ssp-toggle-title">Require accurate GPS (&le;14m)</div>
 <div class="ssp-toggle-desc">When enabled, clients must capture GPS with accuracy &le;14m before submitting the registration form.</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="ssp-section">
+<div class="ssp-section-hd"><i class="bi bi-chat-left-text"></i> Bill Notification Template</div>
+<div class="ssp-section-body">
+<div class="row g-3">
+<div class="col-12">
+<label class="form-label">SMS / Email Bill Template</label>
+<textarea name="bill_notification_template" class="form-control" rows="10" spellcheck="false"><?php echo htmlspecialchars($settings['bill_notification_template'] ?? BillingSettings::getDefaultBillNotificationTemplate()); ?></textarea>
+<div class="form-text">Available placeholders: {client_name}, {month}, {total}, {bill_amount}, {amount_due}, {account}, {bill_date}, {previous_reading}, {current_reading}, {units}, {service_fee}, {previous_balance}, {due_date}, {payment_url}, {paybill}.</div>
 </div>
 </div>
 </div>

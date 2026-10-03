@@ -73,7 +73,8 @@ try {
                 array_key_exists('timezone_name', $data) ? trim((string)$data['timezone_name']) : ($currentSettings['timezone_name'] ?? null),
                 !empty($data['enforce_location_accuracy']) ? 1 : (int)($currentSettings['enforce_location_accuracy'] ?? 0),
                 null,
-                !empty($data['mobile_api_key_required']) ? 1 : 0
+                !empty($data['mobile_api_key_required']) ? 1 : 0,
+                array_key_exists('bill_notification_template', $data) ? trim((string)$data['bill_notification_template']) : ($currentSettings['bill_notification_template'] ?? null)
             );
             if (!$ok) {
                 mobileApiJson(500, 'error', 'Failed to update billing settings.');

@@ -112,7 +112,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
                             (float)$totalToPay,
                             $paybill,
                             $payUrl,
-                            $billDate
+                            $billDate,
+                            $settings['bill_notification_template'] ?? null
                         );
 
                         $sms->sendWithFallback($user['phone_number'], $messageText, 'bill_notification');
