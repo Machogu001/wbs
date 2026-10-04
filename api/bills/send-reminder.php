@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/Email.php';
 require_once __DIR__ . '/../../includes/PaymentLink.php';
 require_once __DIR__ . '/../../includes/ActivityLog.php';
+require_once __DIR__ . '/../../includes/Payment.php';
 
 header('Content-Type: application/json');
 
@@ -58,21 +59,31 @@ try {
 
 	$currency = 'KES';
 	try {
-		$settingsStmt = $db->prepare("SELECT currency_code FROM system_settings LIMIT 1");
-		$settingsStmt->execute();
-		$settings = $settingsStmt->fetch(PDO::FETCH_ASSOC);
-		if ($settings && !empty($settings['currency_code'])) {
+		$settingsService = new BillingSettings($db);
+		$settings = $settingsService->getSettings();
+		if (!empty($settings['currency_code'])) {
 			$currency = (string)$settings['currency_code'];
 		}
 	} catch (\Throwable $e) {
-		// Use default currency
+		$settings = [];
 	}
 
 	// Prepare reminder message
-	$billingMonth = date('M Y', strtotime($bill['billing_month']));
-	$amount = number_format((float)$bill['amount'], 2);
-	$dueDate = date('d/m/Y', strtotime($bill['due_date']));
+	$billingMonth = date('M', strtotime($bill['billing_month']));
+	$billAmount = round((float)$bill['amount'], 2);
+	$dueDate = date('d-m-Y', strtotime($bill['due_date']));
 	$isOverdue = strtotime((string)$bill['due_date']) < strtotime(date('Y-m-d'));
+	$paymentService = new Payment($db);
+	$amountDueValue = $paymentService->getBillOutstandingAmount((int)$bill_id);
+	if ($amountDueValue <= 0.01) {
+		http_response_code(400);
+		echo json_encode(['success' => false, 'message' => 'This bill has no outstanding balance to remind the client about.']);
+		exit;
+	}
+	$balanceSummary = $billService->getNotificationBalanceSummary((int)$user['id'], $billAmount);
+	$previousBalance = (float)($balanceSummary['previous_balance'] ?? 0.0);
+	$balanceLabel = $previousBalance < 0 ? 'Credit Bal' : 'Prev Bal';
+	$balanceAmount = abs($previousBalance);
 
 	// Generate payment link
 	$paymentLink = '';
@@ -86,35 +97,22 @@ try {
 	}
 
 	$clientName = !empty($user['full_name']) ? (string)$user['full_name'] : 'Customer';
-	$smsText = $isOverdue
-		? "Dear {$clientName}, this is a reminder that your {$billingMonth} water bill for Account {$user['account_number']} amounting to {$currency} {$amount} was due on {$dueDate} and is now overdue. Kindly settle the bill as soon as possible to avoid service interruption."
-		: "Dear {$clientName}, this is a reminder that your {$billingMonth} water bill for Account {$user['account_number']} amounting to {$currency} {$amount} is due on {$dueDate}. Kindly settle the bill on or before the due date to avoid service interruption.";
-	if (!empty($paymentLink)) {
-		$smsText .= " Pay here: {$paymentLink}";
-	}
+	$companyName = !empty($settings['company_name']) ? (string)$settings['company_name'] : 'WBS';
+	$statusLine = $isOverdue ? 'Status: Overdue' : 'Status: Payment Reminder';
+	$payLine = !empty($paymentLink) ? "Pay: {$paymentLink}" : 'Pay: Payment link unavailable';
+	$smsText = "Dear {$clientName},\n"
+		. "{$billingMonth} water bill reminder\n"
+		. "AC: {$user['account_number']}\n"
+		. "Bill Amount: {$currency} " . number_format($billAmount, 2) . "\n"
+		. "{$balanceLabel}: {$currency} " . number_format($balanceAmount, 2) . "\n"
+		. "Amount Due: {$currency} " . number_format($amountDueValue, 2) . "\n"
+		. "Due Date: {$dueDate}\n"
+		. "{$statusLine}\n"
+		. $payLine . "\n"
+		. "Thank you, {$companyName}.";
 
 	$emailSubject = "Payment Reminder - {$billingMonth} Water Bill";
-	$emailIntro = $isOverdue
-		? "This is a reminder that your {$billingMonth} water bill is overdue for payment.\n\n"
-		: "This is a reminder that your {$billingMonth} water bill is due for payment.\n\n";
-	$emailActionText = $isOverdue
-		? "Kindly settle the bill as soon as possible to avoid service interruption.\n\n"
-		: "Kindly settle the bill on or before the due date to avoid service interruption.\n\n";
-	$emailText = "Dear {$user['full_name']},\n\n" .
-		$emailIntro .
-		"Billing Details:\n" .
-		"Account Number: {$user['account_number']}\n" .
-		"Amount Due: {$currency} {$amount}\n" .
-		"Due Date: {$dueDate}\n\n" .
-		$emailActionText;
-
-	if (!empty($shortPaymentLink)) {
-		$emailText .= "Click the link below to pay now:\n" .
-			"{$shortPaymentLink}\n\n";
-	}
-
-	$emailText .= "Thank you for your prompt attention to this matter.\n\n" .
-		"Regards,\nWater Billing System";
+	$emailText = $smsText;
 
 	$smsSuccess = false;
 	$emailSuccess = false;

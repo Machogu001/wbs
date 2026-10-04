@@ -112,46 +112,23 @@ try {
                 return ['success' => false, 'message' => $billResult['message'] ?? 'Failed to create pending bill.'];
             }
             try {
-                $walletService = new ClientWallet($db);
-                $walletBalance = $walletService->getBalance((int)$user['id']);
-                if ($walletBalance > 0.01) {
-                    $billOutstanding = (float)$billResult['amount'];
-                    $autoApply = round(min($walletBalance, $billOutstanding), 2);
-                    if ($autoApply > 0) {
-                        $walletRef = 'WALLET-' . date('YmdHis');
-                        $stmtWalletPayment = $db->prepare("INSERT INTO payments
-                            (bill_id, user_id, phone_number, payment_method, amount, mpesa_receipt, status, transaction_date, received_by_user_id, created_at)
-                            VALUES (?, ?, ?, 'wallet', ?, ?, 'completed', NOW(), ?, NOW())");
-                        $stmtWalletPayment->execute([
-                            (int)$billResult['bill_id'],
-                            (int)$user['id'],
-                            $user['phone_number'] ?? null,
-                            $autoApply,
-                            $walletRef,
-                            (int)$actor['id'],
-                        ]);
-                        $walletService->applyTowardsBill(
-                            (int)$user['id'],
-                            (int)$billResult['bill_id'],
-                            $autoApply,
-                            'Auto-applied to new bill #' . $billResult['bill_id'],
-                            (int)$actor['id']
-                        );
-                        if ($autoApply >= $billOutstanding - 0.01) {
-                            $stmtBillUpdate = $db->prepare("UPDATE bills SET status = 'paid' WHERE id = ?");
-                            $stmtBillUpdate->execute([(int)$billResult['bill_id']]);
-                        }
-                    }
-                }
+                $billService->autoApplyWalletCreditToBill(
+                    (int)$user['id'],
+                    (int)$billResult['bill_id'],
+                    (float)$billResult['amount'],
+                    (string)($user['phone_number'] ?? ''),
+                    (int)$actor['id']
+                );
             } catch (Throwable $e) {
                 error_log('Mobile API wallet auto-apply on bill creation failed: ' . $e->getMessage());
             }
+            $balanceSummary = $billService->getNotificationBalanceSummary((int)$user['id'], (float)$billResult['amount']);
             $messageText = Bill::buildBillNotificationMessage(
                 $user,
                 $billResult,
                 $dueDate,
-                0.0,
-                (float)$billResult['amount'],
+                (float)$balanceSummary['previous_balance'],
+                (float)$balanceSummary['total_to_pay'],
                 MpesaConfig::getShortCode(),
                 PaymentLink::generateLink((int)$billResult['bill_id']),
                 null,

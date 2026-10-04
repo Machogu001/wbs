@@ -449,17 +449,18 @@ HTML;
     {
         return <<<'TEXT'
 Dear {client_name},
-{month} water bill: KES {total}
+{month} water bill: KES {bill_amount}
 AC: {account}
 Bill Date: {bill_date}
 Prev Read: {previous_reading}
 Reading: {current_reading}
 Units: {units}
 Service Fee: KES {service_fee}
-Prev Bal: KES {previous_balance}
-Due: {due_date}
+{balance_label}: KES {balance_amount}
+Amount Due: KES {amount_due}
+Due Date: {due_date}
 Pay: {payment_url}
-Thank you, WBS.
+Thank you, {company_name}.
 TEXT;
     }
 

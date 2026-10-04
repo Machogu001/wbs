@@ -3,6 +3,7 @@ require_once __DIR__ . '/Accounting.php';
 require_once __DIR__ . '/BillingSettings.php';
 require_once __DIR__ . '/CustomerCredit.php';
 require_once __DIR__ . '/ClientMeter.php';
+require_once __DIR__ . '/ClientWallet.php';
 
 class Bill {
 	private $conn;
@@ -212,6 +213,82 @@ class Bill {
 		];
 	}
 
+	public function autoApplyWalletCreditToBill(int $userId, int $billId, float $billAmount, ?string $phoneNumber = null, ?int $actorUserId = null): float
+	{
+		if ($userId <= 0 || $billId <= 0 || $billAmount <= 0) {
+			return 0.0;
+		}
+
+		$walletService = new ClientWallet($this->conn);
+		$walletBalance = $walletService->getBalance($userId);
+		if ($walletBalance <= 0.01) {
+			return 0.0;
+		}
+
+		$autoApply = round(min($walletBalance, $billAmount), 2);
+		if ($autoApply <= 0) {
+			return 0.0;
+		}
+
+		$walletRef = 'WALLET-' . $billId . '-' . date('YmdHis');
+		$stmtWalletPayment = $this->conn->prepare("INSERT INTO payments
+			(bill_id, user_id, phone_number, payment_method, amount, mpesa_receipt, status, transaction_date, received_by_user_id, created_at)
+			VALUES (?, ?, ?, 'wallet', ?, ?, 'completed', NOW(), ?, NOW())");
+		$stmtWalletPayment->execute([
+			$billId,
+			$userId,
+			$phoneNumber !== null && trim($phoneNumber) !== '' ? trim($phoneNumber) : null,
+			$autoApply,
+			$walletRef,
+			$actorUserId !== null && $actorUserId > 0 ? $actorUserId : null,
+		]);
+
+		$walletService->applyTowardsBill(
+			$userId,
+			$billId,
+			$autoApply,
+			'Auto-applied to new bill #' . $billId,
+			$actorUserId !== null ? $actorUserId : 0
+		);
+
+		if ($autoApply >= $billAmount - 0.01) {
+			$stmt = $this->conn->prepare("UPDATE bills SET status = 'paid' WHERE id = ?");
+			$stmt->execute([$billId]);
+		}
+
+		return $autoApply;
+	}
+
+	public function getNotificationBalanceSummary(int $userId, float $billAmount): array
+	{
+		$billAmount = round(max(0.0, $billAmount), 2);
+		if ($userId <= 0) {
+			return [
+				'previous_balance' => 0.0,
+				'total_to_pay' => $billAmount,
+			];
+		}
+
+		$stmtBills = $this->conn->prepare('SELECT COALESCE(SUM(amount),0) AS total_billed FROM bills WHERE user_id = :uid');
+		$stmtBills->bindParam(':uid', $userId, PDO::PARAM_INT);
+		$stmtBills->execute();
+		$rowBills = $stmtBills->fetch(PDO::FETCH_ASSOC) ?: ['total_billed' => 0];
+		$totalBilled = (float)$rowBills['total_billed'];
+
+		$stmtPay = $this->conn->prepare("SELECT COALESCE(SUM(amount),0) AS total_paid FROM payments WHERE user_id = :uid AND status = 'completed'");
+		$stmtPay->bindParam(':uid', $userId, PDO::PARAM_INT);
+		$stmtPay->execute();
+		$rowPay = $stmtPay->fetch(PDO::FETCH_ASSOC) ?: ['total_paid' => 0];
+		$totalPaid = (float)$rowPay['total_paid'];
+
+		$outstandingAfter = $totalBilled - $totalPaid;
+
+		return [
+			'previous_balance' => round($outstandingAfter - $billAmount, 2),
+			'total_to_pay' => round(max(0.0, $outstandingAfter), 2),
+		];
+	}
+
 	public static function buildBillNotificationMessage(
 		array $user,
 		array $billResult,
@@ -232,6 +309,10 @@ class Bill {
 		}
 
 		$accountNumber = trim((string)($user['account_number'] ?? ''));
+		$companyName = trim((string)($user['company_name'] ?? ''));
+		if ($companyName === '') {
+			$companyName = 'WBS';
+		}
 		$resolvedBillDate = trim((string)($billDate ?? ''));
 		if ($resolvedBillDate === '') {
 			$resolvedBillDate = date('d-m-Y');
@@ -245,6 +326,8 @@ class Bill {
 		$billingMonthLabel = $billingMonthTimestamp
 			? date('M', $billingMonthTimestamp)
 			: date('M', strtotime('first day of last month'));
+		$balanceLabel = $previousBalance < 0 ? 'Credit Bal' : 'Prev Bal';
+		$balanceAmount = abs($previousBalance);
 
 		$templateText = trim(str_replace(["\r\n", "\r"], "\n", (string)($template ?? '')));
 		if ($templateText === '') {
@@ -257,6 +340,10 @@ class Bill {
 			'{total}' => number_format($totalToPay, 2),
 			'{bill_amount}' => number_format((float)($billResult['amount'] ?? 0), 2),
 			'{amount_due}' => number_format($totalToPay, 2),
+			'{balance_label}' => $balanceLabel,
+			'{balance_amount}' => number_format($balanceAmount, 2),
+			'{credit_balance}' => $previousBalance < 0 ? number_format($balanceAmount, 2) : '0.00',
+			'{company_name}' => $companyName,
 			'{account}' => $accountNumber,
 			'{bill_date}' => $resolvedBillDate,
 			'{previous_reading}' => number_format((float)($billResult['previous_reading'] ?? 0), 2),

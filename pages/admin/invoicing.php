@@ -145,39 +145,13 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 
 	// Auto-apply any existing wallet credit towards the new bill
 	try {
-		$walletService = new ClientWallet($db);
-		$walletBalance = $walletService->getBalance((int)$user['id']);
-		if ($walletBalance > 0.01) {
-			$billOutstanding = $billResult['amount'];
-			$autoApply = round(min($walletBalance, $billOutstanding), 2);
-			if ($autoApply > 0) {
-				// Insert a completed payment from wallet credit
-				$walletRef = 'WALLET-' . date('YmdHis');
-				$stmtWP = $db->prepare("INSERT INTO payments
-					(bill_id, user_id, phone_number, payment_method, amount, mpesa_receipt, status, transaction_date, received_by_user_id, created_at)
-					VALUES (?, ?, ?, 'wallet', ?, ?, 'completed', NOW(), ?, NOW())");
-				$stmtWP->execute([
-					(int)$billResult['bill_id'],
-					(int)$user['id'],
-					$user['phone_number'] ?? null,
-					$autoApply,
-					$walletRef,
-					$actorId,
-				]);
-				$walletService->applyTowardsBill(
-					(int)$user['id'],
-					(int)$billResult['bill_id'],
-					$autoApply,
-					'Auto-applied to new bill #' . $billResult['bill_id'],
-					(int)$actorId
-				);
-				// Mark bill paid if credit covers it fully
-				if ($autoApply >= $billOutstanding - 0.01) {
-					$stmtBU = $db->prepare("UPDATE bills SET status = 'paid' WHERE id = ?");
-					$stmtBU->execute([(int)$billResult['bill_id']]);
-				}
-			}
-		}
+		$billService->autoApplyWalletCreditToBill(
+			(int)$user['id'],
+			(int)$billResult['bill_id'],
+			(float)$billResult['amount'],
+			(string)($user['phone_number'] ?? ''),
+			(int)$actorId
+		);
 	} catch (\Throwable $e) {
 		error_log('Wallet auto-apply on bill creation failed: ' . $e->getMessage());
 	}
@@ -187,8 +161,9 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 	$currentReadingValue = $billResult['current_reading'];
 	$units = $billResult['consumption'];
 	$billAmount = $billResult['amount'];
-	$previousBalance = 0;
-	$totalToPay = $billAmount;
+	$balanceSummary = $billService->getNotificationBalanceSummary((int)$user['id'], (float)$billAmount);
+	$previousBalance = (float)$balanceSummary['previous_balance'];
+	$totalToPay = (float)$balanceSummary['total_to_pay'];
 	$billDate = date('d-m-Y');
 	$account = $user['account_number'];
 	$paybill = MpesaConfig::getShortCode();

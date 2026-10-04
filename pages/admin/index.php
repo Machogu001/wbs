@@ -312,35 +312,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 						$message = "Failed to create pending bill.";
 						$message_type = "danger";
 					} else {
+						try {
+							$billService->autoApplyWalletCreditToBill(
+								(int)$user['id'],
+								(int)$billResult['bill_id'],
+								(float)$billResult['amount'],
+								(string)($user['phone_number'] ?? ''),
+								isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null
+							);
+						} catch (Throwable $e) {
+							error_log('Wallet auto-apply on bill creation failed: ' . $e->getMessage());
+						}
 						$sms = new SMS();
 						$previousReading = $billResult['previous_reading'];
 						$currentReading = $billResult['current_reading'];
 						$units = $billResult['consumption'];
 						$billAmount = $billResult['amount'];
-						// Compute account balance so any overpayment reduces the new amount to pay
-						$previousBalance = 0;
-						$totalToPay = $billAmount;
 						try {
-							// Sum of all bills for this user (including this new one)
-							$stmtBills = $db->prepare('SELECT COALESCE(SUM(amount),0) AS total_billed FROM bills WHERE user_id = :uid');
-							$stmtBills->bindParam(':uid', $user['id'], PDO::PARAM_INT);
-							$stmtBills->execute();
-							$rowBills = $stmtBills->fetch(PDO::FETCH_ASSOC) ?: ['total_billed' => 0];
-							$totalBilled = (float)$rowBills['total_billed'];
-
-							// Sum of all completed payments for this user
-							$stmtPay = $db->prepare("SELECT COALESCE(SUM(amount),0) AS total_paid FROM payments WHERE user_id = :uid AND status = 'completed'");
-							$stmtPay->bindParam(':uid', $user['id'], PDO::PARAM_INT);
-							$stmtPay->execute();
-							$rowPay = $stmtPay->fetch(PDO::FETCH_ASSOC) ?: ['total_paid' => 0];
-							$totalPaid = (float)$rowPay['total_paid'];
-
-							// Outstanding after adding this new bill
-							$outstandingAfter = $totalBilled - $totalPaid;
-							// Previous balance is what was outstanding before this bill
-							$previousBalance = $outstandingAfter - $billAmount;
-							// Total to pay is the outstanding after this bill; cannot be negative
-							$totalToPay = max(0, $outstandingAfter);
+							$balanceSummary = $billService->getNotificationBalanceSummary((int)$user['id'], (float)$billAmount);
+							$previousBalance = (float)$balanceSummary['previous_balance'];
+							$totalToPay = (float)$balanceSummary['total_to_pay'];
 						} catch (Exception $e) {
 							// If anything fails, fall back to simple behaviour
 							$previousBalance = 0;
@@ -717,7 +708,7 @@ foreach ($months as $num => $label): ?>
 <div class="col-12">
 <label class="form-label">SMS / Email Bill Template</label>
 <textarea name="bill_notification_template" class="form-control" rows="10" spellcheck="false"><?php echo htmlspecialchars($settings['bill_notification_template'] ?? BillingSettings::getDefaultBillNotificationTemplate()); ?></textarea>
-<div class="form-text">Available placeholders: {client_name}, {month}, {total}, {bill_amount}, {amount_due}, {account}, {bill_date}, {previous_reading}, {current_reading}, {units}, {service_fee}, {previous_balance}, {due_date}, {payment_url}, {paybill}.</div>
+<div class="form-text">Available placeholders: {client_name}, {month}, {total}, {bill_amount}, {amount_due}, {balance_label}, {balance_amount}, {credit_balance}, {company_name}, {account}, {bill_date}, {previous_reading}, {current_reading}, {units}, {service_fee}, {previous_balance}, {due_date}, {payment_url}, {paybill}.</div>
 </div>
 </div>
 </div>

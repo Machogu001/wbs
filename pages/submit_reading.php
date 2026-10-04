@@ -92,13 +92,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
                         $message = "Failed to create pending bill.";
                         $message_type = "danger";
                     } else {
+                        try {
+                            $billService->autoApplyWalletCreditToBill(
+                                (int)$user['id'],
+                                (int)$billResult['bill_id'],
+                                (float)$billResult['amount'],
+                                (string)($user['phone_number'] ?? ''),
+                                (int)$_SESSION['user_id']
+                            );
+                        } catch (Throwable $e) {
+                            error_log('Wallet auto-apply on bill creation failed: ' . $e->getMessage());
+                        }
                         $sms = new SMS();
                         $previousReading = $billResult['previous_reading'];
                         $currentReading = $billResult['current_reading'];
                         $units = $billResult['consumption'];
                         $billAmount = $billResult['amount'];
-                        $previousBalance = 0;
-                        $totalToPay = $billAmount;
+                        $balanceSummary = $billService->getNotificationBalanceSummary((int)$user['id'], (float)$billAmount);
+                        $previousBalance = (float)$balanceSummary['previous_balance'];
+                        $totalToPay = (float)$balanceSummary['total_to_pay'];
                         $billDate = date('d-m-Y');
                         $account = $user['account_number'];
                         $paybill = MpesaConfig::getShortCode();

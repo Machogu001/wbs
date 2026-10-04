@@ -113,14 +113,27 @@ try {
         mobileApiJson(500, 'error', 'Failed to save the meter reading.');
     }
 
+    try {
+        $billService->autoApplyWalletCreditToBill(
+            $userId,
+            (int)$billResult['bill_id'],
+            (float)$billResult['amount'],
+            (string)($user['phone_number'] ?? ''),
+            $userId
+        );
+    } catch (Throwable $e) {
+        error_log('Mobile API wallet auto-apply on bill creation failed: ' . $e->getMessage());
+    }
+
     $payUrl = PaymentLink::generateLink((int)$billResult['bill_id']);
     $billDate = date('d-m-Y');
+    $balanceSummary = $billService->getNotificationBalanceSummary($userId, (float)$billResult['amount']);
     $messageText = Bill::buildBillNotificationMessage(
         $user,
         $billResult,
         $dueDate,
-        0.0,
-        (float)$billResult['amount'],
+        (float)$balanceSummary['previous_balance'],
+        (float)$balanceSummary['total_to_pay'],
         MpesaConfig::getShortCode(),
         $payUrl,
         $billDate,
