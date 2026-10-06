@@ -50,6 +50,14 @@ $collectionCardValue = 'N/A';
 $registrationCardTitle = 'Registration Revenue';
 $registrationCardTooltip = 'One-off registration fees billed and collected separately from recurring monthly bills.';
 
+$formatMoney = static function ($value): string {
+    $amount = is_numeric($value) ? (float)$value : 0.0;
+    if (!is_finite($amount)) {
+        $amount = 0.0;
+    }
+    return number_format($amount, 2);
+};
+
 $auditStatusFile = __DIR__ . '/../logs/billing_audit_status.json';
 if ($isAdmin && is_file($auditStatusFile) && is_readable($auditStatusFile)) {
     $decodedAuditStatus = json_decode((string)file_get_contents($auditStatusFile), true);
@@ -79,8 +87,22 @@ if ($db) {
                             LIMIT 5");
         $recentPayments = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
 
-        $stmtBills = $db->query("SELECT b.id, b.account_number, b.billing_month, b.amount, b.status, b.due_date
+        $stmtBills = $db->query("SELECT b.id, b.account_number, b.billing_month, b.amount, b.status, b.due_date,
+                                  GREATEST(0, COALESCE(b.amount, 0) - COALESCE(p_paid.completed_paid, 0) + COALESCE(pa_adj.approved_adjustments, 0)) AS outstanding_amount
                                   FROM bills b
+                                  LEFT JOIN (
+                                      SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+                                      FROM payments
+                                      WHERE status = 'completed' AND bill_id IS NOT NULL
+                                      GROUP BY bill_id
+                                  ) p_paid ON p_paid.bill_id = b.id
+                                  LEFT JOIN (
+                                      SELECT p.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+                                      FROM payment_adjustments pa
+                                      INNER JOIN payments p ON p.id = pa.payment_id
+                                      WHERE pa.status = 'approved' AND p.bill_id IS NOT NULL
+                                      GROUP BY p.bill_id
+                                  ) pa_adj ON pa_adj.bill_id = b.id
                                   ORDER BY b.billing_month DESC, b.id DESC
                                   LIMIT 5");
         $recentBills = $stmtBills ? $stmtBills->fetchAll(PDO::FETCH_ASSOC) : [];
@@ -97,10 +119,24 @@ if ($db) {
         $stmt->execute();
         $recentPayments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $stmtBills = $db->prepare("SELECT id, billing_month, amount, status, due_date
-                                    FROM bills
-                                    WHERE user_id = :uid
-                                    ORDER BY billing_month DESC, id DESC
+        $stmtBills = $db->prepare("SELECT b.id, b.billing_month, b.amount, b.status, b.due_date,
+                                    GREATEST(0, COALESCE(b.amount, 0) - COALESCE(p_paid.completed_paid, 0) + COALESCE(pa_adj.approved_adjustments, 0)) AS outstanding_amount
+                                    FROM bills b
+                                    LEFT JOIN (
+                                        SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+                                        FROM payments
+                                        WHERE status = 'completed' AND bill_id IS NOT NULL
+                                        GROUP BY bill_id
+                                    ) p_paid ON p_paid.bill_id = b.id
+                                    LEFT JOIN (
+                                        SELECT p.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+                                        FROM payment_adjustments pa
+                                        INNER JOIN payments p ON p.id = pa.payment_id
+                                        WHERE pa.status = 'approved' AND p.bill_id IS NOT NULL
+                                        GROUP BY p.bill_id
+                                    ) pa_adj ON pa_adj.bill_id = b.id
+                                    WHERE b.user_id = :uid
+                                    ORDER BY b.billing_month DESC, b.id DESC
                                     LIMIT 5");
         $stmtBills->bindParam(':uid', $_SESSION['user_id'], PDO::PARAM_INT);
         $stmtBills->execute();
@@ -800,7 +836,7 @@ if ($db) {
                                             <div>
                                                 <div class="fw-semibold">Bill for <?php echo htmlspecialchars(date('F Y', strtotime($b['billing_month']))); ?></div>
                                                 <small class="text-muted">
-                                                    Amount: KES <?php echo number_format((float)$b['amount'], 2); ?>
+                                                    Outstanding: KES <?php echo $formatMoney($b['outstanding_amount'] ?? 0); ?>
                                                     <?php if (!empty($b['due_date'])): ?> · Due: <?php echo htmlspecialchars($b['due_date']); ?><?php endif; ?>
                                                 </small>
                                             </div>

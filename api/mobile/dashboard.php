@@ -93,8 +93,24 @@ function mobileDashboardOverview(PDO $db): array
 
     $recentPayments = $db->query("SELECT p.id, p.user_id, p.amount, p.status, p.mpesa_receipt, u.account_number, u.full_name, COALESCE(p.transaction_date, p.created_at) AS paid_at
         FROM payments p LEFT JOIN users u ON u.id = p.user_id ORDER BY COALESCE(p.transaction_date, p.created_at) DESC LIMIT 5")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    $recentBills = $db->query("SELECT b.id, b.user_id, b.account_number, b.billing_month, b.amount, b.status, b.due_date
-        FROM bills b ORDER BY b.billing_month DESC, b.id DESC LIMIT 5")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $recentBills = $db->query("SELECT b.id, b.user_id, b.account_number, b.billing_month, b.amount, b.status, b.due_date,
+        GREATEST(0, COALESCE(b.amount, 0) - COALESCE(p_paid.completed_paid, 0) + COALESCE(pa_adj.approved_adjustments, 0)) AS outstanding_amount
+        FROM bills b
+        LEFT JOIN (
+            SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+            FROM payments
+            WHERE status = 'completed' AND bill_id IS NOT NULL
+            GROUP BY bill_id
+        ) p_paid ON p_paid.bill_id = b.id
+        LEFT JOIN (
+            SELECT p.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+            FROM payment_adjustments pa
+            INNER JOIN payments p ON p.id = pa.payment_id
+            WHERE pa.status = 'approved' AND p.bill_id IS NOT NULL
+            GROUP BY p.bill_id
+        ) pa_adj ON pa_adj.bill_id = b.id
+        ORDER BY b.billing_month DESC, b.id DESC
+        LIMIT 5")->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $customers = (int)($db->query("SELECT COUNT(*) FROM users WHERE role = 'customer'")->fetchColumn() ?: 0);
 
     $denominator = $collected + $unpaid;
@@ -116,15 +132,27 @@ function mobileDashboardOverview(PDO $db): array
         'registered_customers' => $customers,
         'billing_audit' => $audit,
         'trend' => $trend,
-        'recent_bills' => array_map(static fn(array $row): array => [
-            'id' => (int)$row['id'],
-            'user_id' => (int)($row['user_id'] ?? 0),
-            'account_number' => (string)($row['account_number'] ?? ''),
-            'billing_month' => (string)($row['billing_month'] ?? ''),
-            'amount' => (float)($row['amount'] ?? 0),
-            'status' => (string)($row['status'] ?? ''),
-            'due_date' => (string)($row['due_date'] ?? ''),
-        ], $recentBills),
+        'recent_bills' => array_map(static fn(array $row): array => (static function () use ($row): array {
+            $amount = is_numeric($row['amount'] ?? null) ? (float)$row['amount'] : 0.0;
+            $outstanding = is_numeric($row['outstanding_amount'] ?? null) ? (float)$row['outstanding_amount'] : 0.0;
+            if (!is_finite($amount)) {
+                $amount = 0.0;
+            }
+            if (!is_finite($outstanding)) {
+                $outstanding = 0.0;
+            }
+            return [
+                'id' => (int)$row['id'],
+                'user_id' => (int)($row['user_id'] ?? 0),
+                'account_number' => (string)($row['account_number'] ?? ''),
+                'billing_month' => (string)($row['billing_month'] ?? ''),
+                'amount' => $amount,
+                'outstanding_amount' => round(max(0.0, $outstanding), 2),
+                'paid_amount' => round(max(0.0, $amount - max(0.0, $outstanding)), 2),
+                'status' => (string)($row['status'] ?? ''),
+                'due_date' => (string)($row['due_date'] ?? ''),
+            ];
+        })(), $recentBills),
         'recent_payments' => array_map(static fn(array $row): array => [
             'id' => (int)$row['id'],
             'user_id' => (int)($row['user_id'] ?? 0),
