@@ -50,6 +50,22 @@ require_once __DIR__ . '/../templates/header.php';
 $custom_scripts = <<<'JS'
 <script>
 $(document).ready(function() {
+    function channelDetails(channels) {
+        if (!channels || typeof channels !== 'object') {
+            return '';
+        }
+
+        const parts = [];
+        if (channels.sms && (channels.sms.attempted || channels.sms.required)) {
+            parts.push('SMS: ' + (channels.sms.sent ? 'sent' : 'failed'));
+        }
+        if (channels.email && (channels.email.attempted || channels.email.required)) {
+            parts.push('Email: ' + (channels.email.sent ? 'sent' : 'failed'));
+        }
+
+        return parts.length ? 'Delivery status - ' + parts.join(', ') + '.' : '';
+    }
+
     $('#forgotPasswordForm').on('submit', function(e) {
         e.preventDefault();
 
@@ -73,7 +89,10 @@ $(document).ready(function() {
             contentType: 'application/json',
             data: JSON.stringify(formData),
             success: function(response) {
-                const message = response.message || 'If the account exists, a new password has been sent to the registered phone number.';
+                const message = [
+                    response.message || 'Password reset request received. If your account details match our records, a temporary password has been sent to your registered phone number.',
+                    channelDetails(response.data && response.data.channels)
+                ].filter(Boolean).join(' ');
                 if (window.showToast) {
                     showToast(message, 'success');
                 } else {
@@ -84,7 +103,10 @@ $(document).ready(function() {
                 }
             },
             error: function(xhr) {
-                const error = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Failed to process request';
+                const error = [
+                    (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Failed to process request',
+                    channelDetails(xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.channels)
+                ].filter(Boolean).join(' ');
                 if (window.showToast) {
                     showToast(error, 'danger');
                 } else {

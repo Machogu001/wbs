@@ -22,6 +22,10 @@ try {
 
     $userModel = new User($db);
     $userRow = $userModel->getAuthRowByIdentifier($identifier);
+    $channelStatus = [
+        'sms' => ['attempted' => false, 'sent' => false, 'required' => true],
+        'email' => ['attempted' => false, 'sent' => false, 'required' => false],
+    ];
 
     // For security, do not reveal whether the account exists in the response
     if ($userRow && !empty($userRow['phone_number'])) {
@@ -38,26 +42,40 @@ try {
         // Send SMS with the new password
         $sms = new SMS();
         $message = "Your new WBS portal password is: {$newPassword}. Please login and change it immediately.";
+        $channelStatus['sms']['attempted'] = true;
         $smsResult = $sms->send($userRow['phone_number'], $message, 'otp');
+        $channelStatus['sms']['sent'] = !empty($smsResult['success']);
+        $channelStatus['sms']['message'] = (string)($smsResult['message'] ?? '');
 
         // Also send an email if the user has an email address
         if (!empty($userRow['email'])) {
+            $channelStatus['email']['required'] = true;
+            $channelStatus['email']['attempted'] = true;
             require_once __DIR__ . '/../../includes/Email.php';
             $email = new Email();
-            $email->send(
+            $emailResult = $email->send(
                 $userRow['email'],
                 'Your new WBS portal password',
                 $message
             );
+            $channelStatus['email']['sent'] = !empty($emailResult['success']);
+            $channelStatus['email']['message'] = (string)($emailResult['message'] ?? '');
         }
 
-        // We intentionally ignore detailed SMS/Email errors in the public message
+        $deliveryOk = $channelStatus['sms']['sent']
+            && (!$channelStatus['email']['required'] || $channelStatus['email']['sent']);
+        if (!$deliveryOk) {
+            throw new Exception('Password reset could not be delivered to all required channels. Please try again shortly.');
+        }
     }
 
     http_response_code(200);
     echo json_encode([
         'status' => 'success',
-        'message' => 'If the account exists, a new password has been sent to the registered phone number.'
+        'message' => 'Password reset request received. If your account details match our records, a temporary password has been sent to your registered phone number.',
+        'data' => [
+            'channels' => $channelStatus,
+        ],
     ]);
 } catch (Exception $e) {
     http_response_code(400);
