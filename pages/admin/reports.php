@@ -971,10 +971,30 @@ if ($report_scope === 'all' || $report_scope === 'billing') {
 	$bills_offset = ($bills_page - 1) * $page_size;
 
 	// Page data
-	$sqlBills = "SELECT b.*, u.full_name, u.account_number
+	$outstandingExprSql = "GREATEST(0, COALESCE(b.amount, 0) - COALESCE(p_paid.completed_paid, 0) + COALESCE(pa_adj.approved_adjustments, 0))";
+	$displayAmountExprSql = $bill_status_filter === 'pending_overdue'
+		? $outstandingExprSql
+		: "COALESCE(b.amount, 0)";
+
+	$sqlBills = "SELECT b.*, u.full_name, u.account_number,
+		{$outstandingExprSql} AS outstanding_amount,
+		{$displayAmountExprSql} AS report_amount
 		, {$billTypeCaseSql} AS bill_type
 		FROM bills b
 		LEFT JOIN users u ON b.user_id = u.id
+		LEFT JOIN (
+			SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+			FROM payments
+			WHERE status = 'completed' AND bill_id IS NOT NULL
+			GROUP BY bill_id
+		) p_paid ON p_paid.bill_id = b.id
+		LEFT JOIN (
+			SELECT p2.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+			FROM payment_adjustments pa
+			INNER JOIN payments p2 ON p2.id = pa.payment_id
+			WHERE pa.status = 'approved' AND p2.bill_id IS NOT NULL
+			GROUP BY p2.bill_id
+		) pa_adj ON pa_adj.bill_id = b.id
 		" . $sqlBillsWhere . "
 		ORDER BY b.billing_month DESC, b.id DESC
 		LIMIT :limit OFFSET :offset";
@@ -991,9 +1011,22 @@ if ($report_scope === 'all' || $report_scope === 'billing') {
 	$bills = $stmtBills->fetchAll(PDO::FETCH_ASSOC);
 
 	// Grand total for filtered bills in period
-	$sqlBillsTotal = "SELECT COALESCE(SUM(b.amount),0) AS total_amount
+	$sqlBillsTotal = "SELECT COALESCE(SUM({$displayAmountExprSql}),0) AS total_amount
 		FROM bills b
 		LEFT JOIN users u ON b.user_id = u.id
+		LEFT JOIN (
+			SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+			FROM payments
+			WHERE status = 'completed' AND bill_id IS NOT NULL
+			GROUP BY bill_id
+		) p_paid ON p_paid.bill_id = b.id
+		LEFT JOIN (
+			SELECT p2.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+			FROM payment_adjustments pa
+			INNER JOIN payments p2 ON p2.id = pa.payment_id
+			WHERE pa.status = 'approved' AND p2.bill_id IS NOT NULL
+			GROUP BY p2.bill_id
+		) pa_adj ON pa_adj.bill_id = b.id
 		" . $sqlBillsWhere;
 	$stmtBillsTotal = $db->prepare($sqlBillsTotal);
 	$stmtBillsTotal->bindParam(':from', $from_str);
@@ -1568,7 +1601,7 @@ require_once __DIR__ . '/../../templates/header.php';
 							<thead class="table-light">
 								<tr>
 									<th>Bucket</th>
-									<th class="text-end">Amount (<?php echo htmlspecialchars($currency); ?>)</th>
+												<th class="text-end"><?php echo $bill_status_filter === 'pending_overdue' ? 'Outstanding' : 'Amount'; ?> (<?php echo htmlspecialchars($currency); ?>)</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -1847,7 +1880,7 @@ require_once __DIR__ . '/../../templates/header.php';
 							</td>
 										<td data-label="Account"><?php echo htmlspecialchars($bill['account_number'] ?? '-'); ?></td>
 										<td data-label="Customer"><?php echo htmlspecialchars($bill['full_name'] ?? ''); ?></td>
-										<td data-label="Amount (<?php echo htmlspecialchars($currency); ?>)" class="text-end"><?php echo number_format((float)$bill['amount'], 2); ?></td>
+													<td data-label="<?php echo $bill_status_filter === 'pending_overdue' ? 'Outstanding' : 'Amount'; ?> (<?php echo htmlspecialchars($currency); ?>)" class="text-end"><?php echo number_format((float)($bill['report_amount'] ?? $bill['amount'] ?? 0), 2); ?></td>
 										<td data-label="Due Date"><?php echo htmlspecialchars($bill['due_date']); ?></td>
 										<td data-label="Status">
 											<span class="badge bg-<?php echo $bill['status'] === 'paid' ? 'success' : (in_array($bill['status'], ['pending','overdue'], true) ? 'warning' : 'secondary'); ?>">

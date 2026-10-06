@@ -60,14 +60,49 @@ try {
         $paymentsStmt->execute([':from' => $fromStr, ':to' => $toStr]);
         $completedPaymentsTotal = (float)$paymentsStmt->fetchColumn();
 
-        $billsStmt = $db->prepare("SELECT COALESCE(SUM(amount),0) FROM bills WHERE DATE(created_at) BETWEEN :from AND :to");
+        $billsStmt = $db->prepare("SELECT COALESCE(SUM(GREATEST(0, COALESCE(b.amount, 0) - COALESCE(p_paid.completed_paid, 0) + COALESCE(pa_adj.approved_adjustments, 0))),0)
+            FROM bills b
+            LEFT JOIN (
+                SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+                FROM payments
+                WHERE status = 'completed' AND bill_id IS NOT NULL
+                GROUP BY bill_id
+            ) p_paid ON p_paid.bill_id = b.id
+            LEFT JOIN (
+                SELECT p2.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+                FROM payment_adjustments pa
+                INNER JOIN payments p2 ON p2.id = pa.payment_id
+                WHERE pa.status = 'approved' AND p2.bill_id IS NOT NULL
+                GROUP BY p2.bill_id
+            ) pa_adj ON pa_adj.bill_id = b.id
+            WHERE DATE(b.created_at) BETWEEN :from AND :to");
         $billsStmt->execute([':from' => $fromStr, ':to' => $toStr]);
         $billedTotal = (float)$billsStmt->fetchColumn();
 
         $recentPaymentsStmt = $db->prepare("SELECT p.id, p.amount, p.status, p.mpesa_receipt, COALESCE(p.transaction_date, p.created_at) AS tx_date, u.account_number, u.full_name FROM payments p LEFT JOIN users u ON u.id = p.user_id WHERE DATE(COALESCE(p.transaction_date, p.created_at)) BETWEEN :from AND :to ORDER BY COALESCE(p.transaction_date, p.created_at) DESC LIMIT 100");
         $recentPaymentsStmt->execute([':from' => $fromStr, ':to' => $toStr]);
 
-        $recentBillsStmt = $db->prepare("SELECT b.id, b.account_number, b.amount, b.status, b.billing_month, b.due_date, u.full_name FROM bills b LEFT JOIN users u ON u.id = b.user_id WHERE DATE(b.created_at) BETWEEN :from AND :to ORDER BY b.created_at DESC LIMIT 100");
+        $recentBillsStmt = $db->prepare("SELECT b.id, b.account_number, b.amount,
+                GREATEST(0, COALESCE(b.amount, 0) - COALESCE(p_paid.completed_paid, 0) + COALESCE(pa_adj.approved_adjustments, 0)) AS outstanding_amount,
+                b.status, b.billing_month, b.due_date, u.full_name
+            FROM bills b
+            LEFT JOIN users u ON u.id = b.user_id
+            LEFT JOIN (
+                SELECT bill_id, COALESCE(SUM(amount), 0) AS completed_paid
+                FROM payments
+                WHERE status = 'completed' AND bill_id IS NOT NULL
+                GROUP BY bill_id
+            ) p_paid ON p_paid.bill_id = b.id
+            LEFT JOIN (
+                SELECT p2.bill_id, COALESCE(SUM(pa.amount), 0) AS approved_adjustments
+                FROM payment_adjustments pa
+                INNER JOIN payments p2 ON p2.id = pa.payment_id
+                WHERE pa.status = 'approved' AND p2.bill_id IS NOT NULL
+                GROUP BY p2.bill_id
+            ) pa_adj ON pa_adj.bill_id = b.id
+            WHERE DATE(b.created_at) BETWEEN :from AND :to
+            ORDER BY b.created_at DESC
+            LIMIT 100");
         $recentBillsStmt->execute([':from' => $fromStr, ':to' => $toStr]);
 
         $auditStatusFile = __DIR__ . '/../../../logs/billing_audit_status.json';
@@ -79,12 +114,30 @@ try {
             }
         }
 
+        $recentBills = array_map(static function (array $row): array {
+            $amount = is_numeric($row['amount'] ?? null) ? (float)$row['amount'] : 0.0;
+            $outstanding = is_numeric($row['outstanding_amount'] ?? null) ? (float)$row['outstanding_amount'] : 0.0;
+            if (!is_finite($amount)) {
+                $amount = 0.0;
+            }
+            if (!is_finite($outstanding)) {
+                $outstanding = 0.0;
+            }
+            $outstanding = max(0.0, $outstanding);
+            // Keep amount aligned with unpaid figure for mobile reports cards/listing.
+            $row['amount'] = $outstanding;
+            $row['outstanding_amount'] = $outstanding;
+            $row['original_amount'] = round(max(0.0, $amount), 2);
+            $row['paid_amount'] = round(max(0.0, $amount - $outstanding), 2);
+            return $row;
+        }, $recentBillsStmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
+
         mobileApiJson(200, 'success', 'Reports loaded.', [
             'currency' => $currency,
             'period' => ['from' => $fromStr, 'to' => $toStr, 'key' => $period],
             'summary' => ['completed_payments_total' => $completedPaymentsTotal, 'billed_total' => $billedTotal],
             'recent_payments' => $recentPaymentsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [],
-            'recent_bills' => $recentBillsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [],
+            'recent_bills' => $recentBills,
             'audit_status' => $auditStatus,
         ]);
     }
