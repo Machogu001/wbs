@@ -29,6 +29,7 @@ try {
     $paidTime = trim((string)($data['paid_time'] ?? date('H:i:s')));
     $phone = trim((string)($data['phone_number'] ?? ''));
     $paymentNote = trim((string)($data['payment_note'] ?? ''));
+    $currentPassword = (string)($data['current_password'] ?? '');
 
     if ($identifier === '' || $amount <= 0 || $paidDate === '') {
         mobileApiJson(422, 'error', 'Account identifier, amount, and paid date are required.');
@@ -78,6 +79,8 @@ try {
     };
 
     $allocationPlan = [];
+    $requiresPasswordConfirmation = false;
+    $projectedExcessToWallet = 0.0;
     if ($paymentTarget === 'invoice') {
         if ($billId <= 0) {
             mobileApiJson(422, 'error', 'A bill ID is required when the payment target is invoice.');
@@ -90,10 +93,11 @@ try {
         if ($outstanding <= 0.0) {
             mobileApiJson(422, 'error', 'This invoice is already fully settled.');
         }
-        if ($amount > $outstanding + 0.01) {
-            mobileApiJson(422, 'error', 'Amount paid cannot exceed the invoice outstanding amount.');
-        }
-        $allocationPlan[] = ['bill' => $billRow, 'amount' => round($amount, 2), 'excess_to_wallet' => 0.0];
+        $applyAmount = round(min($amount, $outstanding), 2);
+        $excessToWallet = round(max(0.0, $amount - $applyAmount), 2);
+        $requiresPasswordConfirmation = $excessToWallet > 0.01;
+        $projectedExcessToWallet = $excessToWallet;
+        $allocationPlan[] = ['bill' => $billRow, 'amount' => $applyAmount, 'excess_to_wallet' => $excessToWallet];
     } else {
         $remaining = round($amount, 2);
         $totalOutstanding = 0.0;
@@ -118,12 +122,21 @@ try {
                 }
             }
             if ($remaining > 0.01) {
+                $requiresPasswordConfirmation = true;
+                $projectedExcessToWallet = round($remaining, 2);
                 if (!empty($allocationPlan)) {
                     $allocationPlan[count($allocationPlan) - 1]['excess_to_wallet'] = round($remaining, 2);
                 } else {
                     $allocationPlan[] = ['bill' => null, 'amount' => 0.0, 'excess_to_wallet' => round($remaining, 2)];
                 }
             }
+        }
+    }
+
+    if ($requiresPasswordConfirmation) {
+        $actorRow = $userService->getById((int)$user['id']);
+        if (!$actorRow || empty($actorRow['password_hash']) || !password_verify($currentPassword, (string)$actorRow['password_hash'])) {
+            mobileApiJson(422, 'error', 'Current password is required to confirm excess payment of ' . number_format($projectedExcessToWallet, 2) . ' as client credit.');
         }
     }
 

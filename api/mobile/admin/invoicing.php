@@ -132,7 +132,8 @@ try {
                 MpesaConfig::getShortCode(),
                 PaymentLink::generateLink((int)$billResult['bill_id']),
                 null,
-                $settings['bill_notification_template'] ?? null
+				$settings['bill_notification_template'] ?? null,
+				$settings['company_name'] ?? null
             );
             try {
                 (new SMS())->sendWithFallback((string)$user['phone_number'], $messageText, 'bill_notification');

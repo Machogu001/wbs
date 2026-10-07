@@ -125,7 +125,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db) {
                             $paybill,
                             $payUrl,
                             $billDate,
-                            $settings['bill_notification_template'] ?? null
+							$settings['bill_notification_template'] ?? null,
+							$settings['company_name'] ?? null
                         );
 
                         $sms->sendWithFallback($user['phone_number'], $messageText, 'bill_notification');

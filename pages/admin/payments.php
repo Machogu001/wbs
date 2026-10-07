@@ -71,6 +71,13 @@ $loadUserBills = static function (int $userId) use ($billService, $paymentServic
 	unset($billRow);
 	return $bills;
 };
+$verifyCurrentStaffPassword = static function (User $userService, int $userId, string $password): bool {
+	if ($userId <= 0 || trim($password) === '') {
+		return false;
+	}
+	$currentUserRow = $userService->getById($userId);
+	return $currentUserRow && !empty($currentUserRow['password_hash']) && password_verify($password, (string)$currentUserRow['password_hash']);
+};
 
 // Deep-link support: /admin/payments?account=MTR0005 (e.g. from the credit balance report)
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -140,6 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 	$paidTime = trim($_POST['paid_time'] ?? '');
 	$phone = trim($_POST['phone_number'] ?? '');
 	$paymentNote = trim((string)($_POST['payment_note'] ?? ''));
+	$currentPassword = (string)($_POST['current_password'] ?? '');
 
 	$currentUser = $account !== '' ? $resolvePaymentClient($userService, $account) : null;
 	if (!$currentUser) {
@@ -185,6 +193,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 		};
 
 		$allocationPlan = [];
+		$requiresPasswordConfirmation = false;
+		$projectedExcessToWallet = 0.0;
 		if ($paymentTarget === 'invoice') {
 			if ($billId <= 0) {
 				$message = 'Please select an invoice when target is Invoice.';
@@ -202,11 +212,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 					if ($outstanding <= 0.0) {
 						$message = 'This invoice is already fully settled.';
 						$message_type = 'danger';
-					} elseif ($amount > $outstanding + 0.01) {
-						$message = 'Amount paid cannot exceed invoice outstanding amount (' . number_format($outstanding, 2) . ').';
-						$message_type = 'danger';
 					} else {
-						$allocationPlan[] = ['bill' => $billRow, 'amount' => round($amount, 2)];
+						$applyAmount = round(min($amount, $outstanding), 2);
+						$excessToWallet = round(max(0.0, $amount - $applyAmount), 2);
+						$requiresPasswordConfirmation = $excessToWallet > 0.01;
+						$projectedExcessToWallet = $excessToWallet;
+						$allocationPlan[] = ['bill' => $billRow, 'amount' => $applyAmount, 'excess_to_wallet' => $excessToWallet];
 					}
 				}
 			}
@@ -236,6 +247,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 				}
 				// Any remaining after all bills = goes to wallet
 				if ($remaining > 0.01) {
+					$requiresPasswordConfirmation = true;
+					$projectedExcessToWallet = round($remaining, 2);
 					if (!empty($allocationPlan)) {
 						$allocationPlan[count($allocationPlan) - 1]['excess_to_wallet'] =
 							round(($allocationPlan[count($allocationPlan) - 1]['excess_to_wallet'] ?? 0) + $remaining, 2);
@@ -244,6 +257,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 					}
 				}
 			}
+		}
+
+		if (!empty($allocationPlan) && $message_type !== 'danger' && $requiresPasswordConfirmation && !$verifyCurrentStaffPassword($userService, (int)($auth->getUserId() ?? 0), $currentPassword)) {
+			$message = 'Re-enter your current password to confirm excess payment of ' . number_format($projectedExcessToWallet, 2) . ' being stored as client credit.';
+			$message_type = 'danger';
 		}
 
 		if (!empty($allocationPlan) && $message_type !== 'danger') {
@@ -595,6 +613,17 @@ if (!empty($userBills)) {
 }
 
 $currency = $settings['currency_code'] ?? 'KES';
+$manualPaymentPostback = ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') === 'manual_payment');
+$manualPaymentPostedTarget = $manualPaymentPostback ? trim((string)($_POST['payment_target'] ?? 'invoice')) : 'invoice';
+if (!in_array($manualPaymentPostedTarget, ['invoice', 'balance'], true)) {
+	$manualPaymentPostedTarget = 'invoice';
+}
+$manualPaymentPostedMethod = $manualPaymentPostback ? strtolower(trim((string)($_POST['payment_method'] ?? 'mpesa'))) : 'mpesa';
+if (!in_array($manualPaymentPostedMethod, ['mpesa', 'cash', 'bank', 'card', 'cheque', 'wallet', 'other'], true)) {
+	$manualPaymentPostedMethod = 'mpesa';
+}
+$manualPaymentPostedBillId = $manualPaymentPostback ? (int)($_POST['bill_id'] ?? 0) : 0;
+$manualPaymentShouldReopenPasswordModal = $manualPaymentPostback && $message_type === 'danger' && stripos((string)$message, 'password') !== false;
 
 $page_title = 'Admin - Payments';
 $is_admin_page = true;
@@ -683,38 +712,39 @@ include __DIR__ . '/../../templates/header.php';
 						<p class="text-muted mb-0">Search for an account first to record a manual payment.</p>
 					<?php else: ?>
 						<form method="POST" class="row g-3">
+							<input type="hidden" name="current_password" id="manualPaymentCurrentPassword" value="">
 							<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['app_csrf_token'] ?? ''); ?>">
 							<input type="hidden" name="action" value="manual_payment">
 							<input type="hidden" name="account_number" value="<?php echo htmlspecialchars($currentUser['account_number']); ?>">
 							<div class="col-md-4">
 								<label class="form-label">Payment Target</label>
 								<select name="payment_target" id="manualPaymentTarget" class="form-select" required>
-									<option value="invoice" selected>Specific Invoice</option>
-									<option value="balance">Outstanding Balance (auto-allocate)</option>
+									<option value="invoice" <?php echo $manualPaymentPostedTarget === 'invoice' ? 'selected' : ''; ?>>Specific Invoice</option>
+									<option value="balance" <?php echo $manualPaymentPostedTarget === 'balance' ? 'selected' : ''; ?>>Outstanding Balance (auto-allocate)</option>
 								</select>
 							</div>
 							<div class="col-md-4">
 								<label class="form-label">Payment Method</label>
 								<select name="payment_method" id="manualPaymentMethod" class="form-select" required>
-									<option value="mpesa" selected>M-Pesa</option>
-									<option value="cash">Cash</option>
-									<option value="bank">Bank Transfer</option>
-									<option value="card">Card</option>
-									<option value="cheque">Cheque</option>
-									<option value="wallet">Wallet</option>
-									<option value="other">Other</option>
+									<option value="mpesa" <?php echo $manualPaymentPostedMethod === 'mpesa' ? 'selected' : ''; ?>>M-Pesa</option>
+									<option value="cash" <?php echo $manualPaymentPostedMethod === 'cash' ? 'selected' : ''; ?>>Cash</option>
+									<option value="bank" <?php echo $manualPaymentPostedMethod === 'bank' ? 'selected' : ''; ?>>Bank Transfer</option>
+									<option value="card" <?php echo $manualPaymentPostedMethod === 'card' ? 'selected' : ''; ?>>Card</option>
+									<option value="cheque" <?php echo $manualPaymentPostedMethod === 'cheque' ? 'selected' : ''; ?>>Cheque</option>
+									<option value="wallet" <?php echo $manualPaymentPostedMethod === 'wallet' ? 'selected' : ''; ?>>Wallet</option>
+									<option value="other" <?php echo $manualPaymentPostedMethod === 'other' ? 'selected' : ''; ?>>Other</option>
 								</select>
 							</div>
 							<div class="col-md-4">
 								<label class="form-label" id="manualReferenceLabel">M-Pesa Reference No</label>
-								<input type="text" name="payment_reference" id="manualPaymentReference" class="form-control" required>
+								<input type="text" name="payment_reference" id="manualPaymentReference" class="form-control" value="<?php echo htmlspecialchars($manualPaymentPostback ? (string)($_POST['payment_reference'] ?? '') : ''); ?>" required>
 							</div>
 							<div class="col-md-6">
 								<label class="form-label">Bill / Invoice</label>
 								<select name="bill_id" id="manualBillSelect" class="form-select" required>
 									<option value="">Select bill</option>
 									<?php foreach ($userBills as $b): ?>
-										<option value="<?php echo (int)$b['id']; ?>">
+										<option value="<?php echo (int)$b['id']; ?>" data-outstanding="<?php echo htmlspecialchars((string)number_format((float)($b['outstanding_amount'] ?? $b['amount']), 2, '.', '')); ?>" <?php echo $manualPaymentPostedBillId === (int)$b['id'] ? 'selected' : ''; ?>>
 											#<?php echo (int)$b['id']; ?> - <?php echo htmlspecialchars(date('M Y', strtotime($b['billing_month']))); ?> - Outstanding <?php echo htmlspecialchars($currency); ?> <?php echo number_format((float)($b['outstanding_amount'] ?? $b['amount']), 2); ?> (<?php echo htmlspecialchars(ucfirst($b['status'])); ?>)
 										</option>
 									<?php endforeach; ?>
@@ -722,23 +752,23 @@ include __DIR__ . '/../../templates/header.php';
 							</div>
 							<div class="col-md-4">
 								<label class="form-label">Amount Paid (<?php echo htmlspecialchars($currency); ?>)</label>
-								<input type="number" step="0.01" name="amount" class="form-control" required>
+								<input type="number" step="0.01" name="amount" class="form-control" value="<?php echo htmlspecialchars($manualPaymentPostback ? (string)($_POST['amount'] ?? '') : ''); ?>" required>
 							</div>
 							<div class="col-md-4">
 								<label class="form-label">Paid Date</label>
-								<input type="date" name="paid_date" class="form-control" required>
+								<input type="date" name="paid_date" class="form-control" value="<?php echo htmlspecialchars($manualPaymentPostback ? (string)($_POST['paid_date'] ?? '') : ''); ?>" required>
 							</div>
 							<div class="col-md-4">
 								<label class="form-label">Paid Time</label>
-								<input type="time" name="paid_time" class="form-control">
+								<input type="time" name="paid_time" class="form-control" value="<?php echo htmlspecialchars($manualPaymentPostback ? (string)($_POST['paid_time'] ?? '') : ''); ?>">
 							</div>
 							<div class="col-md-6">
 								<label class="form-label">Payer Phone (optional)</label>
-								<input type="text" name="phone_number" class="form-control" value="<?php echo htmlspecialchars($currentUser['phone_number'] ?? ''); ?>">
+								<input type="text" name="phone_number" class="form-control" value="<?php echo htmlspecialchars($manualPaymentPostback ? (string)($_POST['phone_number'] ?? '') : (string)($currentUser['phone_number'] ?? '')); ?>">
 							</div>
 							<div class="col-md-6">
 								<label class="form-label">Internal Note (optional)</label>
-								<input type="text" name="payment_note" class="form-control" placeholder="Optional receipt note">
+								<input type="text" name="payment_note" class="form-control" placeholder="Optional receipt note" value="<?php echo htmlspecialchars($manualPaymentPostback ? (string)($_POST['payment_note'] ?? '') : ''); ?>">
 							</div>
 							<div class="col-md-6 d-flex align-items-end">
 								<button type="submit" class="btn btn-success w-100"><i class="bi bi-receipt-cutoff me-1"></i> Record Manual Payment</button>
@@ -970,6 +1000,28 @@ include __DIR__ . '/../../templates/header.php';
 		</div>
 	</div>
 </div>
+
+<div class="modal fade" id="manualPaymentPasswordModal" tabindex="-1" aria-hidden="true">
+	<div class="modal-dialog modal-dialog-centered">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">Confirm Excess Payment</h5>
+				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+			</div>
+			<div class="modal-body">
+				<p class="mb-2" id="manualPaymentPasswordHelp">This receipt exceeds the outstanding balance. Re-enter your password to store the excess as client credit.</p>
+				<div class="mb-0">
+					<label class="form-label">Current Password</label>
+					<input type="password" class="form-control" id="manualPaymentPasswordInput" autocomplete="current-password" placeholder="Enter your current password">
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+				<button type="button" class="btn btn-primary" id="manualPaymentPasswordConfirmBtn">Confirm &amp; Record</button>
+			</div>
+		</div>
+	</div>
+</div>
 <script src="/public/js/admin-client-autocomplete.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -979,6 +1031,16 @@ document.addEventListener('DOMContentLoaded', function () {
 	var refEl = document.getElementById('manualPaymentReference');
 	var refLabelEl = document.getElementById('manualReferenceLabel');
 	var billEl = document.getElementById('manualBillSelect');
+	var manualPaymentForm = document.querySelector('form input[name="action"][value="manual_payment"]') ? document.querySelector('form input[name="action"][value="manual_payment"]').form : null;
+	var manualPaymentAmountEl = manualPaymentForm ? manualPaymentForm.querySelector('input[name="amount"]') : null;
+	var manualPaymentPasswordHiddenEl = document.getElementById('manualPaymentCurrentPassword');
+	var passwordModalEl = document.getElementById('manualPaymentPasswordModal');
+	var passwordModalInputEl = document.getElementById('manualPaymentPasswordInput');
+	var passwordModalHelpEl = document.getElementById('manualPaymentPasswordHelp');
+	var passwordModalConfirmBtn = document.getElementById('manualPaymentPasswordConfirmBtn');
+	var passwordModal = (passwordModalEl && window.bootstrap && window.bootstrap.Modal) ? new window.bootstrap.Modal(passwordModalEl) : null;
+	var bypassManualPaymentPasswordPrompt = false;
+	var reopenPasswordModal = <?php echo $manualPaymentShouldReopenPasswordModal ? 'true' : 'false'; ?>;
 
 	if (accountSearchInput && window.WbsClientAutocomplete) {
 		window.WbsClientAutocomplete.init('.js-client-autocomplete', {
@@ -1013,6 +1075,104 @@ document.addEventListener('DOMContentLoaded', function () {
 		targetEl.addEventListener('change', syncManualPaymentFields);
 	}
 	syncManualPaymentFields();
+
+	function parseMoney(value) {
+		var num = parseFloat(value);
+		return Number.isFinite(num) ? num : 0;
+	}
+
+	function currentOutstandingForManualPayment() {
+		if (!targetEl) {
+			return 0;
+		}
+		if (targetEl.value === 'invoice') {
+			if (!billEl) {
+				return 0;
+			}
+			var selected = billEl.options[billEl.selectedIndex];
+			return selected ? parseMoney(selected.getAttribute('data-outstanding')) : 0;
+		}
+		var totalOutstanding = 0;
+		if (!billEl) {
+			return 0;
+		}
+		Array.prototype.forEach.call(billEl.options, function (option) {
+			if (!option.value) {
+				return;
+			}
+			totalOutstanding += parseMoney(option.getAttribute('data-outstanding'));
+		});
+		return totalOutstanding;
+	}
+
+	if (manualPaymentForm) {
+		manualPaymentForm.addEventListener('submit', function (event) {
+			if (bypassManualPaymentPasswordPrompt) {
+				bypassManualPaymentPasswordPrompt = false;
+				return;
+			}
+			if (!manualPaymentAmountEl || !targetEl || !passwordModal) {
+				return;
+			}
+			var amountValue = parseMoney(manualPaymentAmountEl.value);
+			var outstandingValue = currentOutstandingForManualPayment();
+			var excessValue = Math.max(0, amountValue - outstandingValue);
+			if (excessValue <= 0.01) {
+				if (manualPaymentPasswordHiddenEl) {
+					manualPaymentPasswordHiddenEl.value = '';
+				}
+				return;
+			}
+			event.preventDefault();
+			if (manualPaymentPasswordHiddenEl) {
+				manualPaymentPasswordHiddenEl.value = '';
+			}
+			if (passwordModalInputEl) {
+				passwordModalInputEl.value = '';
+			}
+			if (passwordModalHelpEl) {
+				passwordModalHelpEl.textContent = 'This receipt exceeds the outstanding balance by ' + excessValue.toFixed(2) + '. Re-enter your password to store the excess as client credit.';
+			}
+			passwordModal.show();
+		});
+	}
+
+	if (passwordModalConfirmBtn) {
+		passwordModalConfirmBtn.addEventListener('click', function () {
+			if (!passwordModalInputEl || !manualPaymentForm || !manualPaymentPasswordHiddenEl) {
+				return;
+			}
+			if (!passwordModalInputEl.value.trim()) {
+				if (window.showToast) {
+					showToast('Enter your current password to continue.', 'danger');
+				}
+				passwordModalInputEl.focus();
+				return;
+			}
+			manualPaymentPasswordHiddenEl.value = passwordModalInputEl.value;
+			bypassManualPaymentPasswordPrompt = true;
+			passwordModal.hide();
+			manualPaymentForm.requestSubmit();
+		});
+	}
+
+	if (passwordModalEl) {
+		passwordModalEl.addEventListener('hidden.bs.modal', function () {
+			if (passwordModalInputEl) {
+				passwordModalInputEl.value = '';
+			}
+		});
+	}
+
+	if (reopenPasswordModal && passwordModal) {
+		if (passwordModalHelpEl) {
+			passwordModalHelpEl.textContent = <?php echo json_encode((string)$message); ?>;
+		}
+		passwordModal.show();
+		if (passwordModalInputEl) {
+			passwordModalInputEl.focus();
+		}
+	}
 
 	document.querySelectorAll('.send-reminder-btn').forEach(function (button) {
 		button.addEventListener('click', function () {

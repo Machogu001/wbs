@@ -137,7 +137,8 @@ try {
         MpesaConfig::getShortCode(),
         $payUrl,
         $billDate,
-        $settings['bill_notification_template'] ?? null
+		$settings['bill_notification_template'] ?? null,
+		$settings['company_name'] ?? null
     );
 
     try {

@@ -275,7 +275,7 @@ class Bill {
 		$rowBills = $stmtBills->fetch(PDO::FETCH_ASSOC) ?: ['total_billed' => 0];
 		$totalBilled = (float)$rowBills['total_billed'];
 
-		$stmtPay = $this->conn->prepare("SELECT COALESCE(SUM(amount),0) AS total_paid FROM payments WHERE user_id = :uid AND status = 'completed'");
+		$stmtPay = $this->conn->prepare("SELECT COALESCE(SUM(amount),0) AS total_paid FROM payments WHERE user_id = :uid AND status = 'completed' AND COALESCE(payment_method, '') <> 'wallet'");
 		$stmtPay->bindParam(':uid', $userId, PDO::PARAM_INT);
 		$stmtPay->execute();
 		$rowPay = $stmtPay->fetch(PDO::FETCH_ASSOC) ?: ['total_paid' => 0];
@@ -298,7 +298,8 @@ class Bill {
 		string $paybill,
 		string $paymentUrl,
 		?string $billDate = null,
-		?string $template = null
+		?string $template = null,
+		?string $companyName = null
 	): string {
 		$clientName = trim((string)($user['full_name'] ?? ''));
 		if ($clientName === '') {
@@ -309,9 +310,9 @@ class Bill {
 		}
 
 		$accountNumber = trim((string)($user['account_number'] ?? ''));
-		$companyName = trim((string)($user['company_name'] ?? ''));
-		if ($companyName === '') {
-			$companyName = 'WBS';
+		$resolvedCompanyName = trim((string)($companyName ?? ''));
+		if ($resolvedCompanyName === '') {
+			$resolvedCompanyName = 'WBS';
 		}
 		$resolvedBillDate = trim((string)($billDate ?? ''));
 		if ($resolvedBillDate === '') {
@@ -328,6 +329,9 @@ class Bill {
 			: date('M', strtotime('first day of last month'));
 		$balanceLabel = $previousBalance < 0 ? 'Credit Bal' : 'Prev Bal';
 		$balanceAmount = abs($previousBalance);
+		$creditLine = $previousBalance < 0
+			? 'Credit Bal: KES ' . number_format($balanceAmount, 2)
+			: '';
 
 		$templateText = trim(str_replace(["\r\n", "\r"], "\n", (string)($template ?? '')));
 		if ($templateText === '') {
@@ -343,7 +347,8 @@ class Bill {
 			'{balance_label}' => $balanceLabel,
 			'{balance_amount}' => number_format($balanceAmount, 2),
 			'{credit_balance}' => $previousBalance < 0 ? number_format($balanceAmount, 2) : '0.00',
-			'{company_name}' => $companyName,
+			'{credit_line}' => $creditLine,
+			'{company_name}' => $resolvedCompanyName,
 			'{account}' => $accountNumber,
 			'{bill_date}' => $resolvedBillDate,
 			'{previous_reading}' => number_format((float)($billResult['previous_reading'] ?? 0), 2),

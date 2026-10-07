@@ -456,7 +456,7 @@ Prev Read: {previous_reading}
 Reading: {current_reading}
 Units: {units}
 Service Fee: KES {service_fee}
-{balance_label}: KES {balance_amount}
+{credit_line}
 Amount Due: KES {amount_due}
 Due Date: {due_date}
 Pay: {payment_url}

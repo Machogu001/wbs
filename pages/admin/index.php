@@ -351,7 +351,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $db && $settingsService) {
 							$paybill,
 							$payUrl,
 							$billDate,
-							$settings['bill_notification_template'] ?? null
+							$settings['bill_notification_template'] ?? null,
+							$settings['company_name'] ?? null
 						);
 
 						$sms->sendWithFallback($user['phone_number'], $messageText, 'bill_notification');
@@ -708,7 +709,7 @@ foreach ($months as $num => $label): ?>
 <div class="col-12">
 <label class="form-label">SMS / Email Bill Template</label>
 <textarea name="bill_notification_template" class="form-control" rows="10" spellcheck="false"><?php echo htmlspecialchars($settings['bill_notification_template'] ?? BillingSettings::getDefaultBillNotificationTemplate()); ?></textarea>
-<div class="form-text">Available placeholders: {client_name}, {month}, {total}, {bill_amount}, {amount_due}, {balance_label}, {balance_amount}, {credit_balance}, {company_name}, {account}, {bill_date}, {previous_reading}, {current_reading}, {units}, {service_fee}, {previous_balance}, {due_date}, {payment_url}, {paybill}.</div>
+<div class="form-text">Available placeholders: {client_name}, {month}, {total}, {bill_amount}, {amount_due}, {credit_line}, {balance_label}, {balance_amount}, {credit_balance}, {company_name}, {account}, {bill_date}, {previous_reading}, {current_reading}, {units}, {service_fee}, {previous_balance}, {due_date}, {payment_url}, {paybill}.</div>
 </div>
 </div>
 </div>

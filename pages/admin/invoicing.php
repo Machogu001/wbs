@@ -178,7 +178,8 @@ function processMeterReadingEntry(array $entry, ?array $photo, User $userService
 		$paybill,
 		$payUrl,
 		$billDate,
-		$settings['bill_notification_template'] ?? null
+		$settings['bill_notification_template'] ?? null,
+		$settings['company_name'] ?? null
 	);
 
 	$sms->sendWithFallback($user['phone_number'], $messageText, 'bill_notification');
