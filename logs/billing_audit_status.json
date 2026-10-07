@@ -1,5 +1,5 @@
 {
-    "generated_at": "2026-10-07T08:27:55+00:00",
+    "generated_at": "2026-10-07T08:34:26+00:00",
     "status": "pass",
     "failures": 0,
     "warnings": 0,
@@ -53,5 +53,5 @@
             "count": 0
         }
     ],
-    "summary_line": "Summary: 0 failure(s), 0 warning(s)."
+    "summary_line": "Billing Integrity Audit: 8/8 passed, no issues found."
 }

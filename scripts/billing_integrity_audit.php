@@ -54,6 +54,7 @@ $accounting = new Accounting($db);
 $failures = 0;
 $warnings = 0;
 $checkResults = [];
+$passCount = 0;
 
 $checks = [];
 
@@ -155,7 +156,7 @@ foreach ($checks as $check) {
             'detail' => $detail,
             'count' => 0,
         ];
-        audit_print('PASS', $check['label'], $check['ok_detail']);
+        $passCount++;
         continue;
     }
 
@@ -210,11 +211,24 @@ if (abs($billingDelta) > 0.009 || abs($paymentsDelta) > 0.009) {
         'detail' => $detail,
         'count' => 0,
     ];
-    audit_print('PASS', 'Current-month reconciliation deltas', 'Billing and payment deltas are zero for the current month.');
+    $passCount++;
 }
 
-echo PHP_EOL;
-echo 'Summary: ' . $failures . ' failure(s), ' . $warnings . ' warning(s).' . PHP_EOL;
+$totalChecks = count($checkResults);
+$summaryLine = 'Billing Integrity Audit: ' . $passCount . '/' . $totalChecks . ' passed';
+if ($failures > 0 || $warnings > 0) {
+	$summaryLine .= ', ' . $failures . ' failure(s), ' . $warnings . ' warning(s).';
+	echo $summaryLine . PHP_EOL;
+	foreach ($checkResults as $result) {
+		if (($result['status'] ?? '') === 'PASS') {
+			continue;
+		}
+		audit_print((string)$result['status'], (string)$result['label'], (string)$result['detail']);
+	}
+} else {
+	$summaryLine .= ', no issues found.';
+	echo $summaryLine . PHP_EOL;
+}
 
 $overallStatus = $failures > 0 ? 'failure' : ($warnings > 0 ? 'warning' : 'pass');
 audit_write_status($auditStatusFile, [
@@ -223,7 +237,7 @@ audit_write_status($auditStatusFile, [
     'failures' => $failures,
     'warnings' => $warnings,
     'checks' => $checkResults,
-    'summary_line' => 'Summary: ' . $failures . ' failure(s), ' . $warnings . ' warning(s).',
+    'summary_line' => $summaryLine,
 ]);
 
 exit($failures > 0 ? 1 : 0);
