@@ -26,6 +26,7 @@ try {
         $journalEntries = $accounting->getJournalEntries(50);
         $selectedEntry = $selectedEntryId > 0 ? $accounting->getJournalEntryById($selectedEntryId) : null;
         if ($selectedEntry === null && !empty($journalEntries)) {
+            
             $selectedEntry = $accounting->getJournalEntryById((int)$journalEntries[0]['id']);
         }
 
