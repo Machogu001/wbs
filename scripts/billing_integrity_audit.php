@@ -23,6 +23,10 @@ function audit_write_status(string $filePath, array $payload): void {
         return;
     }
 
+    if ((!file_exists($filePath) && !is_writable($directory)) || (file_exists($filePath) && !is_writable($filePath))) {
+        return;
+    }
+
     file_put_contents($filePath, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 }
 
@@ -73,7 +77,7 @@ $checks[] = [
         FROM payments p
         LEFT JOIN journal_entries je
             ON je.reference_type = 'payment' AND je.reference_id = p.id AND je.status = 'posted'
-        WHERE p.status = 'completed' AND p.amount > 0 AND je.id IS NULL",
+        WHERE p.status = 'completed' AND p.amount > 0 AND COALESCE(p.payment_method, '') <> 'wallet' AND je.id IS NULL",
     'type' => 'failure',
     'ok_detail' => 'All completed payments are journaled.',
     'bad_detail' => 'Completed payments exist without journal entries.',

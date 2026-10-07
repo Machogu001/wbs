@@ -146,6 +146,7 @@ try {
         status ENUM('pending', 'paid', 'overdue', 'cancelled') DEFAULT 'pending',
         tariff_plan_id INT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         INDEX idx_user (user_id),
         INDEX idx_status (status)
@@ -171,10 +172,19 @@ try {
         etims_api_key VARCHAR(255) NULL,
         etims_taxation_type_code VARCHAR(10) NULL,
         terms_conditions_content LONGTEXT NULL,
+        bill_notification_template TEXT NULL,
         mobile_api_key VARCHAR(191) NULL,
         mobile_api_key_required TINYINT(1) NOT NULL DEFAULT 1,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    if (!installerColumnExists($conn, 'bills', 'updated_at')) {
+        $conn->exec("ALTER TABLE bills ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at");
+    }
+
+    if (!installerColumnExists($conn, 'billing_settings', 'bill_notification_template')) {
+        $conn->exec("ALTER TABLE billing_settings ADD COLUMN bill_notification_template TEXT NULL AFTER terms_conditions_content");
+    }
 
     $conn->exec("CREATE TABLE IF NOT EXISTS short_urls (
         id INT AUTO_INCREMENT PRIMARY KEY,

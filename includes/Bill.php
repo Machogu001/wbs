@@ -13,6 +13,7 @@ class Bill {
 	public function __construct($db) {
 		$this->conn = $db;
 		if (!self::$schemaEnsured) {
+			$this->ensureBillTimestampColumns();
 			$this->ensureServiceChargeColumn();
 			$this->ensureEnhancedBillingColumns();
 			$this->ensureTariffTables();
@@ -609,6 +610,19 @@ class Bill {
 			'tax_rate' => "ALTER TABLE {$this->table} ADD COLUMN tax_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER base_amount",
 			'tax_amount' => "ALTER TABLE {$this->table} ADD COLUMN tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER tax_rate",
 			'tariff_plan_id' => "ALTER TABLE {$this->table} ADD COLUMN tariff_plan_id INT NULL AFTER status",
+		];
+
+		foreach ($columns as $columnName => $sql) {
+			if (!$this->hasColumn($this->table, $columnName)) {
+				$this->conn->exec($sql);
+			}
+		}
+	}
+
+	private function ensureBillTimestampColumns(): void {
+		$columns = [
+			'created_at' => "ALTER TABLE {$this->table} ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+			'updated_at' => "ALTER TABLE {$this->table} ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at",
 		];
 
 		foreach ($columns as $columnName => $sql) {

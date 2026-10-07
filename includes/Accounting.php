@@ -594,13 +594,16 @@ class Accounting {
 			'payments_to_journal_delta' => 0.0,
 		];
 
-		$stmtBilled = $this->db->prepare("SELECT COALESCE(SUM(amount), 0) FROM bills WHERE DATE(billing_month) BETWEEN :from_date AND :to_date");
+		$stmtBilled = $this->db->prepare("SELECT COALESCE(SUM(amount), 0)
+			FROM bills
+			WHERE DATE(COALESCE(created_at, billing_month)) BETWEEN :from_date AND :to_date");
 		$stmtBilled->execute([':from_date' => $fromDate, ':to_date' => $toDate]);
 		$totals['billed_total'] = (float)$stmtBilled->fetchColumn();
 
 		$stmtPayments = $this->db->prepare("SELECT COALESCE(SUM(amount), 0)
 			FROM payments
 			WHERE status = 'completed'
+				AND COALESCE(payment_method, '') <> 'wallet'
 				AND DATE(COALESCE(transaction_date, created_at)) BETWEEN :from_date AND :to_date");
 		$stmtPayments->execute([':from_date' => $fromDate, ':to_date' => $toDate]);
 		$totals['payments_total'] = (float)$stmtPayments->fetchColumn();
