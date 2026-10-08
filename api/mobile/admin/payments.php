@@ -187,10 +187,17 @@ try {
                 mobileApiJson(404, 'error', 'User not found.');
             }
             $currency = (string)($settings['currency_code'] ?? 'KES');
-            $billingMonth = date('M Y', strtotime((string)$bill['billing_month']));
-            $amount = number_format((float)$bill['amount'], 2);
-            $dueDate = date('d/m/Y', strtotime((string)$bill['due_date']));
+            $billingMonth = date('M', strtotime((string)$bill['billing_month']));
+            $billAmount = round((float)$bill['amount'], 2);
+            $dueDate = date('d-m-Y', strtotime((string)$bill['due_date']));
             $isOverdue = strtotime((string)$bill['due_date']) < strtotime(date('Y-m-d'));
+            $amountDueValue = $paymentService->getBillOutstandingAmount($billId);
+            if ($amountDueValue <= 0.01) {
+                mobileApiJson(422, 'error', 'This bill has no outstanding balance to remind the client about.');
+            }
+            $balanceSummary = $billService->getNotificationBalanceSummary((int)$client['id'], $billAmount);
+            $previousBalance = (float)($balanceSummary['previous_balance'] ?? 0.0);
+            $creditLine = $previousBalance < 0 ? 'Credit Bal: ' . $currency . ' ' . number_format(abs($previousBalance), 2) : '';
             $paymentLink = '';
             try {
                 $paymentLink = (string)PaymentLink::generateLink($billId);
@@ -198,18 +205,20 @@ try {
                 error_log('Payment link generation failed: ' . $linkError->getMessage());
             }
             $clientName = !empty($client['full_name']) ? (string)$client['full_name'] : 'Customer';
-            $smsText = $isOverdue
-                ? "Dear {$clientName}, this is a reminder that your {$billingMonth} water bill for Account {$client['account_number']} amounting to {$currency} {$amount} was due on {$dueDate} and is now overdue. Kindly settle the bill as soon as possible to avoid service interruption."
-                : "Dear {$clientName}, this is a reminder that your {$billingMonth} water bill for Account {$client['account_number']} amounting to {$currency} {$amount} is due on {$dueDate}. Kindly settle the bill on or before the due date to avoid service interruption.";
-            if ($paymentLink !== '') {
-                $smsText .= " Pay here: {$paymentLink}";
-            }
-            $emailText = "Dear {$clientName},\n\n"
-                . ($isOverdue ? "This is a reminder that your {$billingMonth} water bill is overdue for payment.\n\n" : "This is a reminder that your {$billingMonth} water bill is due for payment.\n\n")
-                . "Billing Details:\nAccount Number: {$client['account_number']}\nAmount Due: {$currency} {$amount}\nDue Date: {$dueDate}\n\n"
-                . ($isOverdue ? "Kindly settle the bill as soon as possible to avoid service interruption.\n\n" : "Kindly settle the bill on or before the due date to avoid service interruption.\n\n")
-                . ($paymentLink !== '' ? "Click the link below to pay now:\n{$paymentLink}\n\n" : '')
-                . "Thank you for your prompt attention to this matter.\n\nRegards,\nWater Billing System";
+            $companyName = !empty($settings['company_name']) ? (string)$settings['company_name'] : 'WBS';
+            $statusLine = $isOverdue ? 'Status: Overdue' : 'Status: Payment Reminder';
+            $payLine = $paymentLink !== '' ? "Pay: {$paymentLink}" : 'Pay: Payment link unavailable';
+            $smsText = "Dear {$clientName},\n"
+                . "{$billingMonth} water bill reminder\n"
+                . "AC: {$client['account_number']}\n"
+                . "Bill Amount: {$currency} " . number_format($billAmount, 2) . "\n"
+                . ($creditLine !== '' ? $creditLine . "\n" : '')
+                . "Amount Due: {$currency} " . number_format($amountDueValue, 2) . "\n"
+                . "Due Date: {$dueDate}\n"
+                . "{$statusLine}\n"
+                . $payLine . "\n"
+                . "Thank you, {$companyName}.";
+            $emailText = $smsText;
 
             $sent = [];
             if (!empty($client['phone_number'])) {
@@ -237,6 +246,7 @@ try {
             }
             mobileApiLogActivity($db, (int)$actor['id'], 'payment_reminder_sent', 'bill', $billId, 'Sent payment reminder to ' . $clientName, [
                 'bill_amount' => (float)$bill['amount'],
+                'amount_due' => $amountDueValue,
                 'billing_month' => $bill['billing_month'],
                 'reminders_sent' => $sent,
             ]);
