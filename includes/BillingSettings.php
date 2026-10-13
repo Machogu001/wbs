@@ -9,7 +9,7 @@ class BillingSettings {
     }
 
     public function getSettings() {
-        $query = "SELECT rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, terms_conditions_content, bill_notification_template, mobile_api_key, mobile_api_key_required, updated_at FROM " . $this->table . " WHERE id = 1 LIMIT 1";
+        $query = "SELECT rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, terms_conditions_content, bill_notification_template, overdue_reminder_interval_days, overdue_reminder_max_sends, mobile_api_key, mobile_api_key_required, updated_at FROM " . $this->table . " WHERE id = 1 LIMIT 1";
         $stmt = $this->conn->prepare($query);
         $stmt->execute();
         $settings = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -68,6 +68,14 @@ class BillingSettings {
         if (!isset($settings['bill_notification_template']) || trim((string)$settings['bill_notification_template']) === '') {
             $settings['bill_notification_template'] = self::getDefaultBillNotificationTemplate();
         }
+        if (!isset($settings['overdue_reminder_interval_days']) || (int)$settings['overdue_reminder_interval_days'] < 1) {
+            $settings['overdue_reminder_interval_days'] = 3;
+        }
+        $settings['overdue_reminder_interval_days'] = max(1, (int)$settings['overdue_reminder_interval_days']);
+        if (!isset($settings['overdue_reminder_max_sends']) || (int)$settings['overdue_reminder_max_sends'] < 0) {
+            $settings['overdue_reminder_max_sends'] = 0;
+        }
+        $settings['overdue_reminder_max_sends'] = max(0, (int)$settings['overdue_reminder_max_sends']);
         if (!isset($settings['mobile_api_key']) || $settings['mobile_api_key'] === null) {
             $settings['mobile_api_key'] = '';
         }
@@ -96,7 +104,7 @@ class BillingSettings {
         return $stmt->execute();
     }
 
-    public function updateSettings($rate_per_unit, $service_charge, $company_pin = null, $etims_integration_url = null, $etims_api_key = null, $company_name = null, $support_phone = null, $support_email = null, $currency_code = null, $financial_year_start_month = null, $vat_rate = null, $etims_taxation_type_code = null, $registration_fee = null, $locale_code = null, $timezone_name = null, $enforce_location_accuracy = null, $terms_conditions_content = null, $mobile_api_key_required = null, $bill_notification_template = null) {
+    public function updateSettings($rate_per_unit, $service_charge, $company_pin = null, $etims_integration_url = null, $etims_api_key = null, $company_name = null, $support_phone = null, $support_email = null, $currency_code = null, $financial_year_start_month = null, $vat_rate = null, $etims_taxation_type_code = null, $registration_fee = null, $locale_code = null, $timezone_name = null, $enforce_location_accuracy = null, $terms_conditions_content = null, $mobile_api_key_required = null, $bill_notification_template = null, $overdue_reminder_interval_days = null, $overdue_reminder_max_sends = null) {
         $query = "UPDATE " . $this->table . " 
                   SET rate_per_unit = :rate_per_unit,
                       service_charge = :service_charge,
@@ -115,6 +123,8 @@ class BillingSettings {
                       registration_fee = :registration_fee,
                       terms_conditions_content = :terms_conditions_content,
                       bill_notification_template = :bill_notification_template,
+                      overdue_reminder_interval_days = :overdue_reminder_interval_days,
+                      overdue_reminder_max_sends = :overdue_reminder_max_sends,
                       mobile_api_key_required = :mobile_api_key_required,
                       enforce_location_accuracy = :enforce_location_accuracy,
                       updated_at = NOW()
@@ -159,6 +169,10 @@ class BillingSettings {
             ? $this->getStoredBillNotificationTemplate()
             : $this->normalizeBillNotificationTemplate($bill_notification_template);
         $stmt->bindParam(":bill_notification_template", $billNotificationTemplate);
+        $overdueReminderIntervalDays = $overdue_reminder_interval_days !== null ? max(1, (int)$overdue_reminder_interval_days) : (int)($this->getSettings()['overdue_reminder_interval_days'] ?? 3);
+        $stmt->bindParam(":overdue_reminder_interval_days", $overdueReminderIntervalDays, PDO::PARAM_INT);
+        $overdueReminderMaxSends = $overdue_reminder_max_sends !== null ? max(0, (int)$overdue_reminder_max_sends) : (int)($this->getSettings()['overdue_reminder_max_sends'] ?? 0);
+        $stmt->bindParam(":overdue_reminder_max_sends", $overdueReminderMaxSends, PDO::PARAM_INT);
         $mobile_api_key_required = ($mobile_api_key_required !== null) ? (int)$mobile_api_key_required : 1;
         $stmt->bindParam(":mobile_api_key_required", $mobile_api_key_required, PDO::PARAM_INT);
         $enforce_location_accuracy = ($enforce_location_accuracy !== null) ? (int)$enforce_location_accuracy : 0;
@@ -794,10 +808,12 @@ HTML,
           $default_tax_code = '';
           $default_terms = self::getDefaultTermsTemplate();
           $default_bill_notification_template = self::getDefaultBillNotificationTemplate();
+          $default_overdue_reminder_interval_days = 3;
+          $default_overdue_reminder_max_sends = 0;
           $default_mobile_api_key = '';
           $default_mobile_api_key_required = 1;
-          $query = "INSERT INTO " . $this->table . " (id, rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, terms_conditions_content, bill_notification_template, mobile_api_key, mobile_api_key_required) 
-              VALUES (1, :rate_per_unit, :service_charge, NULL, NULL, NULL, :company_name, :support_phone, :support_email, :currency_code, :locale_code, :timezone_name, :financial_year_start_month, :vat_rate, :etims_taxation_type_code, :registration_fee, 0, :terms_conditions_content, :bill_notification_template, :mobile_api_key, :mobile_api_key_required)";
+          $query = "INSERT INTO " . $this->table . " (id, rate_per_unit, service_charge, company_pin, etims_integration_url, etims_api_key, company_name, support_phone, support_email, currency_code, locale_code, timezone_name, financial_year_start_month, vat_rate, etims_taxation_type_code, registration_fee, enforce_location_accuracy, terms_conditions_content, bill_notification_template, overdue_reminder_interval_days, overdue_reminder_max_sends, mobile_api_key, mobile_api_key_required) 
+              VALUES (1, :rate_per_unit, :service_charge, NULL, NULL, NULL, :company_name, :support_phone, :support_email, :currency_code, :locale_code, :timezone_name, :financial_year_start_month, :vat_rate, :etims_taxation_type_code, :registration_fee, 0, :terms_conditions_content, :bill_notification_template, :overdue_reminder_interval_days, :overdue_reminder_max_sends, :mobile_api_key, :mobile_api_key_required)";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(":rate_per_unit", $default_rate);
         $stmt->bindParam(":service_charge", $default_service);
@@ -813,6 +829,8 @@ HTML,
         $stmt->bindParam(":registration_fee", $default_registration_fee);
         $stmt->bindParam(":terms_conditions_content", $default_terms);
         $stmt->bindParam(":bill_notification_template", $default_bill_notification_template);
+        $stmt->bindParam(":overdue_reminder_interval_days", $default_overdue_reminder_interval_days, PDO::PARAM_INT);
+        $stmt->bindParam(":overdue_reminder_max_sends", $default_overdue_reminder_max_sends, PDO::PARAM_INT);
         $stmt->bindParam(":mobile_api_key", $default_mobile_api_key);
         $stmt->bindParam(":mobile_api_key_required", $default_mobile_api_key_required, PDO::PARAM_INT);
         $stmt->execute();
@@ -839,6 +857,8 @@ HTML,
             enforce_location_accuracy TINYINT(1) NOT NULL DEFAULT 0,
             terms_conditions_content LONGTEXT NULL,
             bill_notification_template TEXT NULL,
+            overdue_reminder_interval_days INT NOT NULL DEFAULT 3,
+            overdue_reminder_max_sends INT NOT NULL DEFAULT 0,
             mobile_api_key VARCHAR(191) NULL,
             mobile_api_key_required TINYINT(1) NOT NULL DEFAULT 1,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -932,6 +952,16 @@ HTML,
         }
         try {
             $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN bill_notification_template TEXT NULL");
+        } catch (\PDOException $e) {
+            // Ignore if column already exists
+        }
+        try {
+            $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN overdue_reminder_interval_days INT NOT NULL DEFAULT 3");
+        } catch (\PDOException $e) {
+            // Ignore if column already exists
+        }
+        try {
+            $this->conn->exec("ALTER TABLE " . $this->table . " ADD COLUMN overdue_reminder_max_sends INT NOT NULL DEFAULT 0");
         } catch (\PDOException $e) {
             // Ignore if column already exists
         }

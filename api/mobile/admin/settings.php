@@ -74,7 +74,9 @@ try {
                 !empty($data['enforce_location_accuracy']) ? 1 : (int)($currentSettings['enforce_location_accuracy'] ?? 0),
                 null,
                 !empty($data['mobile_api_key_required']) ? 1 : 0,
-                array_key_exists('bill_notification_template', $data) ? trim((string)$data['bill_notification_template']) : ($currentSettings['bill_notification_template'] ?? null)
+                array_key_exists('bill_notification_template', $data) ? trim((string)$data['bill_notification_template']) : ($currentSettings['bill_notification_template'] ?? null),
+                array_key_exists('overdue_reminder_interval_days', $data) ? max(1, (int)$data['overdue_reminder_interval_days']) : (int)($currentSettings['overdue_reminder_interval_days'] ?? 3),
+                array_key_exists('overdue_reminder_max_sends', $data) ? max(0, (int)$data['overdue_reminder_max_sends']) : (int)($currentSettings['overdue_reminder_max_sends'] ?? 0)
             );
             if (!$ok) {
                 mobileApiJson(500, 'error', 'Failed to update billing settings.');

@@ -11,6 +11,7 @@
  */
 
 require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/BillingSettings.php';
 require_once __DIR__ . '/../../includes/SMS.php';
 require_once __DIR__ . '/../../includes/PaymentLink.php';
 
@@ -59,12 +60,17 @@ try {
         SET status = 'overdue'
         WHERE status = 'pending' AND due_date < CURDATE()");
 
+    $settings = (new BillingSettings($db))->getSettings();
+    $overdueReminderIntervalDays = max(1, (int)($settings['overdue_reminder_interval_days'] ?? 3));
+    $overdueReminderMaxSends = max(0, (int)($settings['overdue_reminder_max_sends'] ?? 0));
+
     $query = "SELECT b.id, b.user_id, b.billing_month, b.amount, b.due_date,
             u.full_name, u.phone_number, u.account_number,
             COALESCE(SUM(CASE WHEN p.status = 'completed' THEN p.amount ELSE 0 END), 0) AS paid_amount,
             CASE WHEN b.due_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY) THEN 'due_tomorrow' ELSE 'overdue' END AS reminder_type,
             due_log.last_sent_at AS due_tomorrow_last_sent_at,
-            overdue_log.last_sent_at AS overdue_last_sent_at
+            overdue_log.last_sent_at AS overdue_last_sent_at,
+            COALESCE(overdue_log.sent_count, 0) AS overdue_sent_count
         FROM bills b
         INNER JOIN users u ON u.id = b.user_id
         LEFT JOIN payments p ON p.bill_id = b.id
@@ -75,7 +81,7 @@ try {
             GROUP BY bill_id
         ) due_log ON due_log.bill_id = b.id
         LEFT JOIN (
-            SELECT bill_id, MAX(sent_at) AS last_sent_at
+            SELECT bill_id, MAX(sent_at) AS last_sent_at, COUNT(*) AS sent_count
             FROM payment_reminder_log
             WHERE reminder_type = 'overdue'
             GROUP BY bill_id
@@ -85,12 +91,15 @@ try {
             AND u.phone_number IS NOT NULL
             AND u.phone_number <> ''
         GROUP BY b.id, b.user_id, b.billing_month, b.amount, b.due_date,
-            u.full_name, u.phone_number, u.account_number, due_log.last_sent_at, overdue_log.last_sent_at
+            u.full_name, u.phone_number, u.account_number, due_log.last_sent_at, overdue_log.last_sent_at, overdue_log.sent_count
         HAVING b.amount - paid_amount > 0.01
             AND (
                 (reminder_type = 'due_tomorrow' AND due_tomorrow_last_sent_at IS NULL)
                 OR
-                (reminder_type = 'overdue' AND (overdue_last_sent_at IS NULL OR overdue_last_sent_at <= DATE_SUB(NOW(), INTERVAL 3 DAY)))
+                (reminder_type = 'overdue'
+                    AND (overdue_last_sent_at IS NULL OR overdue_last_sent_at <= DATE_SUB(NOW(), INTERVAL {$overdueReminderIntervalDays} DAY))
+                    AND ({$overdueReminderMaxSends} = 0 OR overdue_sent_count < {$overdueReminderMaxSends})
+                )
             )
         ORDER BY b.due_date ASC, b.id ASC";
 

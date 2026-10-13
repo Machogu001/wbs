@@ -173,6 +173,8 @@ try {
         etims_taxation_type_code VARCHAR(10) NULL,
         terms_conditions_content LONGTEXT NULL,
         bill_notification_template TEXT NULL,
+        overdue_reminder_interval_days INT NOT NULL DEFAULT 3,
+        overdue_reminder_max_sends INT NOT NULL DEFAULT 0,
         mobile_api_key VARCHAR(191) NULL,
         mobile_api_key_required TINYINT(1) NOT NULL DEFAULT 1,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -184,6 +186,14 @@ try {
 
     if (!installerColumnExists($conn, 'billing_settings', 'bill_notification_template')) {
         $conn->exec("ALTER TABLE billing_settings ADD COLUMN bill_notification_template TEXT NULL AFTER terms_conditions_content");
+    }
+
+    if (!installerColumnExists($conn, 'billing_settings', 'overdue_reminder_interval_days')) {
+        $conn->exec("ALTER TABLE billing_settings ADD COLUMN overdue_reminder_interval_days INT NOT NULL DEFAULT 3 AFTER bill_notification_template");
+    }
+
+    if (!installerColumnExists($conn, 'billing_settings', 'overdue_reminder_max_sends')) {
+        $conn->exec("ALTER TABLE billing_settings ADD COLUMN overdue_reminder_max_sends INT NOT NULL DEFAULT 0 AFTER overdue_reminder_interval_days");
     }
 
     $conn->exec("CREATE TABLE IF NOT EXISTS short_urls (
