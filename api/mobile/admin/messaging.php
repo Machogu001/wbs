@@ -38,6 +38,7 @@ try {
         if ($action === 'send_broadcast' || $action === 'send_client_broadcast') {
             $subject = trim((string)($data['subject'] ?? ''));
             $message = trim((string)($data['message'] ?? ''));
+            $messageTemplate = trim((string)($data['message_template'] ?? ''));
             $recipientGroup = (string)($data['recipient_group'] ?? 'clients');
             $audience = (string)($data['audience'] ?? 'all_clients');
             $selectedIds = array_values(array_filter(array_map('intval', (array)($data['selected_ids'] ?? [])), static function ($id): bool {
@@ -51,7 +52,7 @@ try {
             }
 
             $sendToAll = in_array($audience, ['all_clients', 'all_staff'], true);
-            $result = $comms->sendSmsBroadcast($userId, $subject, $message, $recipientGroup, $sendToAll, $selectedIds);
+            $result = $comms->sendSmsBroadcast($userId, $subject, $message, $recipientGroup, $sendToAll, $selectedIds, $messageTemplate);
             if (empty($result['success'])) {
                 mobileApiJson(422, 'error', (string)($result['message'] ?? 'Could not send broadcast.'));
             }

@@ -46,6 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canSendMessages) {
         if ($action === 'send_client_broadcast') {
             $subject = trim((string)($_POST['subject'] ?? ''));
             $message = trim((string)($_POST['message'] ?? ''));
+            $messageTemplate = trim((string)($_POST['message_template'] ?? ''));
             $recipientGroup = (string)($_POST['recipient_group'] ?? 'clients');
             $audience = (string)($_POST['audience'] ?? 'all_clients');
             $selectedIds = [];
@@ -62,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canSendMessages) {
             }
 
             $sendToAll = in_array($audience, ['all_clients', 'all_staff'], true);
-            $result = $comms->sendSmsBroadcast($currentUserId, $subject, $message, $recipientGroup, $sendToAll, $selectedIds);
+            $result = $comms->sendSmsBroadcast($currentUserId, $subject, $message, $recipientGroup, $sendToAll, $selectedIds, $messageTemplate);
 
             if (!empty($result['success'])) {
                 $groupLabel = $recipientGroup === 'staff' ? 'staff member(s)' : 'client(s)';
@@ -212,7 +213,7 @@ require_once __DIR__ . '/../../templates/header.php';
                             <div class="mb-3">
                                 <label for="message_template" class="form-label">Template</label>
                                 <div class="input-group">
-                                    <select class="form-select" id="message_template">
+                                    <select class="form-select" id="message_template" name="message_template">
                                         <option value="">Custom message (no template)</option>
                                     </select>
                                     <button class="btn btn-outline-primary" type="button" id="applyTemplateBtn">
@@ -413,7 +414,7 @@ $custom_scripts = <<<JS
             {
                 id: 'payment_reminder',
                 subject: 'Payment Reminder',
-                message: 'Dear client, this is a reminder to pay your pending water bill by the due date to avoid penalties. Thank you.'
+                message: 'System-generated personalized payment reminder based on each client\'s outstanding bill and current balance.'
             },
             {
                 id: 'overdue_notice',

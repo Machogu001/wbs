@@ -1,6 +1,10 @@
 <?php
 
 require_once __DIR__ . '/SMS.php';
+require_once __DIR__ . '/Bill.php';
+require_once __DIR__ . '/BillingSettings.php';
+require_once __DIR__ . '/Payment.php';
+require_once __DIR__ . '/PaymentLink.php';
 
 class InternalComms
 {
@@ -106,13 +110,243 @@ class InternalComms
         }
     }
 
-    public function sendSmsBroadcast(int $adminId, string $subject, string $message, string $recipientGroup, bool $sendToAll, array $selectedIds = []): array
+    private function getBroadcastRecipients(string $recipientGroup, bool $sendToAll, array $selectedIds = []): array
+    {
+        $recipientGroup = strtolower(trim($recipientGroup));
+        if (!in_array($recipientGroup, ['clients', 'staff'], true)) {
+            $recipientGroup = 'clients';
+        }
+
+        $whereRole = $recipientGroup === 'staff' ? "role <> 'customer'" : "role = 'customer'";
+
+        try {
+            if ($sendToAll) {
+                $stmt = $this->conn->query("SELECT id, account_number, full_name, phone_number, email
+                    FROM users
+                    WHERE {$whereRole} AND status = 'active' AND phone_number IS NOT NULL AND phone_number <> ''");
+                return $stmt ? ($stmt->fetchAll(\PDO::FETCH_ASSOC) ?: []) : [];
+            }
+
+            $ids = array_values(array_filter(array_map('intval', $selectedIds), static function ($id) {
+                return $id > 0;
+            }));
+
+            if (empty($ids)) {
+                return [];
+            }
+
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $stmt = $this->conn->prepare("SELECT id, account_number, full_name, phone_number, email
+                FROM users
+                WHERE {$whereRole} AND status = 'active' AND id IN ($placeholders) AND phone_number IS NOT NULL AND phone_number <> ''");
+            $stmt->execute($ids);
+            return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+        } catch (\PDOException $e) {
+            return [];
+        }
+    }
+
+    private function findOutstandingReminderBill(int $userId, Bill $billService, Payment $paymentService): ?array
+    {
+        if ($userId <= 0) {
+            return null;
+        }
+
+        $bills = $billService->getBillsByUser($userId);
+        $outstandingBills = [];
+        foreach ($bills as $bill) {
+            $bill['outstanding_amount'] = $paymentService->getBillOutstandingAmount((int)($bill['id'] ?? 0));
+            if ((float)($bill['outstanding_amount'] ?? 0) > 0.01) {
+                $outstandingBills[] = $bill;
+            }
+        }
+
+        if (empty($outstandingBills)) {
+            return null;
+        }
+
+        usort($outstandingBills, static function (array $a, array $b): int {
+            $ad = strtotime((string)($a['due_date'] ?? $a['billing_month'] ?? '1970-01-01')) ?: 0;
+            $bd = strtotime((string)($b['due_date'] ?? $b['billing_month'] ?? '1970-01-01')) ?: 0;
+            return $ad === $bd ? ((int)($a['id'] ?? 0) <=> (int)($b['id'] ?? 0)) : ($ad <=> $bd);
+        });
+
+        return $outstandingBills[0];
+    }
+
+    private function buildPaymentReminderSms(array $client, array $bill, Bill $billService, Payment $paymentService, array $settings): string
+    {
+        $currency = !empty($settings['currency_code']) ? (string)$settings['currency_code'] : 'KES';
+        $companyName = !empty($settings['company_name']) ? (string)$settings['company_name'] : 'WBS';
+        $billingMonth = date('M', strtotime((string)($bill['billing_month'] ?? '')));
+        $billAmount = round((float)($bill['amount'] ?? 0), 2);
+        $dueDate = date('d-m-Y', strtotime((string)($bill['due_date'] ?? 'now')));
+        $isOverdue = strtotime((string)($bill['due_date'] ?? '')) < strtotime(date('Y-m-d'));
+        $amountDueValue = $paymentService->getBillOutstandingAmount((int)($bill['id'] ?? 0));
+        $balanceSummary = $billService->getNotificationBalanceSummary((int)($client['id'] ?? 0), $billAmount);
+        $previousBalance = (float)($balanceSummary['previous_balance'] ?? 0.0);
+        $creditLine = $previousBalance < 0 ? 'Credit Bal: ' . $currency . ' ' . number_format(abs($previousBalance), 2) : '';
+        $paymentLink = '';
+        try {
+            $paymentLink = (string)PaymentLink::generateLink((int)($bill['id'] ?? 0));
+        } catch (\Throwable $e) {
+            error_log('Messaging payment link generation failed: ' . $e->getMessage());
+        }
+
+        $clientName = !empty($client['full_name']) ? (string)$client['full_name'] : 'Customer';
+        $statusLine = $isOverdue ? 'Status: Overdue' : 'Status: Payment Reminder';
+        $payLine = $paymentLink !== '' ? "Pay: {$paymentLink}" : 'Pay: Payment link unavailable';
+
+        return "Dear {$clientName},\n"
+            . "{$billingMonth} water bill reminder\n"
+            . "AC: " . (string)($client['account_number'] ?? '') . "\n"
+            . "Bill Amount: {$currency} " . number_format($billAmount, 2) . "\n"
+            . ($creditLine !== '' ? $creditLine . "\n" : '')
+            . "Amount Due: {$currency} " . number_format($amountDueValue, 2) . "\n"
+            . "Due Date: {$dueDate}\n"
+            . "{$statusLine}\n"
+            . $payLine . "\n"
+            . "Thank you, {$companyName}.";
+    }
+
+    private function sendClientPaymentReminderBroadcast(int $adminId, string $subject, string $message, bool $sendToAll, array $selectedIds = []): array
+    {
+        $recipients = $this->getBroadcastRecipients('clients', $sendToAll, $selectedIds);
+        if (empty($recipients)) {
+            return [
+                'success' => false,
+                'message' => 'No eligible client recipients found.',
+                'recipient_count' => 0,
+            ];
+        }
+
+        $settings = (new BillingSettings($this->conn))->getSettings();
+        $billService = new Bill($this->conn);
+        $paymentService = new Payment($this->conn);
+        $sms = new SMS();
+
+        $deliverableRecipients = [];
+        foreach ($recipients as $recipient) {
+            $bill = $this->findOutstandingReminderBill((int)($recipient['id'] ?? 0), $billService, $paymentService);
+            if ($bill) {
+                $recipient['_reminder_bill'] = $bill;
+                $deliverableRecipients[] = $recipient;
+            }
+        }
+
+        if (empty($deliverableRecipients)) {
+            return [
+                'success' => false,
+                'message' => 'No selected clients currently have an outstanding balance to remind.',
+                'recipient_count' => 0,
+            ];
+        }
+
+        $sentPhones = [];
+        $count = 0;
+        $immediateSentCount = 0;
+        $queuedCount = 0;
+        $failedCount = 0;
+        $sendImmediately = count($deliverableRecipients) <= self::DIRECT_SEND_LIMIT;
+
+        foreach ($deliverableRecipients as $recipient) {
+            $phone = trim((string)($recipient['phone_number'] ?? ''));
+            if ($phone === '' || isset($sentPhones[$phone])) {
+                continue;
+            }
+
+            $smsText = $this->buildPaymentReminderSms($recipient, (array)$recipient['_reminder_bill'], $billService, $paymentService, $settings);
+
+            if ($sendImmediately) {
+                $result = $sms->send($phone, $smsText, false);
+                if (!empty($result['success'])) {
+                    $immediateSentCount++;
+                    try {
+                        $stmt = $this->conn->prepare("INSERT INTO sms_queue (phone, message, type, status, http_code, response, retry_count, created_at, sent_at) VALUES (:phone, :message, :type, 'sent', :http_code, :response, 0, NOW(), NOW())");
+                        $stmt->execute([
+                            ':phone' => $phone,
+                            ':message' => $smsText,
+                            ':type' => 'payment_reminder',
+                            ':http_code' => isset($result['http_code']) ? (int)$result['http_code'] : null,
+                            ':response' => isset($result['response']) ? (string)$result['response'] : null,
+                        ]);
+                    } catch (\PDOException $e) {
+                    }
+                } else {
+                    $responseMessage = isset($result['message']) ? (string)$result['message'] : '';
+                    $alreadyQueuedBySend = stripos($responseMessage, 'queued for later') !== false;
+                    if ($alreadyQueuedBySend) {
+                        $queuedCount++;
+                    } else {
+                        $queuedOk = $sms->queue($phone, $smsText, 'payment_reminder');
+                        if ($queuedOk) {
+                            $queuedCount++;
+                        } else {
+                            $failedCount++;
+                        }
+                    }
+                }
+            } else {
+                $queuedOk = $sms->queue($phone, $smsText, 'payment_reminder');
+                if ($queuedOk) {
+                    $queuedCount++;
+                } else {
+                    $failedCount++;
+                }
+            }
+
+            $sentPhones[$phone] = true;
+            $count++;
+        }
+
+        if (!$sendImmediately && $queuedCount > 0) {
+            try {
+                $sms->processPendingQueue(min(max($queuedCount, 50), 250));
+            } catch (\Throwable $e) {
+            }
+        }
+
+        try {
+            $audience = 'clients_' . ($sendToAll ? 'all' : 'selected');
+            $targetJson = $sendToAll ? null : json_encode(array_values(array_map('intval', $selectedIds)));
+            $historyMessage = $message !== '' ? $message : 'System-generated personalized payment reminders based on each client\'s outstanding bill.';
+            $stmt = $this->conn->prepare("INSERT INTO {$this->broadcastsTable}
+                (created_by, audience, subject, message, recipient_count, target_ids_json)
+                VALUES (:created_by, :audience, :subject, :message, :recipient_count, :target_ids_json)");
+            $stmt->execute([
+                ':created_by' => $adminId,
+                ':audience' => $audience,
+                ':subject' => $subject !== '' ? $subject : 'Payment Reminder',
+                ':message' => $historyMessage,
+                ':recipient_count' => $count,
+                ':target_ids_json' => $targetJson,
+            ]);
+        } catch (\PDOException $e) {
+        }
+
+        return [
+            'success' => true,
+            'message' => $sendImmediately ? 'Payment reminders processed using immediate mode.' : 'Payment reminders queued successfully.',
+            'recipient_count' => $count,
+            'immediate_sent_count' => $immediateSentCount,
+            'queued_count' => $queuedCount,
+            'failed_count' => $failedCount,
+            'delivery_mode' => $sendImmediately ? 'immediate' : 'queued',
+        ];
+    }
+
+    public function sendSmsBroadcast(int $adminId, string $subject, string $message, string $recipientGroup, bool $sendToAll, array $selectedIds = [], ?string $templateKey = null): array
     {
         $subject = trim($subject);
         $message = trim($message);
         $recipientGroup = strtolower(trim($recipientGroup));
         if (!in_array($recipientGroup, ['clients', 'staff'], true)) {
             $recipientGroup = 'clients';
+        }
+
+        $templateKey = trim((string)$templateKey);
+        if ($recipientGroup === 'clients' && $templateKey === 'payment_reminder') {
+            return $this->sendClientPaymentReminderBroadcast($adminId, $subject, $message, $sendToAll, $selectedIds);
         }
 
         if ($subject === '' || $message === '') {
@@ -125,38 +359,23 @@ class InternalComms
 
         $recipients = [];
         $audience = $recipientGroup . '_' . ($sendToAll ? 'all' : 'selected');
-        $whereRole = $recipientGroup === 'staff' ? "role <> 'customer'" : "role = 'customer'";
         $recipientLabel = $recipientGroup === 'staff' ? 'staff member' : 'client';
 
-        try {
-            if ($sendToAll) {
-                $stmt = $this->conn->query("SELECT id, phone_number FROM users WHERE {$whereRole} AND status = 'active' AND phone_number IS NOT NULL AND phone_number <> ''");
-                $recipients = $stmt ? ($stmt->fetchAll(\PDO::FETCH_ASSOC) ?: []) : [];
-            } else {
-                $ids = array_values(array_filter(array_map('intval', $selectedIds), function ($id) {
-                    return $id > 0;
-                }));
+        if (!$sendToAll) {
+            $ids = array_values(array_filter(array_map('intval', $selectedIds), function ($id) {
+                return $id > 0;
+            }));
 
-                if (empty($ids)) {
-                    return [
-                        'success' => false,
-                        'message' => 'Select at least one ' . $recipientLabel . '.',
-                        'recipient_count' => 0,
-                    ];
-                }
-
-                $placeholders = implode(',', array_fill(0, count($ids), '?'));
-                $stmt = $this->conn->prepare("SELECT id, phone_number FROM users WHERE {$whereRole} AND status = 'active' AND id IN ($placeholders) AND phone_number IS NOT NULL AND phone_number <> ''");
-                $stmt->execute($ids);
-                $recipients = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+            if (empty($ids)) {
+                return [
+                    'success' => false,
+                    'message' => 'Select at least one ' . $recipientLabel . '.',
+                    'recipient_count' => 0,
+                ];
             }
-        } catch (\PDOException $e) {
-            return [
-                'success' => false,
-                'message' => 'Could not load recipient list.',
-                'recipient_count' => 0,
-            ];
         }
+
+        $recipients = $this->getBroadcastRecipients($recipientGroup, $sendToAll, $selectedIds);
 
         if (empty($recipients)) {
             return [

@@ -2,6 +2,10 @@
 /**
  * Send automatic payment reminders once daily.
  *
+ * Rules:
+ * - due_tomorrow reminder: send once per bill
+ * - overdue reminder: resend every 3 days while balance remains unpaid
+ *
  * Recommended cron entry:
  * 0 8 * * * /usr/bin/php /var/www/wbs/api/cron/send_payment_reminders.php
  */
@@ -26,9 +30,29 @@ try {
         bill_id INT NOT NULL,
         reminder_type ENUM('due_tomorrow', 'overdue') NOT NULL,
         sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_bill_reminder (bill_id, reminder_type),
+        INDEX idx_bill_type_sent (bill_id, reminder_type, sent_at),
         INDEX idx_sent_at (sent_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    try {
+        $indexesStmt = $db->query("SHOW INDEX FROM payment_reminder_log WHERE Key_name = 'uniq_bill_reminder'");
+        $legacyUniqueIndex = $indexesStmt ? $indexesStmt->fetch(PDO::FETCH_ASSOC) : null;
+        if ($legacyUniqueIndex) {
+            $db->exec("ALTER TABLE payment_reminder_log DROP INDEX uniq_bill_reminder");
+        }
+    } catch (Throwable $e) {
+        // Keep reminder processing resilient on older installs.
+    }
+
+    try {
+        $indexesStmt = $db->query("SHOW INDEX FROM payment_reminder_log WHERE Key_name = 'idx_bill_type_sent'");
+        $modernIndex = $indexesStmt ? $indexesStmt->fetch(PDO::FETCH_ASSOC) : null;
+        if (!$modernIndex) {
+            $db->exec("ALTER TABLE payment_reminder_log ADD INDEX idx_bill_type_sent (bill_id, reminder_type, sent_at)");
+        }
+    } catch (Throwable $e) {
+        // Keep reminder processing resilient on older installs.
+    }
 
     // Keep bill status aligned with the due date before selecting overdue reminders.
     $db->exec("UPDATE bills
@@ -38,21 +62,36 @@ try {
     $query = "SELECT b.id, b.user_id, b.billing_month, b.amount, b.due_date,
             u.full_name, u.phone_number, u.account_number,
             COALESCE(SUM(CASE WHEN p.status = 'completed' THEN p.amount ELSE 0 END), 0) AS paid_amount,
-            CASE WHEN b.due_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY) THEN 'due_tomorrow' ELSE 'overdue' END AS reminder_type
+            CASE WHEN b.due_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY) THEN 'due_tomorrow' ELSE 'overdue' END AS reminder_type,
+            due_log.last_sent_at AS due_tomorrow_last_sent_at,
+            overdue_log.last_sent_at AS overdue_last_sent_at
         FROM bills b
         INNER JOIN users u ON u.id = b.user_id
         LEFT JOIN payments p ON p.bill_id = b.id
-        LEFT JOIN payment_reminder_log prl
-            ON prl.bill_id = b.id
-            AND prl.reminder_type = CASE WHEN b.due_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY) THEN 'due_tomorrow' ELSE 'overdue' END
+        LEFT JOIN (
+            SELECT bill_id, MAX(sent_at) AS last_sent_at
+            FROM payment_reminder_log
+            WHERE reminder_type = 'due_tomorrow'
+            GROUP BY bill_id
+        ) due_log ON due_log.bill_id = b.id
+        LEFT JOIN (
+            SELECT bill_id, MAX(sent_at) AS last_sent_at
+            FROM payment_reminder_log
+            WHERE reminder_type = 'overdue'
+            GROUP BY bill_id
+        ) overdue_log ON overdue_log.bill_id = b.id
         WHERE b.status IN ('pending', 'overdue')
             AND (b.due_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY) OR b.due_date < CURDATE())
-            AND prl.id IS NULL
             AND u.phone_number IS NOT NULL
             AND u.phone_number <> ''
         GROUP BY b.id, b.user_id, b.billing_month, b.amount, b.due_date,
-            u.full_name, u.phone_number, u.account_number, prl.id
+            u.full_name, u.phone_number, u.account_number, due_log.last_sent_at, overdue_log.last_sent_at
         HAVING b.amount - paid_amount > 0.01
+            AND (
+                (reminder_type = 'due_tomorrow' AND due_tomorrow_last_sent_at IS NULL)
+                OR
+                (reminder_type = 'overdue' AND (overdue_last_sent_at IS NULL OR overdue_last_sent_at <= DATE_SUB(NOW(), INTERVAL 3 DAY)))
+            )
         ORDER BY b.due_date ASC, b.id ASC";
 
     $stmt = $db->query($query);
@@ -77,7 +116,7 @@ try {
         try {
             $result = $sms->sendWithFallback($bill['phone_number'], $message, 'payment_reminder');
             if (!empty($result['success']) || !empty($result['queued'])) {
-                $log = $db->prepare('INSERT IGNORE INTO payment_reminder_log (bill_id, reminder_type) VALUES (?, ?)');
+                $log = $db->prepare('INSERT INTO payment_reminder_log (bill_id, reminder_type) VALUES (?, ?)');
                 $log->execute([(int)$bill['id'], $reminderType]);
                 $sent++;
             }

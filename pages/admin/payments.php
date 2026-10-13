@@ -171,8 +171,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 		}
 
 		$openBillsRaw = $billService->getBillsByUser((int)$currentUser['id']);
+		foreach ($openBillsRaw as &$openBillRow) {
+			$openBillRow['outstanding_amount'] = $getOutstanding($db, (int)($openBillRow['id'] ?? 0), (float)($openBillRow['amount'] ?? 0));
+		}
+		unset($openBillRow);
 		$openBills = array_values(array_filter($openBillsRaw, static function (array $b): bool {
-			return isset($b['status']) && in_array((string)$b['status'], ['pending', 'overdue'], true);
+			return (float)($b['outstanding_amount'] ?? 0) > 0.01;
 		}));
 
 		usort($openBills, static function (array $a, array $b): int {
@@ -605,10 +609,10 @@ if ($currentUser && empty($paymentAdjustments)) {
 	$paymentAdjustments = $paymentService->getAdjustmentsByUserId((int)$currentUser['id']);
 }
 
-// Only show unpaid (pending/overdue) bills in the UI lists
+// Only show bills with a remaining balance in the UI lists
 if (!empty($userBills)) {
 	$userBills = array_values(array_filter($userBills, function ($b) {
-		return isset($b['status']) && in_array($b['status'], ['pending', 'overdue'], true);
+		return (float)($b['outstanding_amount'] ?? 0) > 0.01;
 	}));
 }
 

@@ -67,7 +67,7 @@ try {
             }
             unset($billRow);
             $userBills = array_values(array_filter($userBills, static function (array $bill): bool {
-                return isset($bill['status']) && in_array((string)$bill['status'], ['pending', 'overdue'], true);
+                return (float)($bill['outstanding_amount'] ?? 0) > 0.01;
             }));
             $userPayments = $paymentService->getCompletedPaymentsByUserId((int)$currentUser['id']);
             $paymentAdjustments = $paymentService->getAdjustmentsByUserId((int)$currentUser['id']);
@@ -176,9 +176,6 @@ try {
             $bill = $billId > 0 ? $billService->getById($billId) : null;
             if (!$bill) {
                 mobileApiJson(404, 'error', 'Bill not found.');
-            }
-            if (!in_array((string)$bill['status'], ['pending', 'overdue'], true)) {
-                mobileApiJson(422, 'error', 'Payment reminders can only be sent for pending or overdue bills.');
             }
             $stmt = $db->prepare('SELECT id, full_name, phone_number, email, account_number FROM users WHERE id = ? LIMIT 1');
             $stmt->execute([(int)$bill['user_id']]);
@@ -314,7 +311,7 @@ try {
                 $referenceNo = 'MANUAL-' . strtoupper(substr($paymentMethod, 0, 4)) . '-' . date('YmdHis');
             }
             $openBills = array_values(array_filter($billService->getBillsByUser((int)$currentUser['id']), static function (array $bill): bool {
-                return isset($bill['status']) && in_array((string)$bill['status'], ['pending', 'overdue'], true);
+                return true;
             }));
             usort($openBills, static function (array $a, array $b): int {
                 $ad = strtotime((string)($a['due_date'] ?? $a['billing_month'] ?? '1970-01-01')) ?: 0;
@@ -326,6 +323,9 @@ try {
                 $stmt->execute([':bill_id' => $forBillId]);
                 return max(0.0, round($billAmount - (float)$stmt->fetchColumn(), 2));
             };
+            $openBills = array_values(array_filter($openBills, static function (array $bill) use ($getOutstanding, $db): bool {
+				return $getOutstanding($db, (int)($bill['id'] ?? 0), (float)($bill['amount'] ?? 0)) > 0.01;
+			}));
             $allocationPlan = [];
             $requiresPasswordConfirmation = false;
             $projectedExcessToWallet = 0.0;

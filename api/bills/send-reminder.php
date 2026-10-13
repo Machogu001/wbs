@@ -39,10 +39,11 @@ try {
 		exit;
 	}
 
-	// Only allow reminders for pending/overdue bills
-	if (!in_array((string)$bill['status'], ['pending', 'overdue'], true)) {
+	$paymentService = new Payment($db);
+	$amountDueValue = $paymentService->getBillOutstandingAmount((int)$bill_id);
+	if ($amountDueValue <= 0.01) {
 		http_response_code(400);
-		echo json_encode(['success' => false, 'message' => 'Payment reminders can only be sent for pending or overdue bills']);
+		echo json_encode(['success' => false, 'message' => 'This bill has no outstanding balance to remind the client about.']);
 		exit;
 	}
 
@@ -73,13 +74,6 @@ try {
 	$billAmount = round((float)$bill['amount'], 2);
 	$dueDate = date('d-m-Y', strtotime($bill['due_date']));
 	$isOverdue = strtotime((string)$bill['due_date']) < strtotime(date('Y-m-d'));
-	$paymentService = new Payment($db);
-	$amountDueValue = $paymentService->getBillOutstandingAmount((int)$bill_id);
-	if ($amountDueValue <= 0.01) {
-		http_response_code(400);
-		echo json_encode(['success' => false, 'message' => 'This bill has no outstanding balance to remind the client about.']);
-		exit;
-	}
 	$balanceSummary = $billService->getNotificationBalanceSummary((int)$user['id'], $billAmount);
 	$previousBalance = (float)($balanceSummary['previous_balance'] ?? 0.0);
 	$balanceLabel = $previousBalance < 0 ? 'Credit Bal' : 'Prev Bal';
