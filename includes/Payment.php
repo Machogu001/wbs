@@ -763,13 +763,14 @@ class Payment {
 			$billOutstanding = !empty($paymentRow['bill_id'])
 				? $this->getBillOutstandingAmount((int)$paymentRow['bill_id'])
 				: 0.0;
+			$referenceLabel = $paymentMethod === 'mpesa' ? 'M-Pesa Ref' : 'Reference';
 			$messageText = "Dear {$customerName},\n"
-				. "Your {$methodLabel} payment of KES " . number_format($amount, 2)
-				. ($receipt !== '' ? " (Ref: {$receipt})" : '')
-				. " for Account No. {$accountNumber} has been received successfully.\n"
-				. "Remaining bill balance: KES " . number_format($billOutstanding, 2) . "\n"
-				. "Thank you.\n"
-				. $companyName;
+				. "Payment Received Successfully!\n"
+				. "We have received your {$methodLabel} payment of KES " . number_format($amount, 2) . " for Account {$accountNumber}.\n"
+				. ($receipt !== '' ? $referenceLabel . ": {$receipt}\n" : '')
+				. "Outstanding Balance: KES " . number_format($billOutstanding, 2) . "\n"
+				. "Thank you for choosing {$companyName}.\n"
+				. "Better Service. Better Experience.";
 		}
 
 		$recipientPhone = (string)($user['phone_number'] ?? '');

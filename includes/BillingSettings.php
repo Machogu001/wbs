@@ -462,19 +462,20 @@ HTML;
     public static function getDefaultBillNotificationTemplate(): string
     {
         return <<<'TEXT'
-Dear {client_name},
-{month} water bill: KES {bill_amount}
-AC: {account}
-Bill Date: {bill_date}
-Prev Read: {previous_reading}
-Reading: {current_reading}
-Units: {units}
-Service Fee: KES {service_fee}
-{credit_line}
-Amount Due: KES {amount_due}
-Due Date: {due_date}
-Pay: {payment_url}
-Thank you, {company_name}.
+Dear {{client_name}},
+Your water bill is KES {{bill_amount}}.
+Account: {{account_number}}
+Bill Date: {{bill_date}}
+Current Reading: {{current_reading}}
+Previous Reading: {{previous_reading}}
+Units Used: {{units_used}}
+Service Fee: KES {{service_fee}}
+{{balance_line}}
+Total Due: KES {{total_due}}
+Due Date: {{due_date}}
+Pay here: {{payment_link}}
+Thank you for choosing {{company}}.
+Better Service. Better Experience.
 TEXT;
     }
 

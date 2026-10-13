@@ -114,12 +114,24 @@ try {
         $billingMonth = date('M Y', strtotime((string)$bill['billing_month']));
         $amountDue = number_format(max(0, (float)$bill['amount'] - (float)$bill['paid_amount']), 2);
         $dueDate = date('d/m/Y', strtotime((string)$bill['due_date']));
+        $settings = (new BillingSettings($db))->getSettings();
+        $companyName = !empty($settings['company_name']) ? (string)$settings['company_name'] : 'WBS';
         $paymentLink = PaymentLink::generateLink((int)$bill['id']);
 
         if ($reminderType === 'due_tomorrow') {
-            $message = "Dear {$clientName}, your {$billingMonth} water bill for Account {$bill['account_number']} amounting to KES {$amountDue} is due tomorrow ({$dueDate}). Kindly pay on time to avoid service interruption. Pay here: {$paymentLink}";
+            $message = "Dear {$clientName},\n"
+                . "REMINDER: Your {$billingMonth} water bill with an outstanding balance of KES {$amountDue} for Account {$bill['account_number']} is due tomorrow ({$dueDate}).\n"
+                . "Please pay on time to avoid service interruption.\n"
+                . "Pay securely here: {$paymentLink}\n"
+                . "{$companyName}\n"
+                . "Better Service. Better Experience.";
         } else {
-            $message = "Dear {$clientName}, your {$billingMonth} water bill for Account {$bill['account_number']} amounting to KES {$amountDue} was due on {$dueDate} and is now overdue. Kindly settle it to avoid service interruption. Pay here: {$paymentLink}";
+            $message = "Dear {$clientName},\n"
+                . "REMINDER: Your {$billingMonth} water bill with an outstanding balance of KES {$amountDue} for Account {$bill['account_number']} was due on {$dueDate}.\n"
+                . "Please pay on time to avoid service interruption.\n"
+                . "Pay securely here: {$paymentLink}\n"
+                . "{$companyName}\n"
+                . "Better Service. Better Experience.";
         }
 
         try {

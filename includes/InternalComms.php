@@ -194,19 +194,16 @@ class InternalComms
         }
 
         $clientName = !empty($client['full_name']) ? (string)$client['full_name'] : 'Customer';
-        $statusLine = $isOverdue ? 'Status: Overdue' : 'Status: Payment Reminder';
-        $payLine = $paymentLink !== '' ? "Pay: {$paymentLink}" : 'Pay: Payment link unavailable';
+        $leadLine = $isOverdue
+            ? "REMINDER: Your {$billingMonth} water bill with an outstanding balance of {$currency} " . number_format($amountDueValue, 2) . " for Account " . (string)($client['account_number'] ?? '') . " was due on {$dueDate}."
+            : "REMINDER: Your {$billingMonth} water bill with an outstanding balance of {$currency} " . number_format($amountDueValue, 2) . " for Account " . (string)($client['account_number'] ?? '') . " is due on {$dueDate}.";
 
         return "Dear {$clientName},\n"
-            . "{$billingMonth} water bill reminder\n"
-            . "AC: " . (string)($client['account_number'] ?? '') . "\n"
-            . "Bill Amount: {$currency} " . number_format($billAmount, 2) . "\n"
-            . ($creditLine !== '' ? $creditLine . "\n" : '')
-            . "Amount Due: {$currency} " . number_format($amountDueValue, 2) . "\n"
-            . "Due Date: {$dueDate}\n"
-            . "{$statusLine}\n"
-            . $payLine . "\n"
-            . "Thank you, {$companyName}.";
+            . $leadLine . "\n"
+            . "Please pay on time to avoid service interruption.\n"
+            . "Pay securely here: {$paymentLink}\n"
+            . "{$companyName}\n"
+            . "Better Service. Better Experience.";
     }
 
     private function sendClientPaymentReminderBroadcast(int $adminId, string $subject, string $message, bool $sendToAll, array $selectedIds = []): array

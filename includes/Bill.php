@@ -328,11 +328,14 @@ class Bill {
 		$billingMonthLabel = $billingMonthTimestamp
 			? date('M', $billingMonthTimestamp)
 			: date('M', strtotime('first day of last month'));
-		$balanceLabel = $previousBalance < 0 ? 'Credit Bal' : 'Prev Bal';
+		$balanceLabel = $previousBalance < 0 ? 'Credit Bal' : 'Previous Balance';
 		$balanceAmount = abs($previousBalance);
 		$creditLine = $previousBalance < 0
 			? 'Credit Bal: KES ' . number_format($balanceAmount, 2)
 			: '';
+		$balanceLine = $previousBalance < 0
+			? 'Credit Bal: KES ' . number_format($balanceAmount, 2)
+			: (abs($previousBalance) > 0.009 ? 'Previous Balance: KES ' . number_format($balanceAmount, 2) : '');
 
 		$templateText = trim(str_replace(["\r\n", "\r"], "\n", (string)($template ?? '')));
 		if ($templateText === '') {
@@ -341,25 +344,57 @@ class Bill {
 
 		$rendered = strtr($templateText, [
 			'{client_name}' => $clientName,
+			'{{client_name}}' => $clientName,
 			'{month}' => $billingMonthLabel,
+			'{{month}}' => $billingMonthLabel,
 			'{total}' => number_format($totalToPay, 2),
+			'{{total}}' => number_format($totalToPay, 2),
 			'{bill_amount}' => number_format((float)($billResult['amount'] ?? 0), 2),
+			'{{bill_amount}}' => number_format((float)($billResult['amount'] ?? 0), 2),
 			'{amount_due}' => number_format($totalToPay, 2),
+			'{{amount_due}}' => number_format($totalToPay, 2),
+			'{total_due}' => number_format($totalToPay, 2),
+			'{{total_due}}' => number_format($totalToPay, 2),
 			'{balance_label}' => $balanceLabel,
+			'{{balance_label}}' => $balanceLabel,
 			'{balance_amount}' => number_format($balanceAmount, 2),
+			'{{balance_amount}}' => number_format($balanceAmount, 2),
 			'{credit_balance}' => $previousBalance < 0 ? number_format($balanceAmount, 2) : '0.00',
+			'{{credit_balance}}' => $previousBalance < 0 ? number_format($balanceAmount, 2) : '0.00',
 			'{credit_line}' => $creditLine,
+			'{{credit_line}}' => $creditLine,
+			'{balance_line}' => $balanceLine,
+			'{{balance_line}}' => $balanceLine,
 			'{company_name}' => $resolvedCompanyName,
+			'{{company_name}}' => $resolvedCompanyName,
+			'{company}' => $resolvedCompanyName,
+			'{{company}}' => $resolvedCompanyName,
 			'{account}' => $accountNumber,
+			'{{account}}' => $accountNumber,
+			'{account_number}' => $accountNumber,
+			'{{account_number}}' => $accountNumber,
 			'{bill_date}' => $resolvedBillDate,
+			'{{bill_date}}' => $resolvedBillDate,
 			'{previous_reading}' => number_format((float)($billResult['previous_reading'] ?? 0), 2),
+			'{{previous_reading}}' => number_format((float)($billResult['previous_reading'] ?? 0), 2),
 			'{current_reading}' => number_format((float)($billResult['current_reading'] ?? 0), 2),
+			'{{current_reading}}' => number_format((float)($billResult['current_reading'] ?? 0), 2),
 			'{units}' => number_format((float)($billResult['consumption'] ?? 0), 2),
+			'{{units}}' => number_format((float)($billResult['consumption'] ?? 0), 2),
+			'{units_used}' => number_format((float)($billResult['consumption'] ?? 0), 2),
+			'{{units_used}}' => number_format((float)($billResult['consumption'] ?? 0), 2),
 			'{service_fee}' => number_format((float)($billResult['service_charge'] ?? 0), 2),
+			'{{service_fee}}' => number_format((float)($billResult['service_charge'] ?? 0), 2),
 			'{previous_balance}' => number_format($previousBalance, 2),
+			'{{previous_balance}}' => number_format($previousBalance, 2),
 			'{due_date}' => date('d-m-Y', strtotime($dueDate)),
+			'{{due_date}}' => date('d-m-Y', strtotime($dueDate)),
 			'{payment_url}' => $paymentUrl,
+			'{{payment_url}}' => $paymentUrl,
+			'{payment_link}' => $paymentUrl,
+			'{{payment_link}}' => $paymentUrl,
 			'{paybill}' => $paybill,
+			'{{paybill}}' => $paybill,
 		]);
 
 		$lines = explode("\n", $rendered);

@@ -92,18 +92,15 @@ try {
 
 	$clientName = !empty($user['full_name']) ? (string)$user['full_name'] : 'Customer';
 	$companyName = !empty($settings['company_name']) ? (string)$settings['company_name'] : 'WBS';
-	$statusLine = $isOverdue ? 'Status: Overdue' : 'Status: Payment Reminder';
-	$payLine = !empty($paymentLink) ? "Pay: {$paymentLink}" : 'Pay: Payment link unavailable';
+	$leadLine = $isOverdue
+		? "REMINDER: Your {$billingMonth} water bill with an outstanding balance of {$currency} " . number_format($amountDueValue, 2) . " for Account {$user['account_number']} was due on {$dueDate}."
+		: "REMINDER: Your {$billingMonth} water bill with an outstanding balance of {$currency} " . number_format($amountDueValue, 2) . " for Account {$user['account_number']} is due on {$dueDate}.";
 	$smsText = "Dear {$clientName},\n"
-		. "{$billingMonth} water bill reminder\n"
-		. "AC: {$user['account_number']}\n"
-		. "Bill Amount: {$currency} " . number_format($billAmount, 2) . "\n"
-		. "{$balanceLabel}: {$currency} " . number_format($balanceAmount, 2) . "\n"
-		. "Amount Due: {$currency} " . number_format($amountDueValue, 2) . "\n"
-		. "Due Date: {$dueDate}\n"
-		. "{$statusLine}\n"
-		. $payLine . "\n"
-		. "Thank you, {$companyName}.";
+		. $leadLine . "\n"
+		. "Please pay on time to avoid service interruption.\n"
+		. "Pay securely here: {$paymentLink}\n"
+		. "{$companyName}\n"
+		. "Better Service. Better Experience.";
 
 	$emailSubject = "Payment Reminder - {$billingMonth} Water Bill";
 	$emailText = $smsText;
