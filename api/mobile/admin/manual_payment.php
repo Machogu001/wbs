@@ -142,6 +142,8 @@ try {
 
     $recordedPayments = [];
     $totalExcessToWallet = 0.0;
+    new Accounting($db);
+    new InstallmentPlan($db);
     $db->beginTransaction();
     try {
         $totalParts = count(array_filter($allocationPlan, static function (array $row): bool {
@@ -205,6 +207,15 @@ try {
             $db->rollBack();
         }
         throw $e;
+    }
+
+    foreach ($recordedPayments as $recordedPayment) {
+        $paymentId = (int)$recordedPayment['id'];
+        try {
+            $paymentService->sendCompletedPaymentNotification($paymentId);
+        } catch (Throwable $e) {
+            error_log('Payment confirmation notification failed for payment #' . $paymentId . ': ' . $e->getMessage());
+        }
     }
 
     mobileApiJson(201, 'success', 'Manual payment recorded successfully.', [

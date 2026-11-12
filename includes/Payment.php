@@ -25,11 +25,14 @@ class Payment {
 
 	public function __construct($db) {
 		$this->conn = $db;
-		$this->ensureRegistrationColumn();
-		$this->ensureManualReceiptColumns();
-		$this->ensureEtimsReceiptColumns();
-		$this->ensureAdjustmentTable();
-		$this->ensureRegistrationProformaTable();
+		// MySQL schema statements implicitly commit an active receipt transaction.
+		if (!$this->conn->inTransaction()) {
+			$this->ensureRegistrationColumn();
+			$this->ensureManualReceiptColumns();
+			$this->ensureEtimsReceiptColumns();
+			$this->ensureAdjustmentTable();
+			$this->ensureRegistrationProformaTable();
+		}
 	}
 
 	public function getById($id) {

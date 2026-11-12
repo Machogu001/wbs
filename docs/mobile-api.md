@@ -516,6 +516,10 @@ Update complaint status.
 
 Record a manual payment against one invoice or auto-allocate it across open invoices.
 
+Receipt allocations and excess wallet credit are committed together. Schema setup
+runs before the transaction; payment confirmations are attempted only after commit.
+Notification failures are logged and do not turn a saved receipt into an API error.
+
 ### `GET /api/mobile/admin/demand_notices.php`
 
 Load demand notice summary counts and recent notices.
@@ -655,6 +659,10 @@ Load payments workspace data for a searched customer.
 ### `POST /api/mobile/admin/payments.php`
 
 Search customer payment context, record manual payments, apply credit notes, or raise payment adjustment requests.
+
+The `manual_payment` action preserves the selected payment method, paid date/time,
+receiving staff member, and registration-payment classification. It uses the same
+transaction and post-commit notification ordering as `admin/manual_payment.php`.
 
 ### `GET /api/mobile/admin/payment_transactions.php`
 

@@ -373,30 +373,41 @@ try {
             }
 
             $recordedPaymentIds = [];
+            new Accounting($db);
+            new InstallmentPlan($db);
             $db->beginTransaction();
             try {
                 foreach ($allocationPlan as $index => $alloc) {
                     $allocBill = $alloc['bill'] ?? null;
                     if ($allocBill && ($alloc['amount'] ?? 0) > 0) {
-                        $payment = new Payment($db);
-                        $payment->bill_id = (int)$allocBill['id'];
-                        $payment->user_id = (int)$currentUser['id'];
-                        $payment->phone_number = $phone !== '' ? $phone : (string)($currentUser['phone_number'] ?? '');
-                        $payment->payment_method = $paymentMethod;
-                        $payment->amount = (float)$alloc['amount'];
-                        $payment->mpesa_receipt = $referenceNo . (count($allocationPlan) > 1 ? '-' . ($index + 1) : '');
-                        $payment->status = 'completed';
-                        $payment->transaction_date = $paidDateTime;
-                        $payment->received_by_user_id = (int)$actor['id'];
-                        $payment->note = $paymentNote;
-                        if (!$payment->create()) {
-                            throw new RuntimeException('Failed to record manual payment.');
-                        }
-                        $recordedPaymentIds[] = (int)$payment->id;
+                        $stmt = $db->prepare("INSERT INTO payments
+                            (bill_id, user_id, phone_number, payment_method, amount, mpesa_receipt, status, registration_id, transaction_date, received_by_user_id, created_at)
+                            VALUES (:bill_id, :user_id, :phone_number, :payment_method, :amount, :mpesa_receipt, 'completed', :registration_id, :transaction_date, :received_by_user_id, NOW())");
+                        $stmt->execute([
+                            ':bill_id' => (int)$allocBill['id'],
+                            ':user_id' => (int)$currentUser['id'],
+                            ':phone_number' => $phone !== '' ? $phone : (string)($currentUser['phone_number'] ?? ''),
+                            ':payment_method' => $paymentMethod,
+                            ':amount' => (float)$alloc['amount'],
+                            ':mpesa_receipt' => $referenceNo . (count($allocationPlan) > 1 ? '-' . ($index + 1) : ''),
+                            ':registration_id' => $billService->isRegistrationFeeBill($allocBill) ? (int)$currentUser['id'] : null,
+                            ':transaction_date' => $paidDateTime,
+                            ':received_by_user_id' => (int)$actor['id'],
+                        ]);
+                        $paymentId = (int)$db->lastInsertId();
+                        $paymentService->finalizeCompletedPayment($paymentId, false);
+                        $recordedPaymentIds[] = $paymentId;
                     }
                     $walletAmount = (float)($alloc['excess_to_wallet'] ?? 0.0);
                     if ($walletAmount > 0.01) {
-                        $wallet->credit((int)$currentUser['id'], $walletAmount, 'manual_payment_excess', 'Excess manual payment credited to wallet', (int)$actor['id']);
+                        $wallet->addCredit(
+                            (int)$currentUser['id'],
+                            $walletAmount,
+                            $referenceNo,
+                            0,
+                            'Excess from receipt ' . $referenceNo . ($paymentNote !== '' ? ' - ' . $paymentNote : ''),
+                            (int)$actor['id']
+                        );
                     }
                 }
                 $db->commit();
@@ -405,6 +416,13 @@ try {
                     $db->rollBack();
                 }
                 throw $e;
+            }
+            foreach ($recordedPaymentIds as $paymentId) {
+                try {
+                    $paymentService->sendCompletedPaymentNotification($paymentId);
+                } catch (Throwable $e) {
+                    error_log('Payment confirmation notification failed for payment #' . $paymentId . ': ' . $e->getMessage());
+                }
             }
             mobileApiJson(200, 'success', 'Manual payment recorded successfully.', ['payment_ids' => $recordedPaymentIds]);
         }
